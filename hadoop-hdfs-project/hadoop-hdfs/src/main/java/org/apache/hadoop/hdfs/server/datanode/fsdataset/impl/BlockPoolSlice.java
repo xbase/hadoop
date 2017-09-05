@@ -61,7 +61,7 @@ import com.google.common.annotations.VisibleForTesting;
  * A block pool slice represents a portion of a block pool stored on a volume.  
  * Taken together, all BlockPoolSlices sharing a block pool ID across a 
  * cluster represent a single block pool.
- * 
+ *
  * This class is synchronized by {@link FsVolumeImpl}.
  */
 class BlockPoolSlice {
@@ -79,7 +79,7 @@ class BlockPoolSlice {
   private volatile boolean dfsUsedSaved = false;
   private static final int SHUTDOWN_HOOK_PRIORITY = 30;
   private final boolean deleteDuplicateReplicas;
-  
+
   // TODO:FEDERATION scalability issue - a thread per DU is needed
   private final DU dfsUsage;
 
@@ -92,10 +92,10 @@ class BlockPoolSlice {
    * @throws IOException
    */
   BlockPoolSlice(String bpid, FsVolumeImpl volume, File bpDir,
-      Configuration conf) throws IOException {
+                 Configuration conf) throws IOException {
     this.bpid = bpid;
     this.volume = volume;
-    this.currentDir = new File(bpDir, DataStorage.STORAGE_DIR_CURRENT); 
+    this.currentDir = new File(bpDir, DataStorage.STORAGE_DIR_CURRENT);
     this.finalizedDir = new File(
         currentDir, DataStorage.STORAGE_DIR_FINALIZED);
     this.lazypersistDir = new File(currentDir, DataStorage.STORAGE_DIR_LAZY_PERSIST);
@@ -142,14 +142,14 @@ class BlockPoolSlice {
 
     // Make the dfs usage to be saved during shutdown.
     ShutdownHookManager.get().addShutdownHook(
-      new Runnable() {
-        @Override
-        public void run() {
-          if (!dfsUsedSaved) {
-            saveDfsUsed();
+        new Runnable() {
+          @Override
+          public void run() {
+            if (!dfsUsedSaved) {
+              saveDfsUsed();
+            }
           }
-        }
-      }, SHUTDOWN_HOOK_PRIORITY);
+        }, SHUTDOWN_HOOK_PRIORITY);
   }
 
   File getDirectory() {
@@ -159,7 +159,7 @@ class BlockPoolSlice {
   File getFinalizedDir() {
     return finalizedDir;
   }
-  
+
   File getLazypersistDir() {
     return lazypersistDir;
   }
@@ -176,7 +176,7 @@ class BlockPoolSlice {
   void decDfsUsed(long value) {
     dfsUsage.decDfsUsed(value);
   }
-  
+
   long getDfsUsed() throws IOException {
     return dfsUsage.getUsed();
   }
@@ -184,8 +184,8 @@ class BlockPoolSlice {
   void incDfsUsed(long value) {
     dfsUsage.incDfsUsed(value);
   }
-  
-   /**
+
+  /**
    * Read in the cached DU value and return it if it is less than 600 seconds
    * old (DU update interval). Slight imprecision of dfsUsed is not critical
    * and skipping DU can significantly shorten the startup time.
@@ -235,7 +235,7 @@ class BlockPoolSlice {
     File outFile = new File(currentDir, DU_CACHE_FILE);
     if (outFile.exists() && !outFile.delete()) {
       FsDatasetImpl.LOG.warn("Failed to delete old dfsUsed file in " +
-        outFile.getParent());
+          outFile.getParent());
     }
 
     try {
@@ -307,7 +307,7 @@ class BlockPoolSlice {
   }
 
 
-    
+
   void getVolumeMap(ReplicaMap volumeMap,
                     final RamDiskReplicaTracker lazyWriteReplicaMap)
       throws IOException {
@@ -438,13 +438,13 @@ class BlockPoolSlice {
       }
       if (!Block.isBlockFilename(file))
         continue;
-      
+
       long genStamp = FsDatasetUtil.getGenerationStampFromFile(
           files, file);
       long blockId = Block.filename2id(file.getName());
       ReplicaInfo newReplica = null;
       if (isFinalized) {
-        newReplica = new FinalizedReplica(blockId, 
+        newReplica = new FinalizedReplica(blockId,
             file.length(), genStamp, volume, file.getParentFile());
       } else {
 
@@ -460,14 +460,14 @@ class BlockPoolSlice {
             // We don't know the expected block length, so just use 0
             // and don't reserve any more space for writes.
             newReplica = new ReplicaBeingWritten(blockId,
-                validateIntegrityAndSetLength(file, genStamp), 
+                validateIntegrityAndSetLength(file, genStamp),
                 genStamp, volume, file.getParentFile(), null, 0);
             loadRwr = false;
           }
           sc.close();
           if (!restartMeta.delete()) {
             FsDatasetImpl.LOG.warn("Failed to delete restart meta file: " +
-              restartMeta.getPath());
+                restartMeta.getPath());
           }
         } catch (FileNotFoundException fnfe) {
           // nothing to do hereFile dir =
@@ -498,7 +498,7 @@ class BlockPoolSlice {
       // eventually.
       if (newReplica.getVolume().isTransientStorage()) {
         lazyWriteReplicaMap.addReplica(bpid, blockId,
-                                       (FsVolumeImpl) newReplica.getVolume());
+            (FsVolumeImpl) newReplica.getVolume());
       } else {
         lazyWriteReplicaMap.discardReplica(bpid, blockId, false);
       }
@@ -549,7 +549,7 @@ class BlockPoolSlice {
 
   @VisibleForTesting
   static ReplicaInfo selectReplicaToDelete(final ReplicaInfo replica1,
-      final ReplicaInfo replica2) {
+                                           final ReplicaInfo replica2) {
     ReplicaInfo replicaToKeep;
     ReplicaInfo replicaToDelete;
 
@@ -565,7 +565,7 @@ class BlockPoolSlice {
       replicaToKeep = replica1.getNumBytes() > replica2.getNumBytes() ?
           replica1 : replica2;
     } else if (replica1.getVolume().isTransientStorage() &&
-               !replica2.getVolume().isTransientStorage()) {
+        !replica2.getVolume().isTransientStorage()) {
       replicaToKeep = replica2;
     } else {
       replicaToKeep = replica1;
@@ -594,15 +594,16 @@ class BlockPoolSlice {
 
   /**
    * Find out the number of bytes in the block that match its crc.
-   * 
+   *
    * This algorithm assumes that data corruption caused by unexpected 
    * datanode shutdown occurs only in the last crc chunk. So it checks
    * only the last chunk.
-   * 
+   *
    * @param blockFile the block file
    * @param genStamp generation stamp of the block
    * @return the number of valid bytes
    */
+  // 如果 block 文件的最后一个 chunk 的校验和不正确，则删除最后一个 chunk
   private long validateIntegrityAndSetLength(File blockFile, long genStamp) {
     DataInputStream checksumIn = null;
     InputStream blockIn = null;
@@ -622,26 +623,34 @@ class BlockPoolSlice {
       // read and handle the common header here. For now just a version
       final DataChecksum checksum = BlockMetadataHeader.readDataChecksum(
           checksumIn, metaFile);
+      // chunk size : 512 字节
       int bytesPerChecksum = checksum.getBytesPerChecksum();
+      // crc size : 4 字节
       int checksumSize = checksum.getChecksumSize();
+      // chunk num
       long numChunks = Math.min(
-          (blockFileLen + bytesPerChecksum - 1)/bytesPerChecksum, 
+          (blockFileLen + bytesPerChecksum - 1)/bytesPerChecksum,
           (metaFileLen - crcHeaderLen)/checksumSize);
       if (numChunks == 0) {
         return 0;
       }
+      // checksumIn 移动到最后一个 crc 的起始位置
       IOUtils.skipFully(checksumIn, (numChunks-1)*checksumSize);
       blockIn = new FileInputStream(blockFile);
       long lastChunkStartPos = (numChunks-1)*bytesPerChecksum;
+      // blockIn 移动到最后一个 chunk 的起始位置
       IOUtils.skipFully(blockIn, lastChunkStartPos);
       int lastChunkSize = (int)Math.min(
           bytesPerChecksum, blockFileLen-lastChunkStartPos);
       byte[] buf = new byte[lastChunkSize+checksumSize];
+      // 读取最后一个 crc 到 buf 的末尾
       checksumIn.readFully(buf, lastChunkSize, checksumSize);
+      // 读取最后一个 chunk 到 buf
       IOUtils.readFully(blockIn, buf, 0, lastChunkSize);
 
       checksum.update(buf, 0, lastChunkSize);
       long validFileLength;
+      // 对比最后一个 chunk 的 crc 和 meta 文件中保存的最后一个 crc，是否一致
       if (checksum.compare(buf, lastChunkSize)) { // last chunk matches crc
         validFileLength = lastChunkStartPos + lastChunkSize;
       } else { // last chunck is corrupt
@@ -668,12 +677,12 @@ class BlockPoolSlice {
       IOUtils.closeStream(blockIn);
     }
   }
-    
+
   @Override
   public String toString() {
     return currentDir.getAbsolutePath();
   }
-  
+
   void shutdown() {
     saveDfsUsed();
     dfsUsedSaved = true;
