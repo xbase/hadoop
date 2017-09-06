@@ -28,7 +28,7 @@ import static org.apache.hadoop.util.Time.monotonicNow;
 public class DataTransferThrottler {
   private final long period;          // period over which bw is imposed
   private final long periodExtension; // Max period over which bw accumulates.
-  private long bytesPerPeriod;  // total number of bytes can be sent in each period
+  private long bytesPerPeriod;  // total number of bytes can be sent in each period 一个周期可传输的字节数
   private long curPeriodStart;  // current period starting time
   private long curReserve;      // remaining bytes can be sent in the period
   private long bytesAlreadyUsed;
@@ -107,6 +107,7 @@ public class DataTransferThrottler {
       long curPeriodEnd = curPeriodStart + period;
 
       if ( now < curPeriodEnd ) {
+        // 周期还没结束，带宽已经用完了
         // Wait for next period so that curReserve can be increased.
         try {
           wait( curPeriodEnd - now );
@@ -117,6 +118,7 @@ public class DataTransferThrottler {
           break;
         }
       } else if ( now <  (curPeriodStart + periodExtension)) {
+        // 在periodExtension周期内
         curPeriodStart = curPeriodEnd;
         curReserve += bytesPerPeriod;
       } else {
