@@ -65,6 +65,7 @@ public interface ClientDatanodeProtocol {
   public static final long versionID = 9L;
 
   /** Return the visible length of a replica. */
+  // 获取文件最后一个block的真实长度
   long getReplicaVisibleLength(ExtendedBlock b) throws IOException;
   
   /**
@@ -109,6 +110,7 @@ public interface ClientDatanodeProtocol {
    * @throws IOException
    *           on error
    */
+  // 老版的短路读，需要获取block的存储位置
   BlockLocalPathInfo getBlockLocalPathInfo(ExtendedBlock block,
       Token<BlockTokenIdentifier> token) throws IOException;
   
@@ -128,6 +130,7 @@ public interface ClientDatanodeProtocol {
    * @throws IOException
    *           if datanode is unreachable, or replica is not found on datanode
    */
+  // 获取block存储在DN的哪个volume上
   HdfsBlocksMetadata getHdfsBlocksMetadata(String blockPoolId,
       long []blockIds, List<Token<BlockTokenIdentifier>> tokens) throws IOException; 
 
@@ -152,6 +155,7 @@ public interface ClientDatanodeProtocol {
   /**
    * Asynchronously reload configuration on disk and apply changes.
    */
+  // 刷新DN配置，目前只支持刷新dfs.datanode.data.dir
   void startReconfiguration() throws IOException;
 
   /**

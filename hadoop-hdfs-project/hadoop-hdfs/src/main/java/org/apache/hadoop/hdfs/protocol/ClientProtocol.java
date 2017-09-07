@@ -137,6 +137,7 @@ public interface ClientProtocol {
    * @return a set of server default configuration values
    * @throws IOException
    */
+  // 获取NameNode的默认配置
   @Idempotent
   public FsServerDefaults getServerDefaults() throws IOException;
 

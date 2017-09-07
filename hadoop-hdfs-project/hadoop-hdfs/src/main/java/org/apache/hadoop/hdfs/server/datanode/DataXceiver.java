@@ -621,7 +621,9 @@ class DataXceiver extends Receiver implements Runnable {
       final boolean[] targetPinnings) throws IOException {
     previousOpClientName = clientname;
     updateCurrentThreadName("Receiving block " + block);
+    // pipeline 上游是否是DN节点
     final boolean isDatanode = clientname.length() == 0;
+    // pipeline 上游是否是Client节点
     final boolean isClient = !isDatanode;
     final boolean isTransfer = stage == BlockConstructionStage.TRANSFER_RBW
         || stage == BlockConstructionStage.TRANSFER_FINALIZED;

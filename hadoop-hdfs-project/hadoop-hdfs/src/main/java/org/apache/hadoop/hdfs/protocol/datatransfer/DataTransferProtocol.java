@@ -123,6 +123,7 @@ public interface DataTransferProtocol {
    * @param clientName client's name.
    * @param targets target datanodes.
    */
+  // pipeline recovery 时，复制数据块到新添加的节点
   public void transferBlock(final ExtendedBlock blk,
       final Token<BlockTokenIdentifier> blockToken,
       final String clientName,
@@ -141,6 +142,7 @@ public interface DataTransferProtocol {
    * @param supportsReceiptVerification  True if the client supports
    *                          receipt verification.
    */
+  // 获取一个短路读数据块的文件描述符
   public void requestShortCircuitFds(final ExtendedBlock blk,
       final Token<BlockTokenIdentifier> blockToken,
       SlotId slotId, int maxVersion, boolean supportsReceiptVerification)
@@ -151,6 +153,7 @@ public interface DataTransferProtocol {
    *
    * @param slotId          SlotID used by the earlier file descriptors.
    */
+  // 释放一个短路读数据块的文件描述符
   public void releaseShortCircuitFds(final SlotId slotId) throws IOException;
 
   /**
@@ -158,6 +161,7 @@ public interface DataTransferProtocol {
    * 
    * @param clientName       The name of the client.
    */
+  // 获取短路读数据块的共享内存
   public void requestShortCircuitShm(String clientName) throws IOException;
   
   /**

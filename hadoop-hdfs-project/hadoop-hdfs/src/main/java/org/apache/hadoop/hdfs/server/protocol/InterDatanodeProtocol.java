@@ -60,12 +60,14 @@ public interface InterDatanodeProtocol {
    * @return actual state of the replica on this data-node or 
    * null if data-node does not have the replica.
    */
+  // block recovery 时，主副本所在的DN节点，获取其他副本的信息
   ReplicaRecoveryInfo initReplicaRecovery(RecoveringBlock rBlock)
   throws IOException;
 
   /**
    * Update replica with the new generation stamp and length.  
    */
+  // block recovery 时，使待恢复block的副本信息一致
   String updateReplicaUnderRecovery(ExtendedBlock oldBlock, long recoveryId,
                                     long newBlockId, long newLength)
       throws IOException;

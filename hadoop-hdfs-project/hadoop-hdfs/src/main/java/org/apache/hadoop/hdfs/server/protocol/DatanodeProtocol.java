@@ -194,6 +194,7 @@ public interface DatanodeProtocol {
   /**
    * Commit block synchronization in lease recovery
    */
+  // block recovery 之后同步数据块的状态，使NameNode和DataNode关于这个block的信息一致
   @Idempotent
   public void commitBlockSynchronization(ExtendedBlock block,
       long newgenerationstamp, long newlength,
