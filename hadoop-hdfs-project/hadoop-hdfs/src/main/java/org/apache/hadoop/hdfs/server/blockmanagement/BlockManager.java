@@ -2215,6 +2215,7 @@ public class BlockManager {
     // find block by blockId
     BlockInfoContiguous storedBlock = blocksMap.getStoredBlock(block);
     if(storedBlock == null) {
+      // DN有，NN没有
       // If blocksMap does not contain reported block id,
       // the replica should be removed from the data-node.
       toInvalidate.add(new Block(block));
@@ -2265,8 +2266,8 @@ public class BlockManager {
     // Add replica if appropriate. If the replica was previously corrupt
     // but now okay, it might need to be updated.
     if (reportedState == ReplicaState.FINALIZED
-        && (storedBlock.findStorageInfo(storageInfo) == -1 ||
-            corruptReplicas.isReplicaCorrupt(storedBlock, dn))) {
+        && (storedBlock.findStorageInfo(storageInfo) == -1 ||      // 之前未收到这个节点的这个副本汇报
+            corruptReplicas.isReplicaCorrupt(storedBlock, dn))) {  // 之前这个节点上的这个副本损坏
       toAdd.add(storedBlock);
     }
     return storedBlock;
@@ -3497,6 +3498,7 @@ public class BlockManager {
           if (numExpectedReplicas == 1 ||
               (numExpectedReplicas > 1 &&
                   !datanodeManager.hasClusterEverBeenMultiRack())) {
+            // 只有一个副本或只有一个机架
             enoughRacks = true;
             break;
           }
@@ -3504,6 +3506,7 @@ public class BlockManager {
           if (rackName == null) {
             rackName = rackNameNew;
           } else if (!rackName.equals(rackNameNew)) {
+            // 说明副本至少在两个机架上存在
             enoughRacks = true;
             break;
           }

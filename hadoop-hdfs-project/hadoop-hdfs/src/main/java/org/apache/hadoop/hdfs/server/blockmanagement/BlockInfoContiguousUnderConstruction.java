@@ -350,6 +350,8 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
         // than the one chosen by BlockPlacementPolicy. This can occur as
         // we allow Datanodes to choose the target storage. Update our
         // state by removing the stale entry and adding a new one.
+
+        // 如果副本存放的位置，不是NN指定的目录，那么以DN汇报的为准
         it.remove();
         break;
       }
