@@ -192,6 +192,7 @@ class InvalidateBlocks {
       remove(dn);
     }
 
+    // 保存到DN删除副本列表
     dn.addBlocksToBeInvalidated(toInvalidate);
     numBlocks -= toInvalidate.size();
     return toInvalidate;

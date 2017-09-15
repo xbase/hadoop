@@ -1317,7 +1317,7 @@ public class BlockManager {
    */
   @VisibleForTesting
   int computeReplicationWorkForBlocks(List<List<Block>> blocksToReplicate) {
-    int requiredReplication, numEffectiveReplicas;
+    int requiredReplication, numEffectiveReplicas; // 有效副本数
     List<DatanodeDescriptor> containingNodes;
     DatanodeDescriptor srcNode;
     BlockCollection bc = null;
@@ -1328,12 +1328,14 @@ public class BlockManager {
 
     namesystem.writeLock();
     try {
+      // step 1: 选择 source
       synchronized (neededReplications) {
         for (int priority = 0; priority < blocksToReplicate.size(); priority++) {
           for (Block block : blocksToReplicate.get(priority)) {
             // block should belong to a file
             bc = blocksMap.getBlockCollection(block);
             // abandoned block or block reopened for append
+            // 正在构建，不必备份
             if(bc == null || (bc.isUnderConstruction() && block.equals(bc.getLastBlock()))) {
               neededReplications.remove(block, priority); // remove from neededReplications
               neededReplications.decrementReplicationIndex(priority);
@@ -1361,7 +1363,8 @@ public class BlockManager {
             // do not schedule more if enough replicas is already pending
             numEffectiveReplicas = numReplicas.liveReplicas() +
                                     pendingReplications.getNumReplicas(block);
-      
+
+            // 副本数已足够，不必备份
             if (numEffectiveReplicas >= requiredReplication) {
               if ( (pendingReplications.getNumReplicas(block) > 0) ||
                    (blockHasEnoughRacks(block)) ) {
@@ -1374,11 +1377,14 @@ public class BlockManager {
             }
 
             if (numReplicas.liveReplicas() < requiredReplication) {
+              // 副本数不足，计算需要添加几个副本
               additionalReplRequired = requiredReplication
                   - numEffectiveReplicas;
             } else {
+              // 虽然副本数足够，但在同一个机架上
               additionalReplRequired = 1; // Needed on a new rack
             }
+            // 添加复制任务
             work.add(new ReplicationWork(block, bc, srcNode,
                 containingNodes, liveReplicaNodes, additionalReplRequired,
                 priority));
@@ -1389,11 +1395,13 @@ public class BlockManager {
       namesystem.writeUnlock();
     }
 
+    // step 2: 选择 target
     final Set<Node> excludedNodes = new HashSet<Node>();
     for(ReplicationWork rw : work){
       // Exclude all of the containing nodes from being targets.
       // This list includes decommissioning or corrupt nodes.
       excludedNodes.clear();
+      // 排除已有副本的DN
       for (DatanodeDescriptor dn : rw.containingNodes) {
         excludedNodes.add(dn);
       }
@@ -1404,6 +1412,7 @@ public class BlockManager {
       rw.chooseTargets(blockplacement, storagePolicySuite, excludedNodes);
     }
 
+    // step 1: 将副本加入DN复制队列，下次心跳，发出复制命令
     namesystem.writeLock();
     try {
       for(ReplicationWork rw : work){
@@ -1455,6 +1464,7 @@ public class BlockManager {
           }
 
           // Add block to the to be replicated list
+          // 将副本加入DN的复制队列中
           rw.srcNode.addBlockToBeReplicated(block, targets);
           scheduledWork++;
           DatanodeStorageInfo.incrementBlocksScheduled(targets);
@@ -2065,7 +2075,8 @@ public class BlockManager {
 
     for (BlockReportReplica iblk : report) {
       ReplicaState reportedState = iblk.getState();
-      
+
+      // 如果当前为standby节点，可能出现standby接收块汇报时，并没有完全更新edits的情况
       if (shouldPostponeBlocksFromFuture &&
           namesystem.isGenStampInFuture(iblk)) {
         queueReportedBlock(storageInfo, iblk, reportedState,
@@ -2126,6 +2137,7 @@ public class BlockManager {
 
     // place a delimiter in the list which separates blocks 
     // that have been reported from those that have not
+    // 放置一个分隔符，分隔符之后的是DN没有汇报的副本
     BlockInfoContiguous delimiter = new BlockInfoContiguous(new Block(), (short) 1);
     AddBlockResult result = storageInfo.addBlock(delimiter);
     assert result == AddBlockResult.ADDED 
@@ -2351,6 +2363,7 @@ public class BlockManager {
    * 
    * @return a BlockToMarkCorrupt object, or null if the replica is not corrupt
    */
+  //根据状态，对比副本版本号和长度
   private BlockToMarkCorrupt checkReplicaCorrupt(
       Block reported, ReplicaState reportedState, 
       BlockInfoContiguous storedBlock, BlockUCState ucState,
@@ -2583,6 +2596,7 @@ public class BlockManager {
 
     // handle underReplication/overReplication
     short fileReplication = bc.getBlockReplication();
+    // 副本数是否达到期望
     if (!isNeededReplication(storedBlock, fileReplication, numCurrentReplica)) {
       neededReplications.remove(storedBlock, numCurrentReplica,
           num.decommissionedReplicas(), fileReplication);
@@ -2601,8 +2615,10 @@ public class BlockManager {
           storedBlock + "blockMap has " + numCorruptNodes + 
           " but corrupt replicas map has " + corruptReplicasCount);
     }
-    if ((corruptReplicasCount > 0) && (numLiveReplicas >= fileReplication))
+    if ((corruptReplicasCount > 0) && (numLiveReplicas >= fileReplication)) {
+      // 副本数足够才执行
       invalidateCorruptReplicas(storedBlock);
+    }
     return storedBlock;
   }
 
@@ -2882,6 +2898,7 @@ public class BlockManager {
     Collection<DatanodeStorageInfo> nonExcess = new ArrayList<DatanodeStorageInfo>();
     Collection<DatanodeDescriptor> corruptNodes = corruptReplicas
         .getNodes(block);
+    // 选出符合条件的DN节点目录
     for(DatanodeStorageInfo storage : blocksMap.getStorages(block, State.NORMAL)) {
       final DatanodeDescriptor cur = storage.getDatanodeDescriptor();
       if (storage.areBlockContentsStale()) {
@@ -3112,7 +3129,8 @@ public class BlockManager {
     DatanodeDescriptor node = storageInfo.getDatanodeDescriptor();
     // Decrement number of blocks scheduled to this datanode.
     // for a retry request (of DatanodeProtocol#blockReceivedAndDeleted with 
-    // RECEIVED_BLOCK), we currently also decrease the approximate number. 
+    // RECEIVED_BLOCK), we currently also decrease the approximate number.
+    // 减少Scheduled任务计数
     node.decrementBlocksScheduled(storageInfo.getStorageType());
 
     // get the deletion hint node
@@ -3682,8 +3700,10 @@ public class BlockManager {
     }
 
     final int numlive = heartbeatManager.getLiveDatanodeCount();
+    // 每次复制的副本数量
     final int blocksToProcess = numlive
         * this.blocksReplWorkMultiplier;
+    // 每次执行删除的副本操作的DN数量
     final int nodesToProcess = (int) Math.ceil(numlive
         * this.blocksInvalidateWorkPct);
 
