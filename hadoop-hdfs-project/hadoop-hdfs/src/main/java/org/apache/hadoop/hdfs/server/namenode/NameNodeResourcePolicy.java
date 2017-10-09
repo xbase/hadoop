@@ -49,8 +49,10 @@ final class NameNodeResourcePolicy {
     if (resources.isEmpty()) {
       return true;
     }
-    
+
+    // 必须的资源数量
     int requiredResourceCount = 0;
+    // 冗余的资源数量
     int redundantResourceCount = 0;
     int disabledRedundantResourceCount = 0;
     for (CheckableNameNodeResource resource : resources) {

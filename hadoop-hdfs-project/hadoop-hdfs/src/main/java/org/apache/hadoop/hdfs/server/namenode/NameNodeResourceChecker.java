@@ -45,6 +45,7 @@ import com.google.common.base.Predicate;
  * which is configured to be redundant. Volumes containing file system edits dirs
  * are added by default, and arbitrary extra volumes may be configured as well.
  */
+// 检查 edits 目录所在的磁盘空间是否充足
 @InterfaceAudience.Private
 public class NameNodeResourceChecker {
   private static final Log LOG = LogFactory.getLog(NameNodeResourceChecker.class.getName());
