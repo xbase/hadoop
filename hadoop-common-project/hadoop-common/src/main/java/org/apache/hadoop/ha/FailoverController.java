@@ -192,6 +192,8 @@ public class FailoverController {
    * @param fromSvc currently active service
    * @param toSvc service to make active
    * @param forceFence to fence fromSvc even if not strictly necessary
+   *                   true： 无法如何都执行 fence 操作
+   *                   false：如果源节点可以切换为 standby，则不执行 fence 操作
    * @param forceActive try to make toSvc active even if it is not ready
    * @throws FailoverFailedException if the failover fails
    */
@@ -202,11 +204,13 @@ public class FailoverController {
       throws FailoverFailedException {
     Preconditions.checkArgument(fromSvc.getFencer() != null,
         "failover requires a fencer");
+    // 是否满足切换条件
     preFailoverChecks(fromSvc, toSvc, forceActive);
 
     // Try to make fromSvc standby
     boolean tryFence = true;
-    
+
+    // 试着将源节点切换为 standby 状态
     if (tryGracefulFence(fromSvc)) {
       tryFence = forceFence;
     }
@@ -220,6 +224,7 @@ public class FailoverController {
     }
 
     // Try to make toSvc active
+    // 将目的节点切换为 active 状态
     boolean failed = false;
     Throwable cause = null;
     try {
@@ -239,6 +244,7 @@ public class FailoverController {
     }
 
     // We failed to make toSvc active
+    // 目的节点切换为 active 失败，进行回滚
     if (failed) {
       String msg = "Unable to failover to " + toSvc;
       // Only try to failback if we didn't fence fromSvc
