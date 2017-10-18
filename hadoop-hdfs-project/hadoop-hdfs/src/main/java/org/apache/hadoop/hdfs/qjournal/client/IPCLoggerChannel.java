@@ -389,7 +389,8 @@ public class IPCLoggerChannel implements AsyncLogger {
                 "Remote journal " + IPCLoggerChannel.this + " failed to " +
                 "write txns " + firstTxnId + "-" + (firstTxnId + numTxns - 1) +
                 ". Will try to write to this JN again after the next " +
-                "log roll.", e); 
+                "log roll.", e);
+            // 出现异常，设置outOfSync=true，不会再向此JN写editlog，直到开启新的segment
             synchronized (IPCLoggerChannel.this) {
               outOfSync = true;
             }

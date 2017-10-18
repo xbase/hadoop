@@ -178,7 +178,8 @@ public class QuorumJournalManager implements JournalManager {
       throws IOException {
     Preconditions.checkState(!loggers.isEpochEstablished(),
         "epoch already created");
-    
+
+    // 获取所有JN的lastEpochNumber
     Map<AsyncLogger, GetJournalStateResponseProto> lastPromises =
       loggers.waitForWriteQuorum(loggers.getJournalState(),
           getJournalStateTimeoutMs, "getJournalState()");
@@ -188,7 +189,8 @@ public class QuorumJournalManager implements JournalManager {
       maxPromised = Math.max(maxPromised, resp.getLastPromisedEpoch());
     }
     assert maxPromised >= 0;
-    
+
+    // 设置新的epochNumber = maxEpochNumber + 1
     long myEpoch = maxPromised + 1;
     Map<AsyncLogger, NewEpochResponseProto> resps =
         loggers.waitForWriteQuorum(loggers.newEpoch(nsInfo, myEpoch),
@@ -264,6 +266,7 @@ public class QuorumJournalManager implements JournalManager {
         segmentTxId);
     
     // Step 1. Prepare recovery
+    // 恢复准备，获取所有JN editlog 文件状态
     QuorumCall<AsyncLogger,PrepareRecoveryResponseProto> prepare =
         loggers.prepareRecovery(segmentTxId);
     Map<AsyncLogger, PrepareRecoveryResponseProto> prepareResponses=
@@ -282,6 +285,7 @@ public class QuorumJournalManager implements JournalManager {
     
     // TODO: we should collect any "ties" and pass the URL for all of them
     // when syncing, so we can tolerate failure during recovery better.
+    // 选择作为恢复基准的源节点
     Entry<AsyncLogger, PrepareRecoveryResponseProto> bestEntry = Collections.max(
         prepareResponses.entrySet(), SegmentRecoveryComparator.INSTANCE); 
     AsyncLogger bestLogger = bestEntry.getKey();
@@ -338,9 +342,11 @@ public class QuorumJournalManager implements JournalManager {
             resp.getLastCommittedTxId() + " committed");
       }
     }
-    
+
+    // 其他JN可以通过此url读取源节点的editlog文件
     URL syncFromUrl = bestLogger.buildURLToFetchLogs(segmentTxId);
-    
+
+    // 恢复，同步editlog文件
     QuorumCall<AsyncLogger,Void> accept = loggers.acceptRecovery(logToSync, syncFromUrl);
     loggers.waitForWriteQuorum(accept, acceptRecoveryTimeoutMs,
         "acceptRecovery(" + TextFormat.shortDebugString(logToSync) + ")");
@@ -349,6 +355,7 @@ public class QuorumJournalManager implements JournalManager {
     // we send a finalize() here, that's OK. It validates the log before
     // finalizing. Hence, even if it is not "in sync", it won't incorrectly
     // finalize.
+    // 同步成功，执行finalized操作
     QuorumCall<AsyncLogger, Void> finalize =
         loggers.finalizeLogSegment(logToSync.getStartTxId(), logToSync.getEndTxId()); 
     loggers.waitForWriteQuorum(finalize, finalizeSegmentTimeoutMs,

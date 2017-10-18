@@ -58,7 +58,8 @@ class QuorumCall<KEY, RESULT> {
    * fraction of the configured timeout for any call.
    */
   private static final float WAIT_PROGRESS_WARN_THRESHOLD = 0.7f;
-  
+
+  // 为异步调用设置回调函数，统计成功失败
   static <KEY, RESULT> QuorumCall<KEY, RESULT> create(
       Map<KEY, ? extends ListenableFuture<RESULT>> calls) {
     final QuorumCall<KEY, RESULT> qr = new QuorumCall<KEY, RESULT>();
@@ -102,6 +103,7 @@ class QuorumCall<KEY, RESULT> {
    * @throws TimeoutException if the specified timeout elapses before
    * achieving the desired conditions
    */
+  // 等待异步调用返回数达到指定的数量（超过一半）
   public synchronized void waitFor(
       int minResponses, int minSuccesses, int maxExceptions,
       int millis, String operationName)
@@ -111,8 +113,11 @@ class QuorumCall<KEY, RESULT> {
     long et = st + millis;
     while (true) {
       checkAssertionErrors();
+      // 有足够的响应则返回
       if (minResponses > 0 && countResponses() >= minResponses) return;
+      // 有足够的成功响应，则返回
       if (minSuccesses > 0 && countSuccesses() >= minSuccesses) return;
+      // 有足够的失败响应，则返回
       if (maxExceptions >= 0 && countExceptions() > maxExceptions) return;
       long now = Time.monotonicNow();
       
