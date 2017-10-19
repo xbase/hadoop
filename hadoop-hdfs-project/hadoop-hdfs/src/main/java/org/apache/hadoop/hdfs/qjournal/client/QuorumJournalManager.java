@@ -473,6 +473,7 @@ public class QuorumJournalManager implements JournalManager {
   public void selectInputStreams(Collection<EditLogInputStream> streams,
       long fromTxnId, boolean inProgressOk) throws IOException {
 
+    // 按条件获取segment文件
     QuorumCall<AsyncLogger, RemoteEditLogManifest> q =
         loggers.getEditLogManifest(fromTxnId, inProgressOk);
     Map<AsyncLogger, RemoteEditLogManifest> resps =
@@ -485,6 +486,7 @@ public class QuorumJournalManager implements JournalManager {
     final PriorityQueue<EditLogInputStream> allStreams = 
         new PriorityQueue<EditLogInputStream>(64,
             JournalSet.EDIT_LOG_INPUT_STREAM_COMPARATOR);
+    // 将所有segment文件流，添加到优先队列allStreams
     for (Map.Entry<AsyncLogger, RemoteEditLogManifest> e : resps.entrySet()) {
       AsyncLogger logger = e.getKey();
       RemoteEditLogManifest manifest = e.getValue();

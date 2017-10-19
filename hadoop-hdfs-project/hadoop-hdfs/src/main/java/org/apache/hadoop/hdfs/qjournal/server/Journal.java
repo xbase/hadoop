@@ -151,6 +151,7 @@ public class Journal implements Closeable {
     
     EditLogFile latest = scanStorageForLatestEdits();
     if (latest != null) {
+      // 最大的 edit txId
       highestWrittenTxId = latest.getLastTxId();
     }
   }
@@ -415,16 +416,19 @@ public class Journal implements Closeable {
   private synchronized void checkRequest(RequestInfo reqInfo) throws IOException {
     // Invariant 25 from ZAB paper
     if (reqInfo.getEpoch() < lastPromisedEpoch.get()) {
+      // 小于当前epoch则抛异常
       throw new IOException("IPC's epoch " + reqInfo.getEpoch() +
           " is less than the last promised epoch " +
           lastPromisedEpoch.get());
     } else if (reqInfo.getEpoch() > lastPromisedEpoch.get()) {
+      // 大于当前epoch则更新
       // A newer client has arrived. Fence any previous writers by updating
       // the promise.
       updateLastPromisedEpoch(reqInfo.getEpoch());
     }
     
     // Ensure that the IPCs are arriving in-order as expected.
+    // ipcSeriveNumber需大于currentEpochIpcSerial
     checkSync(reqInfo.getIpcSerialNumber() > currentEpochIpcSerial,
         "IPC serial %s from client %s was not higher than prior highest " +
         "IPC serial %s", reqInfo.getIpcSerialNumber(),
@@ -433,6 +437,7 @@ public class Journal implements Closeable {
     currentEpochIpcSerial = reqInfo.getIpcSerialNumber();
 
     if (reqInfo.hasCommittedTxId()) {
+      // 小于当前committedTxnId则抛异常
       Preconditions.checkArgument(
           reqInfo.getCommittedTxId() >= committedTxnId.get(),
           "Client trying to move committed txid backward from " +
@@ -654,6 +659,7 @@ public class Journal implements Closeable {
           break;
         }
       }
+      // 只添加最后一个 edit_inprogress 文件
       if (log != null && log.isInProgress()) {
         logs.add(new RemoteEditLog(log.getStartTxId(), getHighestWrittenTxId(),
             true));

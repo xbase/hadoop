@@ -283,7 +283,8 @@ public class JournalSet implements JournalManager {
     }
     chainAndMakeRedundantStreams(streams, allStreams, fromTxId);
   }
-  
+
+  // 按照segment文件名做聚合
   public static void chainAndMakeRedundantStreams(
       Collection<EditLogInputStream> outStreams,
       PriorityQueue<EditLogInputStream> allStreams, long fromTxId) {
@@ -310,6 +311,7 @@ public class JournalSet implements JournalManager {
               acc.add(elis);
             }
           } else {
+            // 优先使用非inprogress状态的segment文件
             if (accFirst.isInProgress()) {
               acc.clear();
             }
@@ -323,6 +325,7 @@ public class JournalSet implements JournalManager {
           acc.clear();
           acc.add(elis);
         } else if (accFirstTxId > elis.getFirstTxId()) {
+          // allStreams是优先队列，按照firstTxId从小到大排序，所以accFirstTxId应该是最小的
           throw new RuntimeException("sorted set invariants violated!  " +
               "Got stream with first txid " + elis.getFirstTxId() +
               ", but the last firstTxId was " + accFirstTxId);
