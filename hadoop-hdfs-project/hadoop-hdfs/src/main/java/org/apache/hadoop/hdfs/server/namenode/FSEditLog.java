@@ -260,7 +260,8 @@ public class FSEditLog implements LogsPurgeable {
     initJournals(this.sharedEditsDirs);
     state = State.OPEN_FOR_READING;
   }
-  
+
+  // 添加所有的JournalManager对象到JournalSet
   private synchronized void initJournals(List<URI> dirs) {
     int minimumRedundantJournals = conf.getInt(
         DFSConfigKeys.DFS_NAMENODE_EDITS_DIR_MINIMUM_KEY,
@@ -310,6 +311,7 @@ public class FSEditLog implements LogsPurgeable {
     // Safety check: we should never start a segment if there are
     // newer txids readable.
     List<EditLogInputStream> streams = new ArrayList<EditLogInputStream>();
+    // 检查是否有包含segmentTxId的segment文件
     journalSet.selectInputStreams(streams, segmentTxId, true);
     if (!streams.isEmpty()) {
       String error = String.format("Cannot start writing at txid %s " +
@@ -1231,6 +1233,7 @@ public class FSEditLog implements LogsPurgeable {
 
     // TODO no need to link this back to storage anymore!
     // See HDFS-2174.
+    // 试图恢复被摘掉的目录
     storage.attemptRestoreRemovedStorage();
     
     try {

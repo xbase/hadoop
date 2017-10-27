@@ -89,6 +89,7 @@ public abstract class INodeWithAdditionalFields extends INode
    * and {@link #updatePermissionStatus(PermissionStatusFormat, long)}
    * should not modify it.
    */
+  // 使用一个long型，保存权限、组、用户
   private long permission = 0L;
   /** The last modification time*/
   private long modificationTime = 0L;

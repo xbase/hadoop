@@ -118,6 +118,7 @@ public class INodeFile extends INodeWithAdditionalFields
     }
   }
 
+  // 使用一个long型，保存块大小、副本数、存储策略
   private long header = 0L;
 
   private BlockInfoContiguous[] blocks;
