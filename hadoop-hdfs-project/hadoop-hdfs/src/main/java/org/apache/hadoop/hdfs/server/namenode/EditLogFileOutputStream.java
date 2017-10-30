@@ -215,10 +215,12 @@ public class EditLogFileOutputStream extends EditLogOutputStream {
     return doubleBuf.shouldForceSync();
   }
 
+  // 如果editlog文件大小不够，则扩充文件大小
   private void preallocate() throws IOException {
     long position = fc.position();
     long size = fc.size();
     int bufSize = doubleBuf.getReadyBuf().getLength();
+    // 判断需要扩充的大小
     long need = bufSize - (size - position);
     if (need <= 0) {
       return;

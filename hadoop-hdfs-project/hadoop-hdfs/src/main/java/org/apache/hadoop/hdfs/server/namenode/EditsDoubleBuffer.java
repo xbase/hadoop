@@ -70,7 +70,8 @@ public class EditsDoubleBuffer {
     IOUtils.cleanup(null, bufCurrent, bufReady);
     bufCurrent = bufReady = null;
   }
-  
+
+  // 交换缓冲区
   public void setReadyToFlush() {
     assert isFlushed() : "previous data not flushed yet";
     TxnBuffer tmp = bufReady;

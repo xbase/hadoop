@@ -396,6 +396,7 @@ public class JournalSet implements JournalManager {
         closure.apply(jas);
       } catch (Throwable t) {
         if (jas.isRequired()) {
+          // 如果required写失败，则退出进程
           final String msg = "Error: " + status + " failed for required journal ("
             + jas + ")";
           LOG.fatal(msg, t);

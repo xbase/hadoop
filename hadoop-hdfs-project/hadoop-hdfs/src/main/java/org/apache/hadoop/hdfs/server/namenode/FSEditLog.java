@@ -153,9 +153,11 @@ public class FSEditLog implements LogsPurgeable {
   private EditLogOutputStream editLogStream = null;
 
   // a monotonically increasing counter that represents transactionIds.
+  // 全局txid
   private long txid = 0;
 
   // stores the last synced transactionId.
+  // 已经flush到editlog文件的txid
   private long synctxid = 0;
 
   // the first txid of the log that's currently open for writing.
@@ -478,7 +480,8 @@ public class FSEditLog implements LogsPurgeable {
   private boolean shouldForceSync() {
     return editLogStream.shouldForceSync();
   }
-  
+
+  // 全局txid + 1，并保存到ThreadLocal变量中
   private long beginTransaction() {
     assert Thread.holdsLock(this);
     // get a new transactionId
@@ -491,7 +494,8 @@ public class FSEditLog implements LogsPurgeable {
     id.txid = txid;
     return monotonicNow();
   }
-  
+
+  // 更新统计信息
   private void endTransaction(long start) {
     assert Thread.holdsLock(this);
     
@@ -587,6 +591,7 @@ public class FSEditLog implements LogsPurgeable {
     boolean sync = false;
     try {
       EditLogOutputStream logStream = null;
+      // step 1：判断是否需要flush，如果需要则修改标志位(isSyncRunning=true)、交换缓冲区
       synchronized (this) {
         try {
           printStatistics(false);
@@ -641,7 +646,8 @@ public class FSEditLog implements LogsPurgeable {
         //so store a local variable for flush.
         logStream = editLogStream;
       }
-      
+
+      // step 2：flush到editlog文件中
       // do the sync
       long start = monotonicNow();
       try {
@@ -667,6 +673,7 @@ public class FSEditLog implements LogsPurgeable {
       }
       
     } finally {
+      // step 3：恢复标志位(isSyncRunning=false)
       // Prevent RuntimeException from blocking other log edit sync 
       synchronized (this) {
         if (sync) {
