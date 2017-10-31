@@ -205,6 +205,7 @@ public final class FSImageFormatProtobuf {
       FSImageFormatPBSnapshot.Loader snapshotLoader = new FSImageFormatPBSnapshot.Loader(
           fsn, this);
 
+      // 按照Enum顺序，对Section进行排序
       ArrayList<FileSummary.Section> sections = Lists.newArrayList(summary
           .getSectionsList());
       Collections.sort(sections, new Comparator<FileSummary.Section>() {
@@ -447,6 +448,7 @@ public final class FSImageFormatProtobuf {
 
       underlyingOutputStream = new DigestOutputStream(new BufferedOutputStream(
           fout), digester);
+      // 写文件头：magic number
       underlyingOutputStream.write(FSImageUtil.MAGIC_HEADER);
 
       fileChannel = fout.getChannel();
@@ -458,11 +460,13 @@ public final class FSImageFormatProtobuf {
       codec = compression.getImageCodec();
       if (codec != null) {
         b.setCodec(codec.getClass().getCanonicalName());
+        // 使用压缩算法，装饰输出流
         sectionOutputStream = codec.createOutputStream(underlyingOutputStream);
       } else {
         sectionOutputStream = underlyingOutputStream;
       }
 
+      // 保存命名空间基本信息
       saveNameSystemSection(b);
       // Check for cancellation right after serializing the name system section.
       // Some unit tests, such as TestSaveNamespace#testCancelSaveNameSpace
@@ -471,20 +475,25 @@ public final class FSImageFormatProtobuf {
 
       Step step = new Step(StepType.INODES, filePath);
       prog.beginStep(Phase.SAVING_CHECKPOINT, step);
+      // 保存INode信息
       saveInodes(b);
+      // 保存快照信息
       saveSnapshots(b);
       prog.endStep(Phase.SAVING_CHECKPOINT, step);
 
       step = new Step(StepType.DELEGATION_TOKENS, filePath);
       prog.beginStep(Phase.SAVING_CHECKPOINT, step);
+      // 保存安全信息
       saveSecretManagerSection(b);
       prog.endStep(Phase.SAVING_CHECKPOINT, step);
 
       step = new Step(StepType.CACHE_POOLS, filePath);
       prog.beginStep(Phase.SAVING_CHECKPOINT, step);
+      // 保存缓存信息
       saveCacheManagerSection(b);
       prog.endStep(Phase.SAVING_CHECKPOINT, step);
 
+      // 保存字符表
       saveStringTableSection(b);
 
       // We use the underlyingOutputStream to write the header. Therefore flush
@@ -492,6 +501,7 @@ public final class FSImageFormatProtobuf {
       flushSectionOutputStream();
 
       FileSummary summary = b.build();
+      // 保存FileSummary
       saveFileSummary(underlyingOutputStream, summary);
       underlyingOutputStream.close();
       savedDigest = new MD5Hash(digester.digest());
@@ -551,6 +561,7 @@ public final class FSImageFormatProtobuf {
       NameSystemSection s = b.build();
       s.writeDelimitedTo(out);
 
+      // FileSummary添加Section
       commitSection(summary, SectionName.NS_INFO);
     }
 

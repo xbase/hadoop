@@ -333,6 +333,7 @@ public class JournalSet implements JournalManager {
       }
     }
     if (!acc.isEmpty()) {
+      // local editlog 排在前面
       Collections.sort(acc, LOCAL_LOG_PREFERENCE_COMPARATOR);
       outStreams.add(new RedundantEditLogInputStream(acc, fromTxId));
       acc.clear();

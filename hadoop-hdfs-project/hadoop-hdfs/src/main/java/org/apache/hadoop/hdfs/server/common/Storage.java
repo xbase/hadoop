@@ -241,21 +241,21 @@ public abstract class Storage extends StorageInfo {
   
   
   /**
-   * generate storage list (debug line)
-   */
-  public String listStorageDirectories() {
-    StringBuilder buf = new StringBuilder();
-    for (StorageDirectory sd : storageDirs) {
-      buf.append(sd.getRoot() + "(" + sd.getStorageDirType() + ");");
-    }
-    return buf.toString();
-  }
-  
-  /**
    * One of the storage directories.
    */
   @InterfaceAudience.Private
   public static class StorageDirectory implements FormatConfirmable {
+
+    /**
+     * generate storage list (debug line)
+     */
+    public String listStorageDirectories() {
+      StringBuilder buf = new StringBuilder();
+      for (StorageDirectory sd : storageDirs) {
+        buf.append(sd.getRoot() + "(" + sd.getStorageDirType() + ");");
+      }
+      return buf.toString();
+    }
     final File root;              // root directory
     // whether or not this dir is shared between two separate NNs for HA, or
     // between multiple block pools in the case of federation.

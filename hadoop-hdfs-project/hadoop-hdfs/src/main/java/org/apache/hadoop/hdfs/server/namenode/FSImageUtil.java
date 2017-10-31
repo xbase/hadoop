@@ -50,6 +50,7 @@ public final class FSImageUtil {
     return true;
   }
 
+  // 定位到image文件末尾，读取并反序列化FileSummary
   public static FileSummary loadSummary(RandomAccessFile file)
       throws IOException {
     final int FILE_LENGTH_FIELD_SIZE = 4;

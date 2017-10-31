@@ -631,6 +631,7 @@ public class FSImage implements Closeable {
 
     Iterable<EditLogInputStream> editStreams = null;
 
+    // 初始化editlog
     initEditLog(startOpt);
 
     if (NameNodeLayoutVersion.supports(
@@ -649,6 +650,7 @@ public class FSImage implements Closeable {
         // for the rolling upgrade
         toAtLeastTxId = imageFiles.get(0).getCheckpointTxId() + 2;
       }
+      // 选择输入流
       editStreams = editLog.selectInputStreams(
           imageFiles.get(0).getCheckpointTxId() + 1,
           toAtLeastTxId, recovery, false);
@@ -673,6 +675,7 @@ public class FSImage implements Closeable {
     for (int i = 0; i < imageFiles.size(); i++) {
       try {
         imageFile = imageFiles.get(i);
+        // 加载image
         loadFSImageFile(target, recovery, imageFile, startOpt);
         break;
       } catch (IOException ioe) {
@@ -689,6 +692,7 @@ public class FSImage implements Closeable {
     prog.endPhase(Phase.LOADING_FSIMAGE);
     
     if (!rollingRollback) {
+      // 合并edits
       long txnsAdvanced = loadEdits(editStreams, target, startOpt, recovery);
       needToSave |= needsResaveBasedOnStaleCheckpoint(imageFile.getFile(),
           txnsAdvanced);
@@ -731,12 +735,14 @@ public class FSImage implements Closeable {
     StorageDirectory sdForProperties = imageFile.sd;
     storage.readProperties(sdForProperties, startupOption);
 
+    // 根据layoutVersion选择load方法
     if (NameNodeLayoutVersion.supports(
         LayoutVersion.Feature.TXID_BASED_LAYOUT, getLayoutVersion())) {
       // For txid-based layout, we should have a .md5 file
       // next to the image file
       boolean isRollingRollback = RollingUpgradeStartupOption.ROLLBACK
           .matches(startupOption);
+      // 当前版本使用的load方法
       loadFSImage(imageFile.getFile(), target, recovery, isRollingRollback);
     } else if (NameNodeLayoutVersion.supports(
         LayoutVersion.Feature.FSIMAGE_CHECKSUM, getLayoutVersion())) {
@@ -757,6 +763,7 @@ public class FSImage implements Closeable {
     }
   }
 
+  // 根据条件初始化editlog
   public void initEditLog(StartupOption startOpt) throws IOException {
     Preconditions.checkState(getNamespaceID() != 0,
         "Must know namespace ID before initting edit log");
@@ -1161,11 +1168,13 @@ public class FSImage implements Closeable {
       for (Iterator<StorageDirectory> it
              = storage.dirIterator(NameNodeDirType.IMAGE); it.hasNext();) {
         StorageDirectory sd = it.next();
+        // 一个目录一个线程
         FSImageSaver saver = new FSImageSaver(ctx, sd, nnf);
         Thread saveThread = new Thread(saver, saver.toString());
         saveThreads.add(saveThread);
         saveThread.start();
       }
+      // 等待所有线程执行结束
       waitForThreads(saveThreads);
       saveThreads.clear();
       storage.reportErrorsOnDirectories(ctx.getErrorSDs());
@@ -1179,7 +1188,10 @@ public class FSImage implements Closeable {
         ctx.checkCancelled(); // throws
         assert false : "should have thrown above!";
       }
-  
+
+      // 重命名
+      // fsimage.ckpt_endTxId -> fsimage_endTxId
+      // fsimage.ckpt_endTxId.md5 -> fsimage_endTxId.md5
       renameCheckpoint(txid, NameNodeFile.IMAGE_NEW, nnf, false);
   
       // Since we now have a new checkpoint, we can clean up some
