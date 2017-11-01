@@ -182,6 +182,7 @@ public class StandbyCheckpointer {
       } else {
         imageType = NameNodeFile.IMAGE;
       }
+      // 生成fsimage文件
       img.saveNamespace(namesystem, imageType, canceler);
       txid = img.getStorage().getMostRecentCheckpointTxId();
       assert txid == thisCheckpointTxId : "expected to save checkpoint at txid=" +
@@ -204,6 +205,7 @@ public class StandbyCheckpointer {
     Future<Void> upload = executor.submit(new Callable<Void>() {
       @Override
       public Void call() throws IOException {
+        // 使用HTTP PUT方法把最新的fsimage发送给Active
         TransferFsImage.uploadImageFromStorage(activeNNAddress, conf,
             namesystem.getFSImage().getStorage(), imageType, txid, canceler);
         return null;
@@ -327,12 +329,14 @@ public class StandbyCheckpointer {
           if (needCheckpoint) {
             LOG.info("Triggering a rollback fsimage for rolling upgrade.");
           } else if (uncheckpointed >= checkpointConf.getTxnCount()) {
+            // 未合并的editlog数量，达到配置条件
             LOG.info("Triggering checkpoint because there have been " + 
                 uncheckpointed + " txns since the last checkpoint, which " +
                 "exceeds the configured threshold " +
                 checkpointConf.getTxnCount());
             needCheckpoint = true;
           } else if (secsSinceLast >= checkpointConf.getPeriod()) {
+            // 时间间隔，达到配置条件
             LOG.info("Triggering checkpoint because it has been " +
                 secsSinceLast + " seconds since the last checkpoint, which " +
                 "exceeds the configured interval " + checkpointConf.getPeriod());
@@ -340,6 +344,7 @@ public class StandbyCheckpointer {
           }
           
           synchronized (cancelLock) {
+            // HA切换的时候，会设置preventCheckpointsUntil，用来跳过本次的checkpoint
             if (now < preventCheckpointsUntil) {
               LOG.info("But skipping this checkpoint since we are about to failover!");
               canceledCount++;

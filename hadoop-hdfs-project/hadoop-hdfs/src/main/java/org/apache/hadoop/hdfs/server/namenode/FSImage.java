@@ -1100,6 +1100,7 @@ public class FSImage implements Closeable {
     boolean editLogWasOpen = editLog.isSegmentOpen();
     
     if (editLogWasOpen) {
+      // Step 1：先把inprogress状态的segment文件转变为final
       editLog.endCurrentLogSegment(true);
     }
     long imageTxId = getLastAppliedOrWrittenTxId();
@@ -1109,10 +1110,12 @@ public class FSImage implements Closeable {
     }
     try {
       try {
+        // Step 2：使用当前内存中的命名空间信息，生成fsimage文件
         saveFSImageInAllDirs(source, nnf, imageTxId, canceler);
         storage.writeAll();
       } finally {
         if (editLogWasOpen) {
+          // Step 3：开启新的segment文件
           editLog.startLogSegment(imageTxId + 1, true);
           // Take this opportunity to note the current transaction.
           // Even if the namespace save was cancelled, this marker
