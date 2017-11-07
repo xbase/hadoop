@@ -2619,6 +2619,7 @@ public abstract class FileSystem extends Configured implements Closeable {
   private static void loadFileSystems() {
     synchronized (FileSystem.class) {
       if (!FILE_SYSTEMS_LOADED) {
+        // 加载 FileSystem 的所有子类
         ServiceLoader<FileSystem> serviceLoader = ServiceLoader.load(FileSystem.class);
         for (FileSystem fs : serviceLoader) {
           SERVICE_FILE_SYSTEMS.put(fs.getScheme(), fs.getClass());

@@ -642,6 +642,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
     this.conf = conf;
     this.stats = stats;
     this.socketFactory = NetUtils.getSocketFactory(conf, ClientProtocol.class);
+    // pipeline recovery时，DataNode的替换策略
     this.dtpReplaceDatanodeOnFailure = ReplaceDatanodeOnFailure.get(conf);
 
     this.ugi = UserGroupInformation.getCurrentUser();
@@ -663,7 +664,8 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
           nameNodeUri, ClientProtocol.class, numResponseToDrop,
           nnFallbackToSimpleAuth);
     }
-    
+
+    // 初始化NameNode RPC
     if (proxyInfo != null) {
       this.dtService = proxyInfo.getDelegationTokenService();
       this.namenode = proxyInfo.getProxy();
@@ -689,7 +691,8 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
       Joiner.on(',').join(localInterfaces)+ "] with addresses [" +
       Joiner.on(',').join(localInterfaceAddrs) + "]");
     }
-    
+
+    // 初始化caching相关属性
     Boolean readDropBehind = (conf.get(DFS_CLIENT_CACHE_DROP_BEHIND_READS) == null) ?
         null : conf.getBoolean(DFS_CLIENT_CACHE_DROP_BEHIND_READS, false);
     Long readahead = (conf.get(DFS_CLIENT_CACHE_READAHEAD) == null) ?
@@ -703,9 +706,13 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
     this.clientContext = ClientContext.get(
         conf.get(DFS_CLIENT_CONTEXT, DFS_CLIENT_CONTEXT_DEFAULT),
         dfsClientConf);
+
+    // 初始化hedge read相关属性，对冲读：如果读取一个数据块的操作比较慢，DFSClient将会开启一个线程从另一个副本读。然后选取先完成的操作，并取消其它操作
+    // 开启一个Hedged读的等待时间
     this.hedgedReadThresholdMillis = conf.getLong(
         DFSConfigKeys.DFS_DFSCLIENT_HEDGED_READ_THRESHOLD_MILLIS,
         DFSConfigKeys.DEFAULT_DFSCLIENT_HEDGED_READ_THRESHOLD_MILLIS);
+    // 并发Hedged读的线程池大小
     int numThreads = conf.getInt(
         DFSConfigKeys.DFS_DFSCLIENT_HEDGED_READ_THREADPOOL_SIZE,
         DFSConfigKeys.DEFAULT_DFSCLIENT_HEDGED_READ_THREADPOOL_SIZE);

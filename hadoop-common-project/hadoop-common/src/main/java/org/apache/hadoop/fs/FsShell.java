@@ -89,6 +89,7 @@ public class FsShell extends Configured implements Tool {
       commandFactory = new CommandFactory(getConf());
       commandFactory.addObject(new Help(), "-help");
       commandFactory.addObject(new Usage(), "-usage");
+      // 注册 fs 命令
       registerCommands(commandFactory);
     }
   }

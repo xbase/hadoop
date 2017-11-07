@@ -47,6 +47,7 @@ import com.google.common.annotations.VisibleForTesting;
 @InterfaceAudience.Private
 public class RetryInvocationHandler<T> implements RpcInvocationHandler {
   public static final Log LOG = LogFactory.getLog(RetryInvocationHandler.class);
+  // default : ConfiguredFailoverProxyProvider
   private final FailoverProxyProvider<T> proxyProvider;
 
   /**
@@ -54,8 +55,10 @@ public class RetryInvocationHandler<T> implements RpcInvocationHandler {
    */
   private long proxyProviderFailoverCount = 0;
   private volatile boolean hasMadeASuccessfulCall = false;
-  
+
+  // default : FailoverOnNetworkExceptionRetry
   private final RetryPolicy defaultPolicy;
+  // default : emptyMap
   private final Map<String,RetryPolicy> methodNameToPolicyMap;
   private ProxyInfo<T> currentProxy;
 
@@ -99,6 +102,7 @@ public class RetryInvocationHandler<T> implements RpcInvocationHandler {
         Client.setCallIdAndRetryCount(callId, retries);
       }
       try {
+        // 反射调用原方法
         Object ret = invokeMethod(method, args);
         hasMadeASuccessfulCall = true;
         return ret;
@@ -107,6 +111,7 @@ public class RetryInvocationHandler<T> implements RpcInvocationHandler {
           // If interrupted, do not retry.
           throw e;
         }
+        // 是否是 幂等或可调用至多一次 的方法
         boolean isIdempotentOrAtMostOnce = proxyProvider.getInterface()
             .getMethod(method.getName(), method.getParameterTypes())
             .isAnnotationPresent(Idempotent.class);
@@ -143,6 +148,7 @@ public class RetryInvocationHandler<T> implements RpcInvocationHandler {
             msg += ". Trying to fail over " + formatSleepMessage(action.delayMillis);
             LOG.info(msg, e);
           } else {
+            // 首次failover，会打印一个debug日志
             if(LOG.isDebugEnabled()) {
               LOG.debug("Exception while invoking " + method.getName()
                   + " of class " + currentProxy.proxy.getClass().getSimpleName()
@@ -159,7 +165,9 @@ public class RetryInvocationHandler<T> implements RpcInvocationHandler {
             // Make sure that concurrent failed method invocations only cause a
             // single actual fail over.
             synchronized (proxyProvider) {
+              // 双重锁检验，避免执行多次failover切换
               if (invocationAttemptFailoverCount == proxyProviderFailoverCount) {
+                // failover切换
                 proxyProvider.performFailover(currentProxy.proxy);
                 proxyProviderFailoverCount++;
               } else {

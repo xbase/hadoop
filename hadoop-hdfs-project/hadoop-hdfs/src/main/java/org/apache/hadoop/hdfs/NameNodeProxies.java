@@ -167,6 +167,7 @@ public class NameNodeProxies {
   public static <T> ProxyAndInfo<T> createProxy(Configuration conf,
       URI nameNodeUri, Class<T> xface, AtomicBoolean fallbackToSimpleAuth)
       throws IOException {
+    // 创建failover代理
     AbstractNNFailoverProxyProvider<T> failoverProxyProvider =
         createFailoverProxyProvider(conf, nameNodeUri, xface, true,
           fallbackToSimpleAuth);
@@ -403,6 +404,7 @@ public class NameNodeProxies {
       InetSocketAddress address, Configuration conf, UserGroupInformation ugi,
       boolean withRetries, AtomicBoolean fallbackToSimpleAuth)
       throws IOException {
+    // 设置ProtobufRpcEngine配置
     RPC.setProtocolEngine(conf, ClientNamenodeProtocolPB.class, ProtobufRpcEngine.class);
 
     final RetryPolicy defaultPolicy = 
@@ -425,7 +427,8 @@ public class NameNodeProxies {
 
       Map<String, RetryPolicy> methodNameToPolicyMap 
                  = new HashMap<String, RetryPolicy>();
-    
+
+      // 将ClientProtocol的请求转换为ClientNamenodeProtocolPB的请求
       ClientProtocol translatorProxy =
         new ClientNamenodeProtocolTranslatorPB(proxy);
       return (ClientProtocol) RetryProxy.create(

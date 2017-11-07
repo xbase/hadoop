@@ -520,11 +520,16 @@ public class RetryPolicies {
    * Fall back on underlying retry policy otherwise.
    */
   static class FailoverOnNetworkExceptionRetry implements RetryPolicy {
-    
+
+    // default : RetryPolicies.TRY_ONCE_THEN_FAIL
     private RetryPolicy fallbackPolicy;
+    // default : 15 failover上限
     private int maxFailovers;
+    // default : 10 重试上限（重试：指的是对当前NameNode重新发送一个RPC调用）
     private int maxRetries;
+    // default : 500
     private long delayMillis;
+    // default : 15000
     private long maxDelayBase;
     
     public FailoverOnNetworkExceptionRetry(RetryPolicy fallbackPolicy,
