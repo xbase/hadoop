@@ -84,7 +84,8 @@ public class ConfiguredFailoverProxyProvider<T> extends
     
     try {
       ugi = UserGroupInformation.getCurrentUser();
-      
+
+      // a map(nameserviceId to map(namenodeId to InetSocketAddress))
       Map<String, Map<String, InetSocketAddress>> map = DFSUtil.getHaNnRpcAddresses(
           conf);
       Map<String, InetSocketAddress> addressesInNN = map.get(uri.getHost());

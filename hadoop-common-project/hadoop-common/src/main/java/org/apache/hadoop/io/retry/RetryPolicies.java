@@ -591,6 +591,7 @@ public class RetryPolicies {
         if (isIdempotentOrAtMostOnce) {
           return RetryAction.FAILOVER_AND_RETRY;
         } else {
+          // 不确定服务端是否执行，而且方法不是幂等
           return new RetryAction(RetryAction.RetryDecision.FAIL, 0,
               "the invoked method is not idempotent, and unable to determine "
                   + "whether it was invoked");
