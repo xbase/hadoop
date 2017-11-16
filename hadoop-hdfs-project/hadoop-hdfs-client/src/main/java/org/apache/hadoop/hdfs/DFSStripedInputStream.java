@@ -295,12 +295,12 @@ public class DFSStripedInputStream extends DFSInputStream {
     resetCurStripeBuffer();
 
     // compute stripe range based on pos
-    final long offsetInBlockGroup = getOffsetInBlockGroup();
+    final long offsetInBlockGroup = getOffsetInBlockGroup(); // stripe 组内偏移量
     final long stripeLen = cellSize * dataBlkNum;
     final int stripeIndex = (int) (offsetInBlockGroup / stripeLen);
     final int stripeBufOffset = (int) (offsetInBlockGroup % stripeLen);
     final int stripeLimit = (int) Math.min(currentLocatedBlock.getBlockSize()
-        - (stripeIndex * stripeLen), stripeLen);
+        - (stripeIndex * stripeLen), stripeLen); // 当前 stripe 的真实长度
     StripeRange stripeRange =
         new StripeRange(offsetInBlockGroup, stripeLimit - stripeBufOffset);
 
@@ -374,6 +374,7 @@ public class DFSStripedInputStream extends DFSInputStream {
     if (pos < getFileLength()) {
       try {
         if (pos > blockEnd) {
+          // 一个block group读完，找下一个block group
           blockSeekTo(pos);
         }
         int realLen = (int) Math.min(len, (blockEnd - pos + 1L));

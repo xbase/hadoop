@@ -1059,6 +1059,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
       LocatedBlocks locatedBlocks = getLocatedBlocks(src, 0);
       if (locatedBlocks != null) {
         ErasureCodingPolicy ecPolicy = locatedBlocks.getErasureCodingPolicy();
+        // 判断是否是EC文件
         if (ecPolicy != null) {
           return new DFSStripedInputStream(this, src, verifyChecksum, ecPolicy,
               locatedBlocks);
