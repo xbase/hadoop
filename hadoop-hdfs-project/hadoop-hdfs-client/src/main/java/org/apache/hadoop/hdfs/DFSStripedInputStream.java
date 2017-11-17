@@ -225,6 +225,7 @@ public class DFSStripedInputStream extends DFSInputStream {
     }
   }
 
+  // 当前pos在block group中的offset
   private long getOffsetInBlockGroup() {
     return getOffsetInBlockGroup(pos);
   }
@@ -295,10 +296,10 @@ public class DFSStripedInputStream extends DFSInputStream {
     resetCurStripeBuffer();
 
     // compute stripe range based on pos
-    final long offsetInBlockGroup = getOffsetInBlockGroup(); // stripe 组内偏移量
+    final long offsetInBlockGroup = getOffsetInBlockGroup();
     final long stripeLen = cellSize * dataBlkNum;
-    final int stripeIndex = (int) (offsetInBlockGroup / stripeLen);
-    final int stripeBufOffset = (int) (offsetInBlockGroup % stripeLen);
+    final int stripeIndex = (int) (offsetInBlockGroup / stripeLen);//当前block group的第几个stripe
+    final int stripeBufOffset = (int) (offsetInBlockGroup % stripeLen);//当前pos在stripe中的offset
     final int stripeLimit = (int) Math.min(currentLocatedBlock.getBlockSize()
         - (stripeIndex * stripeLen), stripeLen); // 当前 stripe 的真实长度
     StripeRange stripeRange =
@@ -349,6 +350,7 @@ public class DFSStripedInputStream extends DFSInputStream {
     blockEnd = -1;
   }
 
+  // 当前pos在一个stripe中的offset
   private int getStripedBufOffset(long offsetInBlockGroup) {
     final long stripeLen = cellSize * dataBlkNum;
     // compute the position in the curStripeBuf based on "pos"
@@ -377,6 +379,7 @@ public class DFSStripedInputStream extends DFSInputStream {
           // 一个block group读完，找下一个block group
           blockSeekTo(pos);
         }
+        // block的最后一段长度，可能不足len
         int realLen = (int) Math.min(len, (blockEnd - pos + 1L));
         synchronized (infoLock) {
           if (locatedBlocks.isLastBlockComplete()) {
@@ -391,6 +394,7 @@ public class DFSStripedInputStream extends DFSInputStream {
           if (!curStripeRange.include(getOffsetInBlockGroup())) {
             readOneStripe(corruptedBlocks);
           }
+          // 从curStripeBuf读取数据到buffer中
           int ret = copyToTargetBuf(strategy, realLen - result);
           result += ret;
           pos += ret;

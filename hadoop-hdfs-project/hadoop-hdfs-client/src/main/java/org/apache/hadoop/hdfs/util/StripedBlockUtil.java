@@ -305,11 +305,11 @@ public class StripedBlockUtil {
     final int dataBlkNum = ecPolicy.getNumDataUnits();
     // Step 1: map the byte range to StripingCells
     StripingCell[] cells = getStripingCellsOfByteRange(ecPolicy, cellSize,
-        blockGroup, rangeStartInBlockGroup, rangeEndInBlockGroup);
+        blockGroup, rangeStartInBlockGroup, rangeEndInBlockGroup); // 一个stripe的所有data cell
 
     // Step 2: get the unmerged ranges on each internal block
     VerticalRange[] ranges = getRangesForInternalBlocks(ecPolicy, cellSize,
-        cells);
+        cells); // 每个cell在internal block的范围
 
     // Step 3: merge into stripes
     AlignedStripe[] stripes = mergeRangesForInternalBlocks(ecPolicy, ranges);
@@ -397,13 +397,14 @@ public class StripedBlockUtil {
     Preconditions.checkArgument(
         rangeStartInBlockGroup <= rangeEndInBlockGroup &&
             rangeEndInBlockGroup < blockGroup.getBlockSize());
-    long len = rangeEndInBlockGroup - rangeStartInBlockGroup + 1;
+    long len = rangeEndInBlockGroup - rangeStartInBlockGroup + 1; // striping len
     int firstCellIdxInBG = (int) (rangeStartInBlockGroup / cellSize);
     int lastCellIdxInBG = (int) (rangeEndInBlockGroup / cellSize);
     int numCells = lastCellIdxInBG - firstCellIdxInBG + 1;
     StripingCell[] cells = new StripingCell[numCells];
 
     final int firstCellOffset = (int) (rangeStartInBlockGroup % cellSize);
+    // 可能是最后一个strping，剩余的长度不足一个cell
     final int firstCellSize =
         (int) Math.min(cellSize - (rangeStartInBlockGroup % cellSize), len);
     cells[0] = new StripingCell(ecPolicy, firstCellSize, firstCellIdxInBG,
@@ -691,6 +692,7 @@ public class StripedBlockUtil {
    * |     |
    * +-----+
    */
+  // 一个stripe在每个internal block中的cell范围
   public static class VerticalRange {
     /** start offset in the block group (inclusive). */
     public long offsetInBlock;
