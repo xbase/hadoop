@@ -254,6 +254,7 @@ public class DFSStripedInputStream extends DFSInputStream {
         if (dnInfo == null) {
           break;
         }
+        // 构造BlockReader，和读多副本逻辑一样
         reader = getBlockReader(block, offsetInBlock,
             block.getBlockSize() - offsetInBlock,
             dnInfo.addr, dnInfo.storageType, dnInfo.info);
@@ -306,9 +307,13 @@ public class DFSStripedInputStream extends DFSInputStream {
         new StripeRange(offsetInBlockGroup, stripeLimit - stripeBufOffset);
 
     LocatedStripedBlock blockGroup = (LocatedStripedBlock) currentLocatedBlock;
+    // 计算出一个stripe的信息
+    // 1、每个cell（包括parity cell）在internal block中的范围
+    // 2、每个cell在block group中的offset
     AlignedStripe[] stripes = StripedBlockUtil.divideOneStripe(ecPolicy,
         cellSize, blockGroup, offsetInBlockGroup,
         offsetInBlockGroup + stripeRange.getLength() - 1, curStripeBuf);
+    // 每个block的信息
     final LocatedBlock[] blks = StripedBlockUtil.parseStripedBlockGroup(
         blockGroup, cellSize, dataBlkNum, parityBlkNum);
     // read the whole stripe
@@ -316,6 +321,7 @@ public class DFSStripedInputStream extends DFSInputStream {
       // Parse group to get chosen DN location
       StripeReader sreader = new StatefulStripeReader(stripe, ecPolicy, blks,
           blockReaders, corruptedBlocks, decoder, this);
+      // 读数据到curStripeBuf中
       sreader.readStripe();
     }
     curStripeBuf.position(stripeBufOffset);
@@ -392,6 +398,7 @@ public class DFSStripedInputStream extends DFSInputStream {
         int result = 0;
         while (result < realLen) {
           if (!curStripeRange.include(getOffsetInBlockGroup())) {
+            // 读数据到curStripeBuf中
             readOneStripe(corruptedBlocks);
           }
           // 从curStripeBuf读取数据到buffer中

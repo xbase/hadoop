@@ -309,7 +309,7 @@ public class StripedBlockUtil {
 
     // Step 2: get the unmerged ranges on each internal block
     VerticalRange[] ranges = getRangesForInternalBlocks(ecPolicy, cellSize,
-        cells); // 每个cell在internal block的范围
+        cells); // 每个cell（包括parity cell）在internal block中的范围
 
     // Step 3: merge into stripes
     AlignedStripe[] stripes = mergeRangesForInternalBlocks(ecPolicy, ranges);
@@ -323,6 +323,7 @@ public class StripedBlockUtil {
       long cellEnd = cellStart + cell.size - 1;
       for (AlignedStripe s : stripes) {
         long stripeEnd = s.getOffsetInBlock() + s.getSpanInBlock() - 1;
+        // 被拆分的AlignedStripe开始位置
         long overlapStart = Math.max(cellStart, s.getOffsetInBlock());
         long overlapEnd = Math.min(cellEnd, stripeEnd);
         int overLapLen = (int) (overlapEnd - overlapStart + 1);
@@ -397,14 +398,14 @@ public class StripedBlockUtil {
     Preconditions.checkArgument(
         rangeStartInBlockGroup <= rangeEndInBlockGroup &&
             rangeEndInBlockGroup < blockGroup.getBlockSize());
-    long len = rangeEndInBlockGroup - rangeStartInBlockGroup + 1; // striping len
+    long len = rangeEndInBlockGroup - rangeStartInBlockGroup + 1; // stripe的长度
     int firstCellIdxInBG = (int) (rangeStartInBlockGroup / cellSize);
     int lastCellIdxInBG = (int) (rangeEndInBlockGroup / cellSize);
     int numCells = lastCellIdxInBG - firstCellIdxInBG + 1;
     StripingCell[] cells = new StripingCell[numCells];
 
     final int firstCellOffset = (int) (rangeStartInBlockGroup % cellSize);
-    // 可能是最后一个strping，剩余的长度不足一个cell
+    // 最后一个stripe剩余的长度不足一个cell
     final int firstCellSize =
         (int) Math.min(cellSize - (rangeStartInBlockGroup % cellSize), len);
     cells[0] = new StripingCell(ecPolicy, firstCellSize, firstCellIdxInBG,
@@ -454,6 +455,7 @@ public class StripedBlockUtil {
       }
     }
 
+    // parity cell的长度 = 最大data cell的长度（严谨的描述：从data cell的最小开始位置，到data cell的最大结束位置）
     // Each parity block should be fetched at maximum range of all data blocks
     for (int i = dataBlkNum; i < dataBlkNum + parityBlkNum; i++) {
       ranges[i] = new VerticalRange(earliestStart,
@@ -545,6 +547,7 @@ public class StripedBlockUtil {
       for (int i = 0; i < dataBlkNum; i++) {
         long internalBlkLen = getInternalBlockLength(blockGroup.getBlockSize(),
             cellSize, dataBlkNum, i);
+        // cell的开始位置 大于 内部块的长度，cell填充0
         if (internalBlkLen <= s.getOffsetInBlock()) {
           Preconditions.checkState(s.chunks[i] == null);
           s.chunks[i] = new StripingChunk(StripingChunk.ALLZERO);
@@ -575,6 +578,7 @@ public class StripedBlockUtil {
    * and size align with the cell used when writing data.
    * TODO: consider parity cells
    */
+  // stripe中一个cell的基本信息
   @VisibleForTesting
   static class StripingCell {
     final ErasureCodingPolicy ecPolicy;
@@ -640,6 +644,23 @@ public class StripedBlockUtil {
    * completely outside the requested byte range.
    */
   public static class AlignedStripe {
+    /**
+     不完整的data cell，会被拆分为两个AlignedStripe，如下图AlignedStripe2、AlignedStripe3描述：
+     |<-------- Striped Block Group -------->|
+     blk_0   blk_1   blk_2      blk_3   blk_4
+     +----+  +----+  +----+  |  |~~~~|  |~~~~|
+     |full|  |full|  |full|  |  |    |  |    |
+     |cell|  |cell|  |cell|  |  |    |  |    | <- AlignedStripe0 (full stripe)
+     |    |  |    |  |    |  |  |    |  |    |
+     +----+  +----+  +----+  |  |~~~~|  |~~~~|
+     |full|  |part|          |  |    |  |    | <- AlignedStripe2: byte range
+     |~~~~|  +----+          |  |~~~~|  |~~~~|      doesn't end at last block
+     |    |                  |  |    |  |    | <- AlignedStripe3:
+     +----+                  |  +----+  +----+      last cell is partial
+     |
+     <---- data blocks ----> | <--- parity --->
+     */
+    // 同一个AlignedStripe中，cell（包括parity cell）在internal block中的范围
     public VerticalRange range;
     /** status of each chunk in the stripe. */
     public final StripingChunk[] chunks;
@@ -692,7 +713,7 @@ public class StripedBlockUtil {
    * |     |
    * +-----+
    */
-  // 一个stripe在每个internal block中的cell范围
+  // 一个cell在internal block中的范围
   public static class VerticalRange {
     /** start offset in the block group (inclusive). */
     public long offsetInBlock;
@@ -726,6 +747,7 @@ public class StripedBlockUtil {
    * +---------+  +---------+               |  +----+  +----+
    * <----------- data blocks ------------> | <--- parity --->
    */
+  // stripe中一个cell的读取状态，以及在block group中的位置和长度
   public static class StripingChunk {
     /** Chunk has been successfully fetched */
     public static final int FETCHED = 0x01;
@@ -754,6 +776,7 @@ public class StripedBlockUtil {
     public int state = REQUESTED;
 
     private final ChunkByteBuffer chunkBuffer;
+    // 在block group中的位置和长度
     private final ByteBuffer byteBuffer;
 
     public StripingChunk() {

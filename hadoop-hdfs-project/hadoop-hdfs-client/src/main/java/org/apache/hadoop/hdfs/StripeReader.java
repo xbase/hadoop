@@ -302,6 +302,7 @@ abstract class StripeReader {
     }
 
     chunk.state = StripingChunk.PENDING;
+    // 读cell任务
     Callable<Void> readCallable = readCells(readerInfos[chunkIndex].reader,
         readerInfos[chunkIndex].datanode,
         readerInfos[chunkIndex].blockReaderOffset,
@@ -317,6 +318,7 @@ abstract class StripeReader {
    * read the whole stripe. do decoding if necessary
    */
   void readStripe() throws IOException {
+    // 读取data cell信息，多个读取任务注册到线程池，实现并发读取
     for (int i = 0; i < dataBlkNum; i++) {
       if (alignedStripe.chunks[i] != null &&
           alignedStripe.chunks[i].state != StripingChunk.ALLZERO) {
@@ -328,9 +330,11 @@ abstract class StripeReader {
     // There are missing block locations at this stage. Thus we need to read
     // the full stripe and one more parity block.
     if (alignedStripe.missingChunksNum > 0) {
+      // 检查missing data cell的数量，是否超过parity cell的数量
       checkMissingBlocks();
       readDataForDecoding();
       // read parity chunks
+      // 有几个missing data cell，读取几个parity cell
       readParityChunks(alignedStripe.missingChunksNum);
     }
     // TODO: for a full stripe we can start reading (dataBlkNum + 1) chunks
@@ -339,6 +343,7 @@ abstract class StripeReader {
     // first read failure
     while (!futures.isEmpty()) {
       try {
+        // 获取一个cell读取结果
         StripingChunkReadResult r = StripedBlockUtil
             .getNextCompletedStripedRead(service, futures, 0);
         if (DFSClient.LOG.isDebugEnabled()) {
@@ -411,7 +416,7 @@ abstract class StripeReader {
    */
   void decodeAndFillBuffer(boolean fillBuffer) throws IOException {
     // Step 1: prepare indices and output buffers for missing data units
-    int[] decodeIndices = prepareErasedIndices();
+    int[] decodeIndices = prepareErasedIndices();// missing cell下标
 
     final int decodeChunkNum = decodeIndices.length;
     ECChunk[] outputs = new ECChunk[decodeChunkNum];
