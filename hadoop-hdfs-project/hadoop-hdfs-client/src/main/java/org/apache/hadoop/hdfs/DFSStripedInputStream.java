@@ -310,6 +310,7 @@ public class DFSStripedInputStream extends DFSInputStream {
     // 计算出一个stripe的信息
     // 1、每个cell（包括parity cell）在internal block中的范围
     // 2、每个cell在block group中的offset
+    // 3、对齐data cell，如果某个data cell长度不足cell size，补零处理
     AlignedStripe[] stripes = StripedBlockUtil.divideOneStripe(ecPolicy,
         cellSize, blockGroup, offsetInBlockGroup,
         offsetInBlockGroup + stripeRange.getLength() - 1, curStripeBuf);
@@ -385,7 +386,7 @@ public class DFSStripedInputStream extends DFSInputStream {
           // 一个block group读完，找下一个block group
           blockSeekTo(pos);
         }
-        // block的最后一段长度，可能不足len
+        // block group的剩余长度，可能不足len
         int realLen = (int) Math.min(len, (blockEnd - pos + 1L));
         synchronized (infoLock) {
           if (locatedBlocks.isLastBlockComplete()) {
@@ -401,7 +402,7 @@ public class DFSStripedInputStream extends DFSInputStream {
             // 读数据到curStripeBuf中
             readOneStripe(corruptedBlocks);
           }
-          // 从curStripeBuf读取数据到buffer中
+          // 从curStripeBuf读取数据到target buffer中
           int ret = copyToTargetBuf(strategy, realLen - result);
           result += ret;
           pos += ret;
@@ -461,6 +462,7 @@ public class DFSStripedInputStream extends DFSInputStream {
   }
 
   private LocatedStripedBlock getBlockGroupAt(long offset) throws IOException {
+    // 和三副本模式逻辑一样
     LocatedBlock lb = super.getBlockAt(offset);
     assert lb instanceof LocatedStripedBlock : "NameNode" +
         " should return a LocatedStripedBlock for a striped file";

@@ -312,7 +312,7 @@ public class StripedBlockUtil {
         cells); // 每个cell（包括parity cell）在internal block中的范围
 
     // Step 3: merge into stripes
-    AlignedStripe[] stripes = mergeRangesForInternalBlocks(ecPolicy, ranges);
+    AlignedStripe[] stripes = mergeRangesForInternalBlocks(ecPolicy, ranges);// 拆分对齐stripe
 
     // Step 4: calculate each chunk's position in destination buffer. Since the
     // whole read range is within a single stripe, the logic is simpler here.
@@ -339,7 +339,7 @@ public class StripedBlockUtil {
     }
 
     // Step 5: prepare ALLZERO blocks
-    prepareAllZeroChunks(blockGroup, stripes, cellSize, dataBlkNum);
+    prepareAllZeroChunks(blockGroup, stripes, cellSize, dataBlkNum);// 补零
     return stripes;
   }
 

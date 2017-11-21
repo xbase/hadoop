@@ -77,8 +77,11 @@ interface ReaderStrategy {
 class ByteArrayStrategy implements ReaderStrategy {
   private final DFSClient dfsClient;
   private final ReadStatistics readStatistics;
+  // 读的数据，存储到这个buf
   private final byte[] readBuf;
+  // 开始位置
   private int offset;
+  // 需要读的长度
   private final int targetLength;
 
   /**
