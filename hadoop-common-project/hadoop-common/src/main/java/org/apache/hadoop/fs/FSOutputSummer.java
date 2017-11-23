@@ -116,6 +116,8 @@ abstract public class FSOutputSummer extends OutputStream {
    * Write a portion of an array, flushing to the underlying
    * stream at most once if necessary.
    */
+  // 如果将要发送的数据 b[] 大于等于 local buffer 的大小，则直接发送
+  // 否则，先存到 local buffer 中，当达到 local buffer 的大小之后，再发送
   private int write1(byte b[], int off, int len) throws IOException {
     if(count==0 && len>=buf.length) {
       // local buffer is empty and user buffer size >= local buffer size, so

@@ -212,6 +212,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
       }
 
       checksumArrays = new byte[numParityBlocks][];
+      // checksumSize * checksumNum
       final int size = getChecksumSize() * (cellSize / bytesPerChecksum);
       for (int i = 0; i < checksumArrays.length; i++) {
         checksumArrays[i] = new byte[size];
@@ -566,6 +567,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
           checkStreamerFailures();
         }
       }
+      // 一个cell buffer写满，切换到下一个
       setCurrentStreamer(next);
     }
   }
@@ -1079,6 +1081,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
     cellBuffers.clear();
   }
 
+  // parity streamer 如果都不健康，才会返回 false
   private boolean checkAnyParityStreamerIsHealthy() {
     for (int i = numDataBlocks; i < numAllBlocks; i++) {
       if (streamers.get(i).isHealthy()) {
