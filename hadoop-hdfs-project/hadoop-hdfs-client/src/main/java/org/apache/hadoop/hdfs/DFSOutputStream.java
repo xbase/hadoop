@@ -488,7 +488,9 @@ public class DFSOutputStream extends FSOutputSummer
             + " appendChunk={}, {}", currentPacket, src, getStreamer()
             .getBytesCurBlock(), blockSize, getStreamer().getAppendChunk(),
         getStreamer());
+    // 把currentPacket放入dataQueue
     enqueueCurrentPacket();
+    // append时候的逻辑
     adjustChunkBoundary();
     endBlock();
   }
@@ -544,6 +546,7 @@ public class DFSOutputStream extends FSOutputSummer
   void endBlock() throws IOException {
     if (getStreamer().getBytesCurBlock() == blockSize) {
       setCurrentPacketToEmpty();
+      // currentPacket对象不为null，内容为空
       enqueueCurrentPacket();
       getStreamer().setBytesCurBlock(0);
       lastFlushOffset = 0;
@@ -972,6 +975,7 @@ public class DFSOutputStream extends FSOutputSummer
       //
       getStreamer().queuePacket(currentPacket);
       currentPacket = null;
+      // 获取lastQueuedSeqno
       toWaitFor = getStreamer().getLastQueuedSeqno();
     }
     return toWaitFor;

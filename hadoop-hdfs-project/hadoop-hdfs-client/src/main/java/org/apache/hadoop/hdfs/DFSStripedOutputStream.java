@@ -392,6 +392,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
       LOG.debug("original failed streamers: " + failedStreamers);
       LOG.debug("newly failed streamers: " + newFailed);
     }
+    // 失败的数量超过parity数量，抛异常
     if (failCount > (numAllBlocks - numDataBlocks)) {
       throw new IOException("Failed: the number of failed blocks = "
           + failCount + " > the number of parity blocks = "
@@ -540,19 +541,19 @@ public class DFSStripedOutputStream extends DFSOutputStream
     // Two extra steps are needed when a striping cell is full:
     // 1. Forward the current index pointer
     // 2. Generate parity packets if a full stripe of data cells are present
-    if (cellFull) {
+    if (cellFull) { // 写满一个data cell
       int next = index + 1;
       //When all data cells in a stripe are ready, we need to encode
       //them and generate some parity cells. These cells will be
       //converted to packets and put to their DataStreamer's queue.
-      if (next == numDataBlocks) {
+      if (next == numDataBlocks) { // 写满当前stripe的所有data cell
         cellBuffers.flipDataBuffers();
-        writeParityCells();
+        writeParityCells(); // 生成parity cell，并写到datanode
         next = 0;
 
         // if this is the end of the block group, end each internal block
         if (shouldEndBlockGroup()) {
-          flushAllInternals();
+          flushAllInternals(); // 等待当前stripe packet的ack
           checkStreamerFailures();
           for (int i = 0; i < numAllBlocks; i++) {
             final StripedDataStreamer s = setCurrentStreamer(i);
@@ -621,8 +622,11 @@ public class DFSStripedOutputStream extends DFSOutputStream
    * written a full stripe (i.e., enqueue all packets for a full stripe), or
    * when we're closing the outputstream.
    */
+  // 如果失败的streamer数量不超过parity数量，则更新block group中每个block的GS和token信息
+  // 超过，则抛异常
   private void checkStreamerFailures() throws IOException {
     Set<StripedDataStreamer> newFailed = checkStreamers();
+    // 本次无失败的streamer，直接返回
     if (newFailed.size() == 0) {
       return;
     }
@@ -647,6 +651,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
       // 1) get the updated block info
       // 2) create new block outputstream
       newFailed = waitCreatingStreamers(healthySet);
+      // 失败的streamer数量超过parity数量，抛异常
       if (newFailed.size() + failedStreamers.size() >
           numAllBlocks - numDataBlocks) {
         throw new IOException(
@@ -665,6 +670,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
           assert streamer.isHealthy();
           streamer.getErrorState().reset();
         }
+        // 更新namenode中记录的pipeline信息
         updatePipeline(newBG);
       }
       for (int i = 0; i < numAllBlocks; i++) {
@@ -714,6 +720,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
     long remaingTime = socketTimeout > 0 ? socketTimeout/2 : Long.MAX_VALUE;
     final long waitInterval = 1000;
     synchronized (coordinator) {
+      // 等待streamer更新block
       while (checkStreamerUpdates(failed, healthyStreamers) < expectedNum
           && remaingTime > 0) {
         try {
@@ -727,6 +734,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
       }
     }
     synchronized (coordinator) {
+      // 超时之后，未更新的streamer将被关掉
       for (StripedDataStreamer streamer : healthyStreamers) {
         if (!coordinator.updateStreamerMap.containsKey(streamer)) {
           // close the streamer if it is too slow to create new connection
@@ -739,6 +747,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
     for (Map.Entry<StripedDataStreamer, Boolean> entry :
         coordinator.updateStreamerMap.entrySet()) {
       if (!entry.getValue()) {
+        // 更新失败的streamer
         failed.add(entry.getKey());
       }
     }
@@ -754,12 +763,14 @@ public class DFSStripedOutputStream extends DFSOutputStream
    * @param healthyStreamers The healthy data streamers. These streamers join
    *                         the failure handling.
    */
+  // 更新block group的GS(时间戳)和token
   private ExtendedBlock updateBlockForPipeline(
       Set<StripedDataStreamer> healthyStreamers) throws IOException {
     final LocatedBlock updated = dfsClient.namenode.updateBlockForPipeline(
         currentBlockGroup, dfsClient.clientName);
     final long newGS = updated.getBlock().getGenerationStamp();
     ExtendedBlock newBlock = new ExtendedBlock(currentBlockGroup);
+    // 更新GS
     newBlock.setGenerationStamp(newGS);
     final LocatedBlock[] updatedBlks = StripedBlockUtil.parseStripedBlockGroup(
         (LocatedStripedBlock) updated, cellSize, numDataBlocks,
@@ -770,6 +781,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
       if (healthyStreamers.contains(si)) {
         final LocatedBlock lb = new LocatedBlock(new ExtendedBlock(newBlock),
             null, null, null, -1, updated.isCorrupt(), null);
+        // 更新token
         lb.setBlockToken(updatedBlks[i].getBlockToken());
         coordinator.getNewBlocks().offer(i, lb);
       }
@@ -802,6 +814,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
         "Acked:" + ackedBytes + ", Sent:" + sentBytes);
     currentBlockGroup.setNumBytes(ackedBytes);
     newBG.setNumBytes(ackedBytes);
+    // 更新pipeline信息
     dfsClient.namenode.updatePipeline(dfsClient.clientName, currentBlockGroup,
         newBG, newNodes, newStorageIDs);
     currentBlockGroup = newBG;
@@ -1234,6 +1247,8 @@ public class DFSStripedOutputStream extends DFSOutputStream
     setCurrentStreamer(idx);
   }
 
+  // 1、等待lastQueuedSeqno的ack
+  // 2、检查失败的数量是否超过parity数量
   void flushAllInternals() throws IOException {
     Map<Future<Void>, Integer> flushAllFuturesMap = new HashMap<>();
     Future<Void> future = null;
@@ -1244,11 +1259,12 @@ public class DFSStripedOutputStream extends DFSOutputStream
       if (s.isHealthy()) {
         try {
           // flush all data to Datanode
-          final long toWaitFor = flushInternalWithoutWaitingAck();
+          final long toWaitFor = flushInternalWithoutWaitingAck();// 获取lastQueuedSeqno
           future = flushAllExecutorCompletionService.submit(
               new Callable<Void>() {
                 @Override
                 public Void call() throws Exception {
+                  // 等待lastQueuedSeqno的ack
                   s.waitForAckedSeqno(toWaitFor);
                   return null;
                 }
@@ -1271,6 +1287,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
         LOG.warn(
             "Caught ExecutionException while waiting all streamer flush, ", ee);
         StripedDataStreamer s = streamers.get(flushAllFuturesMap.get(future));
+        // 检查失败的数量是否超过parity数量
         handleStreamerFailure("flushInternal " + s,
             (Exception) ee.getCause(), s);
       }

@@ -915,6 +915,7 @@ class DataStreamer extends Daemon {
         // If queue is full, then wait till we have enough space
         boolean firstWait = true;
         try {
+          // 客户端限流控制
           while (!streamerClosed && dataQueue.size() + ackQueue.size() >
               dfsClient.getConf().getWriteMaxPackets()) {
             if (firstWait) {
@@ -945,6 +946,7 @@ class DataStreamer extends Daemon {
           }
         }
         checkClosed();
+        // 放入dataQueue
         queuePacket(packet);
       } catch (ClosedChannelException ignored) {
       }
