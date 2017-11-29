@@ -404,7 +404,9 @@ public class DFSOutputStream extends FSOutputSummer
   protected void computePacketChunkSize(int psize, int csize) {
     final int bodySize = psize - PacketHeader.PKT_MAX_HEADER_LEN;
     final int chunkSize = csize + getChecksumSize();
+    // 一个packet里有几个chunk
     chunksPerPacket = Math.max(bodySize/chunkSize, 1);
+    // packet的实际大小
     packetSize = chunkSize*chunksPerPacket;
     DFSClient.LOG.debug("computePacketChunkSize: src={}, chunkSize={}, "
             + "chunksPerPacket={}, packetSize={}",
@@ -453,6 +455,7 @@ public class DFSOutputStream extends FSOutputSummer
     }
   }
 
+  // 如果currentPacket为null，则创建
   private synchronized void writeChunkPrepare(int buflen,
       int ckoff, int cklen) throws IOException {
     dfsClient.checkOpen();
@@ -490,7 +493,6 @@ public class DFSOutputStream extends FSOutputSummer
         getStreamer());
     // 把currentPacket放入dataQueue
     enqueueCurrentPacket();
-    // append时候的逻辑
     adjustChunkBoundary();
     endBlock();
   }
@@ -511,12 +513,14 @@ public class DFSOutputStream extends FSOutputSummer
     if (getStreamer().getAppendChunk() &&
         getStreamer().getBytesCurBlock() % bytesPerChecksum == 0) {
       getStreamer().setAppendChunk(false);
+      // 重置校验和buf大小
       resetChecksumBufSize();
     }
 
     if (!getStreamer().getAppendChunk()) {
       final int psize = (int) Math
           .min(blockSize - getStreamer().getBytesCurBlock(), writePacketSize);
+      // 计算packet实际大小
       computePacketChunkSize(psize, bytesPerChecksum);
     }
   }
