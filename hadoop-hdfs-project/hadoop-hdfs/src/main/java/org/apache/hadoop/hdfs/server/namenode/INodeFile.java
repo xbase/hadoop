@@ -120,6 +120,7 @@ public class INodeFile extends INodeWithAdditionalFields
    */
   enum HeaderFormat {
     PREFERRED_BLOCK_SIZE(null, 48, 1),
+    // 2.0用来保存副本数的地方，现在根据首位是0还是1，分别代表副本数或ec存储策略
     BLOCK_LAYOUT_AND_REDUNDANCY(PREFERRED_BLOCK_SIZE.BITS,
         HeaderFormat.LAYOUT_BIT_WIDTH + 11, 0),
     STORAGE_POLICY_ID(BLOCK_LAYOUT_AND_REDUNDANCY.BITS,
