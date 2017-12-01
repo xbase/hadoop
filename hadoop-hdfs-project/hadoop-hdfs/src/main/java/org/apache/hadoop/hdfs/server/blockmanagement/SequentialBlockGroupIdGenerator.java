@@ -52,9 +52,11 @@ public class SequentialBlockGroupIdGenerator extends SequentialNumber {
 
   @Override // NumberGenerator
   public long nextValue() {
+    // 一共block group最多16个block，跳过16个ID
     skipTo((getCurrentValue() & ~BLOCK_GROUP_INDEX_MASK) + MAX_BLOCKS_IN_GROUP);
     // Make sure there's no conflict with existing random block IDs
     final Block b = new Block(getCurrentValue());
+    // 检查这16个ID是否已经被使用
     while (hasValidBlockInRange(b)) {
       skipTo(getCurrentValue() + MAX_BLOCKS_IN_GROUP);
       b.setBlockId(getCurrentValue());

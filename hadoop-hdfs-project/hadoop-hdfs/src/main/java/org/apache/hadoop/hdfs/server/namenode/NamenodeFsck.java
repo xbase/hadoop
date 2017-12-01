@@ -598,6 +598,7 @@ public class NamenodeFsck implements DataEncryptionKeyFactory {
         long blockId = storedBlock.getBlockId();
         Iterable<StorageAndBlockIndex> sis =
             ((BlockInfoStriped) storedBlock).getStorageAndIndexInfos();
+        // ec模式block group中block的id是计算出来的
         for (StorageAndBlockIndex si : sis) {
           storage2Id.put(si.getStorage(), blockId + si.getBlockIndex());
         }

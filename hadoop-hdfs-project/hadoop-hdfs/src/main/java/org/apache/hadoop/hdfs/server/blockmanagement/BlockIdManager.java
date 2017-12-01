@@ -210,6 +210,7 @@ public class BlockIdManager {
   /**
    * Increments, logs and then returns the block ID
    */
+  // 获取blockId
   long nextBlockId(BlockType blockType) {
     switch(blockType) {
     case CONTIGUOUS: return blockIdGenerator.nextValue();
