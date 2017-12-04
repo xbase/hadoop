@@ -406,8 +406,10 @@ public class BlockRecoveryWorker {
               datanode : DataNode.createInterDataNodeProtocolProxy(id, conf,
               dnConf.socketTimeout, dnConf.connectToDnViaHostname);
           ExtendedBlock internalBlk = new ExtendedBlock(block);
+          // 计算出内部块id
           final long blockId = block.getBlockId() + blockIndices[i];
           internalBlk.setBlockId(blockId);
+          // 获取内部块信息
           ReplicaRecoveryInfo info = callInitReplicaRecovery(proxyDN,
               new RecoveringBlock(internalBlk, null, recoveryId));
 
@@ -420,7 +422,7 @@ public class BlockRecoveryWorker {
               // if we have >1 replicas for the same internal block, we
               // simply choose the one with larger length.
               // TODO: better usage of redundant replicas
-              syncBlocks.put(blockId, new BlockRecord(id, proxyDN, info));
+              syncBlocks.put(blockId, new BlockRecord(id, proxyDN, info)); // 保存每个内部块的信息
             }
           }
         } catch (RecoveryInProgressException ripE) {
@@ -436,6 +438,7 @@ public class BlockRecoveryWorker {
       }
       checkLocations(syncBlocks.size());
 
+      // 块组中完整stripe的长度（完整stripe：通过解码可以恢复所有数据的stripe）
       final long safeLength = getSafeLength(syncBlocks);
       if (LOG.isDebugEnabled()) {
         LOG.debug("Recovering block " + block
@@ -447,6 +450,7 @@ public class BlockRecoveryWorker {
       List<BlockRecord> rurList = new ArrayList<>(locs.length);
       for (BlockRecord r : syncBlocks.values()) {
         int blockIndex = (int) (r.rInfo.getBlockId() & BLOCK_GROUP_INDEX_MASK);
+        // 计算内部块长度
         long newSize = getInternalBlockLength(safeLength, ecPolicy.getCellSize(),
             dataBlkNum, blockIndex);
         if (r.rInfo.getNumBytes() >= newSize) {
@@ -457,6 +461,7 @@ public class BlockRecoveryWorker {
 
       // Recovery the striped block by truncating internal blocks to the safe
       // length. Abort if there is any failure in this step.
+      // 更新内部块长度和版本号
       truncatePartialBlock(rurList, safeLength);
 
       // notify Namenode the new size and locations
@@ -475,6 +480,7 @@ public class BlockRecoveryWorker {
       ExtendedBlock newBlock = new ExtendedBlock(bpid, block.getBlockId(),
           safeLength, recoveryId);
       DatanodeProtocolClientSideTranslatorPB nn = getActiveNamenodeForBP(bpid);
+      // 通知namenode
       nn.commitBlockSynchronization(block, newBlock.getGenerationStamp(),
           newBlock.getNumBytes(), true, false, newLocs, newStorages);
     }
@@ -489,6 +495,7 @@ public class BlockRecoveryWorker {
         long newSize = getInternalBlockLength(safeLength, cellSize, dataBlkNum,
             blockIndex);
         try {
+          // 更新内部块长度(newSize)和版本号(recoveryId)
           r.updateReplicaUnderRecovery(bpid, recoveryId, r.rInfo.getBlockId(),
               newSize);
         } catch (IOException e) {
@@ -516,6 +523,7 @@ public class BlockRecoveryWorker {
     long getSafeLength(Map<Long, BlockRecord> syncBlocks) {
       final int dataBlkNum = ecPolicy.getNumDataUnits();
       Preconditions.checkArgument(syncBlocks.size() >= dataBlkNum);
+      // 每个内部block的长度
       long[] blockLengths = new long[syncBlocks.size()];
       int i = 0;
       for (BlockRecord r : syncBlocks.values()) {

@@ -199,11 +199,13 @@ public class StripedBlockUtil {
     Preconditions.checkArgument(blockLens.length >= dataBlkNum);
     final int stripeSize = dataBlkNum * cellSize;
     long[] cpy = Arrays.copyOf(blockLens, blockLens.length);
+    // 按升序排序
     Arrays.sort(cpy);
     // full stripe is a stripe has at least dataBlkNum full cells.
     // lastFullStripeIdx is the index of the last full stripe.
+    // 最后一个完整stripe索引
     int lastFullStripeIdx =
-        (int) (cpy[cpy.length - dataBlkNum] / cellSize);
+        (int) (cpy[cpy.length - dataBlkNum] / cellSize); // cpy.length - dataBlkNum:长度最短的内部块下标
     return lastFullStripeIdx * stripeSize; // return the safeLength
     // TODO: Include lastFullStripeIdx+1 stripe in safeLength, if there exists
     // such a stripe (and it must be partial).

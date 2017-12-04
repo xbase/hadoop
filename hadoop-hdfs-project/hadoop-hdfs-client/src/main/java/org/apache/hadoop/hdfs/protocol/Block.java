@@ -89,8 +89,11 @@ public class Block implements Writable, Comparable<Block> {
     return m.matches() ? Long.parseLong(m.group(1)) : 0;
   }
 
+  // EC时：代表块组id，首位为1，具体逻辑：SequentialBlockGroupIdGenerator
   private long blockId;
+  // EC时：代表块组大小，所有数据块大小之和，不包括校验块的大小
   private long numBytes;
+  // EC时：代表块组的生成时间戳，所有内部块共享块组的时间戳
   private long generationStamp;
 
   public Block() {this(0, 0, 0);}
