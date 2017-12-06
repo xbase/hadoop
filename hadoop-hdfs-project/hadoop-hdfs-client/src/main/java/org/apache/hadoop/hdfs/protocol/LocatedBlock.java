@@ -41,6 +41,7 @@ public class LocatedBlock {
 
   private final ExtendedBlock b;
   private long offset;  // offset of the first byte of the block in the file
+  // EC时，代表内部块的存储位置
   private final DatanodeInfoWithStorage[] locs;
   /** Cached storage ID for each replica */
   private final String[] storageIDs;

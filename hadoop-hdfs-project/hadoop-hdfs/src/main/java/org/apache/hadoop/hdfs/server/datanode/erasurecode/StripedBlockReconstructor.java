@@ -79,6 +79,8 @@ class StripedBlockReconstructor extends StripedReconstructor
     }
   }
 
+  // ec恢复missing block的3个步骤
+  // data block和parity block都可以被修复
   void reconstruct() throws IOException {
     while (getPositionInBlock() < getMaxTargetLength()) {
       DataNodeFaultInjector.get().stripedBlockReconstruction();

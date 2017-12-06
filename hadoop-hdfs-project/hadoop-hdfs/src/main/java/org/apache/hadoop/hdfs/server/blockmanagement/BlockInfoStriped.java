@@ -133,6 +133,8 @@ public class BlockInfoStriped extends BlockInfo {
         return true;
       }
     }
+    // index: storages的下标
+    // blockIndex: 内部块的相对ID
     addStorage(storage, index, blockIndex);
     return true;
   }

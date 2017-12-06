@@ -36,6 +36,7 @@ public class LocatedStripedBlock extends LocatedBlock {
   private static final byte[] EMPTY_INDICES = {};
   private static final Token<BlockTokenIdentifier> EMPTY_TOKEN = new Token<>();
 
+  // 内部块顺序
   private final byte[] blockIndices;
   private Token<BlockTokenIdentifier>[] blockTokens;
 
