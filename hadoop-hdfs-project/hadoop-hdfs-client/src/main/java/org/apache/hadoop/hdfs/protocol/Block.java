@@ -89,7 +89,7 @@ public class Block implements Writable, Comparable<Block> {
     return m.matches() ? Long.parseLong(m.group(1)) : 0;
   }
 
-  // EC时：代表块组id，首位为1，具体逻辑：SequentialBlockGroupIdGenerator
+  // EC时：代表块组id，首位为1，最后4位用来区分块组中的内部块，所以最多支持16个内部块，具体逻辑：SequentialBlockGroupIdGenerator
   private long blockId;
   // EC时：代表块组大小，所有数据块大小之和，不包括校验块的大小
   private long numBytes;

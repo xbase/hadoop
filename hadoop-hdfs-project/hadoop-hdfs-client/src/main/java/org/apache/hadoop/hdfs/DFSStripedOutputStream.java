@@ -553,7 +553,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
 
         // if this is the end of the block group, end each internal block
         if (shouldEndBlockGroup()) {
-          flushAllInternals(); // 等待当前stripe packet的ack
+          flushAllInternals(); // 等待当前stripe，last packet的ack
           checkStreamerFailures();
           for (int i = 0; i < numAllBlocks; i++) {
             final StripedDataStreamer s = setCurrentStreamer(i);
