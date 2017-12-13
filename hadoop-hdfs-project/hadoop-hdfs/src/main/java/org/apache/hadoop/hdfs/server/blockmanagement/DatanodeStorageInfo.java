@@ -112,6 +112,7 @@ public class DatanodeStorageInfo {
   private volatile long remaining;
   private long blockPoolUsed;
 
+  // 此存储目录块链表的第一个block
   private volatile BlockInfoContiguous blockList = null;
   private int numBlocks = 0;
 

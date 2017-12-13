@@ -121,6 +121,7 @@ public class INodeFile extends INodeWithAdditionalFields
   // 使用一个long型，保存块大小、副本数、存储策略
   private long header = 0L;
 
+  // block列表
   private BlockInfoContiguous[] blocks;
 
   INodeFile(long id, byte[] name, PermissionStatus permissions, long mtime,

@@ -84,12 +84,14 @@ public class BlockStoragePolicy {
     // Do not return transient storage types. We will not have accurate
     // usage information for transient types.
     for (;i < replication && j < storageTypes.length; ++j) {
+      // 不会返回RAM_DISK，lazyPersist存储策略是客户端根据HdfsFileStatus.storagePolicy字段判断的
       if (!storageTypes[j].isTransient()) {
         types.add(storageTypes[j]);
         ++i;
       }
     }
 
+    // 超过storageTypes.length的副本，都使用last
     final StorageType last = storageTypes[storageTypes.length - 1];
     if (!last.isTransient()) {
       for (; i < replication; i++) {

@@ -886,11 +886,13 @@ public class NetworkTopology {
    */
   public void sortByDistance(Node reader, Node[] nodes, int activeLen) {
     /** Sort weights for the nodes array */
+    // step 1:计算距离，相同主机 0，相同机架 1，不同机架 2
     int[] weights = new int[activeLen];
     for (int i=0; i<activeLen; i++) {
       weights[i] = getWeight(reader, nodes[i]);
     }
     // Add weight/node pairs to a TreeMap to sort
+    // step 2:保存到TreeMap
     TreeMap<Integer, List<Node>> tree = new TreeMap<Integer, List<Node>>();
     for (int i=0; i<activeLen; i++) {
       int weight = weights[i];
@@ -903,6 +905,7 @@ public class NetworkTopology {
       list.add(node);
     }
 
+    // step 3:距离相同的节点，随机一下
     int idx = 0;
     for (List<Node> list: tree.values()) {
       if (list != null) {

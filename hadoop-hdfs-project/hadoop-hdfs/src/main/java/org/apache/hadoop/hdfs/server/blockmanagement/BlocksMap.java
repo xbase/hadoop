@@ -62,7 +62,8 @@ class BlocksMap {
 
   /** Constant {@link LightWeightGSet} capacity. */
   private final int capacity;
-  
+
+  // block 到 存储位置 的映射关系
   private GSet<Block, BlockInfoContiguous> blocks;
 
   BlocksMap(int capacity) {
@@ -225,9 +226,11 @@ class BlocksMap {
     for (int i = currentBlock.numNodes() - 1; i >= 0; i--) {
       final DatanodeDescriptor dn = currentBlock.getDatanode(i);
       final DatanodeStorageInfo storage = currentBlock.findStorageInfo(dn);
+      // 从DN存储目录移除old block
       final boolean removed = storage.removeBlock(currentBlock);
       Preconditions.checkState(removed, "currentBlock not found.");
 
+      // 添加new block到DN存储目录
       final AddBlockResult result = storage.addBlock(newBlock);
       Preconditions.checkState(result == AddBlockResult.ADDED,
           "newBlock already exists.");

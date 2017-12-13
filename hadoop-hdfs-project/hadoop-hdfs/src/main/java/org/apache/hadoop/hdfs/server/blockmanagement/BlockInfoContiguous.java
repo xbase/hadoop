@@ -37,6 +37,7 @@ public class BlockInfoContiguous extends Block
     implements LightWeightGSet.LinkedElement {
   public static final BlockInfoContiguous[] EMPTY_ARRAY = {};
 
+  // 这个block属于哪个INode（INode继承BlockCollection）
   private BlockCollection bc;
 
   /** For implementing {@link LightWeightGSet.LinkedElement} interface */
@@ -54,6 +55,9 @@ public class BlockInfoContiguous extends Block
    * per replica is 42 bytes (LinkedList#Entry object per replica) versus 16
    * bytes using the triplets.
    */
+  // 副本的存储位置
+  // 在HDFS2.6之前，使用DatanodeDescriptor对象描述（表示存储在哪个DN节点）
+  // 现在使用DatanodeStorageInfo描述（表示DN节点的哪个存储目录）
   private Object[] triplets;
 
   /**
@@ -94,12 +98,14 @@ public class BlockInfoContiguous extends Block
     return storage == null ? null : storage.getDatanodeDescriptor();
   }
 
+  // 获取指定下标的存储目录
   DatanodeStorageInfo getStorageInfo(int index) {
     assert this.triplets != null : "BlockInfo is not initialized";
     assert index >= 0 && index*3 < triplets.length : "Index is out of bound";
     return (DatanodeStorageInfo)triplets[index*3];
   }
 
+  // 获取同存储目录链表的前一个block
   private BlockInfoContiguous getPrevious(int index) {
     assert this.triplets != null : "BlockInfo is not initialized";
     assert index >= 0 && index*3+1 < triplets.length : "Index is out of bound";
@@ -110,6 +116,7 @@ public class BlockInfoContiguous extends Block
     return info;
   }
 
+  // 获取同存储目录链表的后一个block
   BlockInfoContiguous getNext(int index) {
     assert this.triplets != null : "BlockInfo is not initialized";
     assert index >= 0 && index*3+2 < triplets.length : "Index is out of bound";
@@ -134,6 +141,7 @@ public class BlockInfoContiguous extends Block
    * @param to - block to be set to previous on the list of blocks
    * @return current previous block on the list of blocks
    */
+  // 设置同存储目录链表的前一个block为to，并且返回设置前的block
   private BlockInfoContiguous setPrevious(int index, BlockInfoContiguous to) {
     assert this.triplets != null : "BlockInfo is not initialized";
     assert index >= 0 && index*3+1 < triplets.length : "Index is out of bound";
@@ -150,6 +158,7 @@ public class BlockInfoContiguous extends Block
    * @param to - block to be set to next on the list of blocks
    *    * @return current next block on the list of blocks
    */
+  // 设置同存储目录链表的后一个block为to，并且返回设置前的block
   private BlockInfoContiguous setNext(int index, BlockInfoContiguous to) {
     assert this.triplets != null : "BlockInfo is not initialized";
     assert index >= 0 && index*3+2 < triplets.length : "Index is out of bound";
@@ -209,7 +218,9 @@ public class BlockInfoContiguous extends Block
   /**
    * Remove {@link DatanodeStorageInfo} location for a block
    */
+  // 从当前block中删除这个副本（从triplets数组中，删除这个存储目录）
   boolean removeStorage(DatanodeStorageInfo storage) {
+    // 当前存储目录的下标
     int dnIndex = findStorageInfo(storage);
     if(dnIndex < 0) // the node is not found
       return false;
@@ -307,6 +318,7 @@ public class BlockInfoContiguous extends Block
    * @return the new head of the list or null if the list becomes
    * empy after deletion.
    */
+  // 在DN存储目录中删除当前block
   BlockInfoContiguous listRemove(BlockInfoContiguous head,
       DatanodeStorageInfo storage) {
     if(head == null)
@@ -319,10 +331,12 @@ public class BlockInfoContiguous extends Block
     BlockInfoContiguous prev = this.getPrevious(dnIndex);
     this.setNext(dnIndex, null);
     this.setPrevious(dnIndex, null);
+    // 在链表中删除当前block
     if(prev != null)
       prev.setNext(prev.findStorageInfo(storage), next);
     if(next != null)
       next.setPrevious(next.findStorageInfo(storage), prev);
+    // 如果链表的头被删除了（head == 当前block）
     if(this == head)  // removing the head
       head = next;
     return head;
