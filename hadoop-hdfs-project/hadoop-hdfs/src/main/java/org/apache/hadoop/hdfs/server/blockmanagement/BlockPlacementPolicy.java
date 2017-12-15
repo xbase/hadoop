@@ -193,6 +193,7 @@ public abstract class BlockPlacementPolicy {
     }
     if (moreThanOne.remove(cur)) {
       if (storages.size() == 1) {
+        // 移除cur之后，storages只剩一个DN节点，把这个DN节点放到exactlyOne列表中
         final DatanodeStorageInfo remaining = storages.get(0);
         moreThanOne.remove(remaining);
         exactlyOne.add(remaining);
@@ -217,7 +218,9 @@ public abstract class BlockPlacementPolicy {
    * @param dataNodes datanodes to be split into two sets
    * @param rackMap a map from rack to datanodes
    * @param moreThanOne contains nodes on rack with more than one replica
+   *                    机架上有多于一个副本的DN列表
    * @param exactlyOne remains contains the remaining nodes
+   *                    机架上只有一个副本的DN列表
    */
   public void splitNodesWithRack(
       final Iterable<DatanodeStorageInfo> storages,
@@ -226,6 +229,7 @@ public abstract class BlockPlacementPolicy {
       final List<DatanodeStorageInfo> exactlyOne) {
     for(DatanodeStorageInfo s: storages) {
       final String rackName = getRack(s.getDatanodeDescriptor());
+      // <rackName,List<DatanodeStorageInfo>> 机架和DN节点映射关系
       List<DatanodeStorageInfo> storageList = rackMap.get(rackName);
       if (storageList == null) {
         storageList = new ArrayList<DatanodeStorageInfo>();
@@ -238,10 +242,10 @@ public abstract class BlockPlacementPolicy {
     for(List<DatanodeStorageInfo> storageList : rackMap.values()) {
       if (storageList.size() == 1) {
         // exactlyOne contains nodes on rack with only one replica
-        exactlyOne.add(storageList.get(0));
+        exactlyOne.add(storageList.get(0)); // 只有一个
       } else {
         // moreThanOne contains nodes on rack with more than one replica
-        moreThanOne.addAll(storageList);
+        moreThanOne.addAll(storageList); // 多于一个
       }
     }
   }

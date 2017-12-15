@@ -232,20 +232,20 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
    * @param numOfChosen The number of already chosen nodes.
    * @param numOfReplicas The number of additional nodes to allocate.
    * @return integer array. Index 0: The number of nodes allowed to allocate
-   *         in addition to already chosen nodes.
+   *         in addition to already chosen nodes. 副本数
    *         Index 1: The maximum allowed number of nodes per rack. This
    *         is independent of the number of chosen nodes, as it is calculated
-   *         using the target number of replicas.
+   *         using the target number of replicas. 每个机架允许分配的最大副本数
    */
   private int[] getMaxNodesPerRack(int numOfChosen, int numOfReplicas) {
-    int clusterSize = clusterMap.getNumOfLeaves();
-    int totalNumOfReplicas = numOfChosen + numOfReplicas;
+    int clusterSize = clusterMap.getNumOfLeaves(); // DN节点数
+    int totalNumOfReplicas = numOfChosen + numOfReplicas; // 副本数
     if (totalNumOfReplicas > clusterSize) {
       numOfReplicas -= (totalNumOfReplicas-clusterSize);
       totalNumOfReplicas = clusterSize;
     }
     // No calculation needed when there is only one rack or picking one node.
-    int numOfRacks = clusterMap.getNumOfRacks();
+    int numOfRacks = clusterMap.getNumOfRacks(); // 机架数
     if (numOfRacks == 1 || totalNumOfReplicas <= 1) {
       return new int[] {numOfReplicas, totalNumOfReplicas};
     }
@@ -269,6 +269,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
 
   private EnumMap<StorageType, Integer> getRequiredStorageTypes(
       List<StorageType> types) {
+    // <StorageType,count>
     EnumMap<StorageType, Integer> map = new EnumMap<StorageType,
         Integer>(StorageType.class);
     for (StorageType type : types) {
@@ -320,6 +321,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
         .chooseStorageTypes((short) totalReplicasExpected,
             DatanodeStorageInfo.toStorageTypes(results),
             unavailableStorages, newBlock);
+    // StorageType -> 数量
     final EnumMap<StorageType, Integer> storageTypes =
         getRequiredStorageTypes(requiredStorageTypes);
     if (LOG.isTraceEnabled()) {
@@ -445,6 +447,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       if (excludedNodes.add(localMachine)) { // was not in the excluded list
         for (Iterator<Map.Entry<StorageType, Integer>> iter = storageTypes
             .entrySet().iterator(); iter.hasNext(); ) {
+          // 按期望的StorageType，从前到后选择目录
           Map.Entry<StorageType, Integer> entry = iter.next();
           for (DatanodeStorageInfo localStorage : DFSUtil.shuffle(
               localDatanode.getStorageInfos())) {
@@ -464,6 +467,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       } 
     }
 
+    // 是否降级到同机架
     if (!fallbackToLocalRack) {
       return null;
     }
@@ -631,6 +635,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
     boolean badTarget = false;
     DatanodeStorageInfo firstChosen = null;
     while(numOfReplicas > 0 && numOfAvailableNodes > 0) {
+      // 根据scope，随机选择一个DN节点
       DatanodeDescriptor chosenNode = 
           (DatanodeDescriptor)clusterMap.chooseRandom(scope);
       if (excludedNodes.add(chosenNode)) { //was not in the excluded list
@@ -753,6 +758,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
           + " where the required storage type is " + requiredStorageType);
       return false;
     }
+    // 检查存储目录的状态
     if (storage.getState() == State.READ_ONLY_SHARED) {
       logNodeIsNotChosen(storage, "storage is read-only");
       return false;
@@ -776,7 +782,8 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
         return false;
       }
     }
-    
+
+    // 检查剩余空间
     final long requiredSize = blockSize * HdfsConstants.MIN_BLOCKS_FOR_WRITE;
     final long scheduledSize = blockSize * node.getBlocksScheduled(storage.getStorageType());
     final long remaining = node.getRemaining(storage.getStorageType(),
@@ -792,6 +799,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
 
     // check the communication traffic of the target machine
     if (considerLoad) {
+      // 最大负载不能大于平均负载的2倍（负载根据XceiverCount计算）
       final double maxLoad = 2.0 * stats.getInServiceXceiverAverage();
       final int nodeLoad = node.getXceiverCount();
       if (nodeLoad > maxLoad) {
@@ -834,6 +842,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       if (writer == null || !clusterMap.contains(writer)) {
         writer = storages[0].getDatanodeDescriptor();
       }
+      // 简单排序
       for(; index < storages.length; index++) {
         DatanodeStorageInfo shortestStorage = storages[index];
         int shortestDistance = clusterMap.getDistance(writer,
@@ -869,10 +878,10 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
     if(numRacks <= 1) // only one rack
       return new BlockPlacementStatusDefault(
           Math.min(numRacks, numberOfReplicas), numRacks);
-    int minRacks = Math.min(2, numberOfReplicas);
+    int minRacks = Math.min(2, numberOfReplicas); // 最少需要的机架数
     // 1. Check that all locations are different.
     // 2. Count locations on different racks.
-    Set<String> racks = new TreeSet<String>();
+    Set<String> racks = new TreeSet<String>(); // 目前副本分布在哪些机架
     for (DatanodeInfo dn : locs)
       racks.add(dn.getNetworkLocation());
     return new BlockPlacementStatusDefault(racks.size(), minRacks);
@@ -902,11 +911,11 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       long lastHeartbeat = node.getLastUpdateMonotonic();
       if (lastHeartbeat < oldestHeartbeat) {
         oldestHeartbeat = lastHeartbeat;
-        oldestHeartbeatStorage = storage;
+        oldestHeartbeatStorage = storage; // 最近心跳最老
       }
       if (minSpace > free) {
         minSpace = free;
-        minSpaceStorage = storage;
+        minSpaceStorage = storage; // 存储空间最小
       }
     }
 
