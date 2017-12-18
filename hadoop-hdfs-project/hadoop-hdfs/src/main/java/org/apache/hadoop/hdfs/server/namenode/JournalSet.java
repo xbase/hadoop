@@ -281,10 +281,12 @@ public class JournalSet implements JournalManager {
             ". Skipping.", ioe);
       }
     }
+    // 多个JournalManager返回的结果，再聚合一次
     chainAndMakeRedundantStreams(streams, allStreams, fromTxId);
   }
 
-  // 按照segment文件名做聚合
+  // allStreams是优先队列，按照firstTxId从小到大排序
+  // firstTxId相同的EditLogInputStream对象，聚合为一个RedundantEditLogInputStream对象
   public static void chainAndMakeRedundantStreams(
       Collection<EditLogInputStream> outStreams,
       PriorityQueue<EditLogInputStream> allStreams, long fromTxId) {
@@ -325,7 +327,7 @@ public class JournalSet implements JournalManager {
           acc.clear();
           acc.add(elis);
         } else if (accFirstTxId > elis.getFirstTxId()) {
-          // allStreams是优先队列，按照firstTxId从小到大排序，所以accFirstTxId应该是最小的
+          // accFirstTxId应该是最小的
           throw new RuntimeException("sorted set invariants violated!  " +
               "Got stream with first txid " + elis.getFirstTxId() +
               ", but the last firstTxId was " + accFirstTxId);
@@ -343,7 +345,7 @@ public class JournalSet implements JournalManager {
   /**
    * Returns true if there are no journals, all redundant journals are disabled,
    * or any required journals are disabled.
-   * 
+   *
    * @return True if there no journals, all redundant journals are disabled,
    * or any required journals are disabled.
    */
@@ -351,7 +353,7 @@ public class JournalSet implements JournalManager {
     return !NameNodeResourcePolicy.areResourcesAvailable(journals,
         minimumRedundantJournals);
   }
-  
+
   /**
    * Called when some journals experience an error in some operation.
    */
@@ -359,7 +361,7 @@ public class JournalSet implements JournalManager {
     if (badJournals == null || badJournals.isEmpty()) {
       return; // nothing to do
     }
- 
+
     for (JournalAndStream j : badJournals) {
       LOG.error("Disabling journal " + j);
       j.abort();
