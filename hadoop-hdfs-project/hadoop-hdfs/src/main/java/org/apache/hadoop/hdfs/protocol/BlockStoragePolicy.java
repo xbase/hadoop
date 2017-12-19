@@ -118,6 +118,7 @@ public class BlockStoragePolicy {
       final Iterable<StorageType> chosen, final List<StorageType> excess) {
     final List<StorageType> types = chooseStorageTypes(replication);
     diff(types, chosen, excess);
+    // types = types - chosen
     return types;
   }
 

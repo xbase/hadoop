@@ -62,7 +62,9 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
         }
       };
 
-  protected boolean considerLoad; 
+  // 选择DN节点时，是否考虑负载
+  protected boolean considerLoad;
+  // 本地节点，是否优先
   private boolean preferLocalNode = true;
   protected NetworkTopology clusterMap;
   protected Host2NodesMap host2datanodeMap;
@@ -143,6 +145,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       numOfReplicas = maxNodesAndReplicas[0];
       int maxNodesPerRack = maxNodesAndReplicas[1];
 
+      // 优先从favoredNodes选择存储目录
       for (int i = 0; i < favoredNodes.size() && results.size() < numOfReplicas; i++) {
         DatanodeDescriptor favoredNode = favoredNodes.get(i);
         // Choose a single node which is local to favoredNode.
@@ -337,6 +340,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       }
 
       if (numOfResults == 0) {
+        // 为第1个副本选择存储目录
         writer = chooseLocalStorage(writer, excludedNodes, blocksize,
             maxNodesPerRack, results, avoidStaleNodes, storageTypes, true)
                 .getDatanodeDescriptor();
@@ -346,6 +350,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       }
       final DatanodeDescriptor dn0 = results.get(0).getDatanodeDescriptor();
       if (numOfResults <= 1) {
+        // 为第2个副本选择存储目录
         chooseRemoteRack(1, dn0, excludedNodes, blocksize, maxNodesPerRack,
             results, avoidStaleNodes, storageTypes);
         if (--numOfReplicas == 0) {
@@ -353,6 +358,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
         }
       }
       if (numOfResults <= 2) {
+        // 为第3个副本选择存储目录
         final DatanodeDescriptor dn1 = results.get(1).getDatanodeDescriptor();
         if (clusterMap.isOnSameRack(dn0, dn1)) {
           chooseRemoteRack(1, dn0, excludedNodes, blocksize, maxNodesPerRack,
@@ -368,6 +374,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
           return writer;
         }
       }
+      // 为第3+个副本选择存储目录
       chooseRandom(numOfReplicas, NodeBase.ROOT, excludedNodes, blocksize,
           maxNodesPerRack, results, avoidStaleNodes, storageTypes);
     } catch (NotEnoughReplicasException e) {
@@ -406,6 +413,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       // simply add all the remaining types into unavailableStorages and give
       // another try. No best effort is guaranteed here.
       for (StorageType type : storageTypes.keySet()) {
+        // 把没找到合适存储目录的StorageType，添加到unavailableStorages
         if (!unavailableStorages.contains(type)) {
           unavailableStorages.add(type);
           retry = true;
@@ -417,6 +425,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
               oldExcludedNodes);
         }
         numOfReplicas = totalReplicasExpected - results.size();
+        // 降级选择fallback存储目录
         return chooseTarget(numOfReplicas, writer, oldExcludedNodes, blocksize,
             maxNodesPerRack, results, false, storagePolicy, unavailableStorages,
             newBlock);
@@ -431,6 +440,8 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
    * choose a node on the same rack
    * @return the chosen storage
    */
+  // 从localMachine节点选择一个符合storageTypes要求的存储目录
+  // 如果找不到，并且fallbackToLocalRack=true，则从同机架选择一个存储目录
   protected DatanodeStorageInfo chooseLocalStorage(Node localMachine,
       Set<Node> excludedNodes, long blocksize, int maxNodesPerRack,
       List<DatanodeStorageInfo> results, boolean avoidStaleNodes,
@@ -445,10 +456,11 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       DatanodeDescriptor localDatanode = (DatanodeDescriptor) localMachine;
       // otherwise try local machine first
       if (excludedNodes.add(localMachine)) { // was not in the excluded list
+        // 遍历storageTypes
         for (Iterator<Map.Entry<StorageType, Integer>> iter = storageTypes
             .entrySet().iterator(); iter.hasNext(); ) {
-          // 按期望的StorageType，从前到后选择目录
           Map.Entry<StorageType, Integer> entry = iter.next();
+          // 遍历localDatanode的所有存储目录
           for (DatanodeStorageInfo localStorage : DFSUtil.shuffle(
               localDatanode.getStorageInfos())) {
             StorageType type = entry.getKey();
@@ -495,6 +507,9 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
    * in the cluster.
    * @return the chosen node
    */
+  // 从同机架选择一个存储目录
+  // 如果找不到，则从下一个副本的机架上选择一个存储目录
+  // 如果找不到，则在集群中随机选择一个存储目录
   protected DatanodeStorageInfo chooseLocalRack(Node localMachine,
                                                 Set<Node> excludedNodes,
                                                 long blocksize,
@@ -567,7 +582,8 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
    * if not enough nodes are available, choose the remaining ones 
    * from the local rack
    */
-    
+  // 从非本机所在的机架，随机选择一个符合storageTypes要求的目录
+  // 如果找不到，则从本机所在的机架选择一个符合要求的目录
   protected void chooseRemoteRack(int numOfReplicas,
                                 DatanodeDescriptor localMachine,
                                 Set<Node> excludedNodes,
@@ -614,6 +630,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
    * Randomly choose <i>numOfReplicas</i> targets from the given <i>scope</i>.
    * @return the first chosen node, if there is any.
    */
+  // 极端情况下，会遍历scope范围内所有DN，DN的所有目录，查找符合storageTypes要求的目录
   protected DatanodeStorageInfo chooseRandom(int numOfReplicas,
                             String scope,
                             Set<Node> excludedNodes,
@@ -648,9 +665,11 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
             chosenNode.getStorageInfos());
         int i = 0;
         boolean search = true;
+        // 遍历storageTypes
         for (Iterator<Map.Entry<StorageType, Integer>> iter = storageTypes
             .entrySet().iterator(); search && iter.hasNext(); ) {
           Map.Entry<StorageType, Integer> entry = iter.next();
+          // 遍历chosenNode所有存储目录，查找符合要求的StorageType
           for (i = 0; i < storages.length; i++) {
             StorageType type = entry.getKey();
             final int newExcludedNodes = addIfIsGoodTarget(storages[i],
