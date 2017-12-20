@@ -122,6 +122,9 @@ public class Client {
     retryCount.set(rc);
   }
 
+  // 连接列表，类似于连接池
+  // 每个连接有一个ID，如果ID相同可以复用连接
+  // 连接空闲时间如果达到maxIdleTime，会被关闭，并从connections中移除
   private Hashtable<ConnectionId, Connection> connections =
     new Hashtable<ConnectionId, Connection>();
 
@@ -145,11 +148,13 @@ public class Client {
    * thread isolates them from thread interruptions in the
    * calling code.
    */
+  // 发送RPC请求的线程池
   private final ExecutorService sendParamsExecutor;
   private final static ClientExecutorServiceFactory clientExcecutorFactory =
       new ClientExecutorServiceFactory();
 
   private static class ClientExecutorServiceFactory {
+    // 记录有多少个Client对象
     private int executorRefCount = 0;
     private ExecutorService clientExecutor = null;
     
@@ -314,6 +319,7 @@ public class Client {
     final Writable rpcRequest;  // the serialized rpc request
     Writable rpcResponse;       // null if rpc has error
     IOException error;          // exception, null if success
+    // RPC引擎类型
     final RPC.RpcKind rpcKind;      // Rpc EngineKind
     boolean done;               // true when call is done
 
@@ -373,19 +379,23 @@ public class Client {
    * socket connected to a remote address.  Calls are multiplexed through this
    * socket: responses may be delivered out of order. */
   private class Connection extends Thread {
+    // 服务器地址
     private InetSocketAddress server;             // server ip:port
+    // 连接ID
     private final ConnectionId remoteId;                // connection id
+    // 认证方法
     private AuthMethod authMethod; // authentication method
     private AuthProtocol authProtocol;
     private int serviceClass;
     private SaslRpcClient saslRpcClient;
-    
+
+    // 连接相关
     private Socket socket = null;                 // connected socket
     private DataInputStream in;
     private DataOutputStream out;
     private int rpcTimeout;
-    private int maxIdleTime; //connections will be culled if it was idle for 
-    //maxIdleTime msecs
+    // 连接最大空闲时间，到达之后连接会被关闭
+    private int maxIdleTime; //connections will be culled if it was idle for maxIdleTime msecs
     private final RetryPolicy connectionRetryPolicy;
     private final int maxRetriesOnSasl;
     private int maxRetriesOnSocketTimeouts;
@@ -395,6 +405,7 @@ public class Client {
     private ByteArrayOutputStream pingRequest; // ping message
     
     // currently active calls
+    // 这个连接发送的RPC调用列表
     private Hashtable<Integer, Call> calls = new Hashtable<Integer, Call>();
     private AtomicLong lastActivity = new AtomicLong();// last I/O activity time
     private AtomicBoolean shouldCloseConnection = new AtomicBoolean();  // indicate if the connection is closed
@@ -610,11 +621,13 @@ public class Client {
               }
             }
           }
-          
+
+          // 建立连接
           NetUtils.connect(this.socket, server, connectionTimeout);
           if (rpcTimeout > 0) {
             pingInterval = rpcTimeout;  // rpcTimeout overwrites pingInterval
           }
+          // 设置RPC调用超时
           this.socket.setSoTimeout(pingInterval);
           return;
         } catch (ConnectTimeoutException toe) {
@@ -709,9 +722,11 @@ public class Client {
         short numRetries = 0;
         Random rand = null;
         while (true) {
+          // 建立连接
           setupConnection();
           InputStream inStream = NetUtils.getInputStream(socket);
           OutputStream outStream = NetUtils.getOutputStream(socket);
+          // 发送连接头
           writeConnectionHeader(outStream);
           if (authProtocol == AuthProtocol.SASL) {
             final InputStream in2 = inStream;
@@ -771,7 +786,8 @@ public class Client {
             outStream = new BufferedOutputStream(outStream);
           }
           this.out = new DataOutputStream(outStream);
-          
+
+          // 发送认证信息等
           writeConnectionContext(remoteId, authMethod);
 
           // update last activity time
@@ -781,8 +797,7 @@ public class Client {
             Trace.addTimelineAnnotation("IPC client connected to " + server);
           }
 
-          // start the receiver thread after the socket connection has been set
-          // up
+          // start the receiver thread after the socket connection has been set up
           start();
           return;
         }
@@ -1020,8 +1035,8 @@ public class Client {
       RpcRequestHeaderProto header = ProtoUtil.makeRpcRequestHeader(
           call.rpcKind, OperationProto.RPC_FINAL_PACKET, call.id, call.retry,
           clientId);
-      header.writeDelimitedTo(d);
-      call.rpcRequest.write(d);
+      header.writeDelimitedTo(d); // 把header写入d
+      call.rpcRequest.write(d);   // 把rpcResuest写入d
 
       synchronized (sendRpcRequestLock) {
         Future<?> senderFuture = sendParamsExecutor.submit(new Runnable() {
@@ -1056,6 +1071,7 @@ public class Client {
         });
       
         try {
+          // 等待任务运行结束（也就是RPC call发送完成）
           senderFuture.get();
         } catch (ExecutionException e) {
           Throwable cause = e.getCause();
@@ -1093,6 +1109,7 @@ public class Client {
         if (LOG.isDebugEnabled())
           LOG.debug(getName() + " got value #" + callId);
 
+        // 服务端返回值，set到call中
         Call call = calls.get(callId);
         RpcStatusProto status = header.getStatus();
         if (status == RpcStatusProto.SUCCESS) {
@@ -1461,6 +1478,7 @@ public class Client {
     }
 
     synchronized (call) {
+      // 阻塞等待call完成（服务端返回结果）
       while (!call.done) {
         try {
           call.wait();                           // wait for the result
@@ -1471,6 +1489,7 @@ public class Client {
       }
 
       if (call.error != null) {
+        // 抛异常
         if (call.error instanceof RemoteException) {
           call.error.fillInStackTrace();
           throw call.error;
@@ -1483,6 +1502,7 @@ public class Client {
                   call.error);
         }
       } else {
+        // 返回结果
         return call.getRpcResponse();
       }
     }
@@ -1525,7 +1545,7 @@ public class Client {
     //block above. The reason for that is if the server happens to be slow,
     //it will take longer to establish a connection and that will slow the
     //entire system down.
-    connection.setupIOstreams(fallbackToSimpleAuth);
+    connection.setupIOstreams(fallbackToSimpleAuth); // 初始化socket连接相关
     return connection;
   }
   
@@ -1533,11 +1553,15 @@ public class Client {
    * This class holds the address and the user ticket. The client connections
    * to servers are uniquely identified by <remoteAddress, protocol, ticket>
    */
+  // 通过<服务器地址、协议、UGI>，唯一标识一个连接
   @InterfaceAudience.LimitedPrivate({"HDFS", "MapReduce"})
   @InterfaceStability.Evolving
   public static class ConnectionId {
+    // 服务器地址
     InetSocketAddress address;
+    // UGI信息
     UserGroupInformation ticket;
+    // 协议：ClientProtocol、DatanodeProtocol等等
     final Class<?> protocol;
     private static final int PRIME = 16777619;
     private final int rpcTimeout;
