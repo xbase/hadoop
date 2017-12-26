@@ -57,6 +57,7 @@ import com.google.common.annotations.VisibleForTesting;
 /**
  * RPC program corresponding to mountd daemon. See {@link Mountd}.
  */
+// Mount服务的逻辑
 public class RpcProgramMountd extends RpcProgram implements MountInterface {
   private static final Log LOG = LogFactory.getLog(RpcProgramMountd.class);
   public static final int PROGRAM = 100005;

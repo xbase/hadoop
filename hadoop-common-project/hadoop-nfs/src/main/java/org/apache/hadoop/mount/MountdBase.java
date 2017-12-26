@@ -97,6 +97,7 @@ abstract public class MountdBase {
     startUDPServer();
     startTCPServer();
     if (register) {
+      // 向portmap注册
       ShutdownHookManager.get().addShutdownHook(new Unregister(),
           SHUTDOWN_HOOK_PRIORITY);
       try {

@@ -49,6 +49,7 @@ public abstract class Nfs3Base {
     startTCPServer(); // Start TCP server
 
     if (register) {
+      // 向portmap注册
       ShutdownHookManager.get().addShutdownHook(new NfsShutdownHook(),
           SHUTDOWN_HOOK_PRIORITY);
       try {

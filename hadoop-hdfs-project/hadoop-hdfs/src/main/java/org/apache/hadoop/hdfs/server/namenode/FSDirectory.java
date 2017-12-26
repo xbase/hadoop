@@ -1522,6 +1522,7 @@ public class FSDirectory implements Closeable {
     }
   }
 
+  // 通过inodeId查找文件路径
   private static String resolveDotInodesPath(String src,
       byte[][] pathComponents, FSDirectory fsd)
       throws FileNotFoundException {

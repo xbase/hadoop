@@ -141,6 +141,7 @@ import com.google.common.annotations.VisibleForTesting;
 /**
  * RPC program corresponding to nfs daemon. See {@link Nfs3}.
  */
+// NFS服务的逻辑
 public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
   public static final int DEFAULT_UMASK = 0022;
   public static final FsPermission umask = new FsPermission(

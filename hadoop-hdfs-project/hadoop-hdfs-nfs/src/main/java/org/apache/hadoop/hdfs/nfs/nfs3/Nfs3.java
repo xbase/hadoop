@@ -53,7 +53,9 @@ public class Nfs3 extends Nfs3Base {
   
   @VisibleForTesting
   public void startServiceInternal(boolean register) throws IOException {
+    // 启动Mount服务
     mountd.start(register); // Start mountd
+    // 启动NFS服务
     start(register);
   }
   
