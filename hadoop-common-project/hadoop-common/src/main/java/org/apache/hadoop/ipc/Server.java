@@ -744,7 +744,8 @@ public abstract class Server {
         channel.configureBlocking(false);
         channel.socket().setTcpNoDelay(tcpNoDelay);
         channel.socket().setKeepAlive(true);
-        
+
+        // 轮询选择一个Reader
         Reader reader = getReader();
         Connection c = connectionManager.register(channel);
         // If the connectionManager can't take it, close the connection.
@@ -768,6 +769,7 @@ public abstract class Server {
       c.setLastContact(Time.now());
       
       try {
+        // 读取请求并封装为Call对象
         count = c.readAndProcess();
       } catch (InterruptedException ieo) {
         LOG.info(Thread.currentThread().getName() + ": readAndProcess caught InterruptedException", ieo);
@@ -987,6 +989,7 @@ public abstract class Server {
           if (numBytes < 0) {
             return true;
           }
+          // 是否将一个完整的响应发送给客户端
           if (!call.rpcResponse.hasRemaining()) {
             //Clear out the response buffer so it can be collected
             call.rpcResponse = null;
@@ -1006,7 +1009,8 @@ public abstract class Server {
             // insert in Selector queue. 
             //
             call.connection.responseQueue.addFirst(call);
-            
+
+            // Handler线程处理
             if (inHandler) {
               // set the serve time when the response has to be sent later
               call.timestamp = Time.now();
@@ -1764,6 +1768,7 @@ public abstract class Server {
       try {
         final DataInputStream dis =
             new DataInputStream(new ByteArrayInputStream(buf));
+        // 请求头
         final RpcRequestHeaderProto header =
             decodeProtobufFromStream(RpcRequestHeaderProto.newBuilder(), dis);
         callId = header.getCallId();
@@ -1780,6 +1785,7 @@ public abstract class Server {
               RpcErrorCodeProto.FATAL_INVALID_RPC_HEADER,
               "Connection context not established");
         } else {
+          // 处理RPC请求
           processRpcRequest(header, dis);
         }
       } catch (WrappedRpcServerException wrse) { // inform client of error
@@ -1788,6 +1794,7 @@ public abstract class Server {
         setupResponse(authFailedResponse, call,
             RpcStatusProto.FATAL, wrse.getRpcErrorCodeProto(), null,
             ioe.getClass().getName(), ioe.getMessage());
+        // 返回带有异常信息的RPC响应
         responder.doRespond(call);
         throw wrse;
       }
@@ -1866,6 +1873,7 @@ public abstract class Server {
         traceSpan = Trace.startSpan(rpcRequest.toString(), parentSpan).detach();
       }
 
+      // 构造Call对象
       Call call = new Call(header.getCallId(), header.getRetryCount(),
           rpcRequest, this, ProtoUtil.convert(header.getRpcKind()),
           header.getClientId().toByteArray(), traceSpan);

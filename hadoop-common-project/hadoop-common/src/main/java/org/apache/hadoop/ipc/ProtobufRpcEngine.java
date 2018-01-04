@@ -595,6 +595,7 @@ public class ProtobufRpcEngine implements RpcEngine {
         ProtoClassProtoImpl protocolImpl = getProtocolImpl(server, protoName,
             clientVersion);
         BlockingService service = (BlockingService) protocolImpl.protocolImpl;
+        // 使用protobuf内置的方法，获取远程调用的方法
         MethodDescriptor methodDescriptor = service.getDescriptorForType()
             .findMethodByName(methodName);
         if (methodDescriptor == null) {
@@ -613,6 +614,7 @@ public class ProtobufRpcEngine implements RpcEngine {
         Exception exception = null;
         try {
           server.rpcDetailedMetrics.init(protocolImpl.protocolClass);
+          // 执行目标方法
           result = service.callBlockingMethod(methodDescriptor, null, param);
         } catch (ServiceException e) {
           exception = (Exception) e.getCause();

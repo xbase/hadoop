@@ -120,6 +120,7 @@ public class CallQueueManager<E> {
    * Replaces active queue with the newly requested one and transfers
    * all calls to the newQ before returning.
    */
+  // 使用两个AtomicReference，来提高性能
   public synchronized void swapQueue(
       Class<? extends BlockingQueue<E>> queueClassToUse, int maxSize,
       String ns, Configuration conf) {
