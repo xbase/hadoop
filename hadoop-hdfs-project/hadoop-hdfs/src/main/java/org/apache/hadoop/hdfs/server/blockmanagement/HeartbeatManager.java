@@ -285,15 +285,15 @@ class HeartbeatManager implements DatanodeStatistics {
     boolean allAlive = false;
     while (!allAlive) {
       // locate the first dead node.
-      DatanodeID dead = null;
+      DatanodeID dead = null; // 查找到的第一个故障DN
 
       // locate the first failed storage that isn't on a dead node.
-      DatanodeStorageInfo failedStorage = null;
+      DatanodeStorageInfo failedStorage = null; // 查找到的第一个故障Storage（这个Storage所在的DN不是第一个故障DN）
 
       // check the number of stale nodes
       int numOfStaleNodes = 0;
       int numOfStaleStorages = 0;
-      synchronized(this) {
+      synchronized(this) { // 统计故障DN和故障Storage的数量
         for (DatanodeDescriptor d : datanodes) {
           if (dead == null && dm.isDatanodeDead(d)) {
             stats.incrExpiredHeartbeats();
@@ -331,7 +331,7 @@ class HeartbeatManager implements DatanodeStatistics {
             return;
           }
           synchronized(this) {
-            dm.removeDeadDatanode(dead);
+            dm.removeDeadDatanode(dead); // 删除故障DN上所有的数据块信息
           }
         } finally {
           namesystem.writeUnlock();
@@ -345,7 +345,7 @@ class HeartbeatManager implements DatanodeStatistics {
             return;
           }
           synchronized(this) {
-            blockManager.removeBlocksAssociatedTo(failedStorage);
+            blockManager.removeBlocksAssociatedTo(failedStorage); // 删除故障Storage上所有的数据块信息
           }
         } finally {
           namesystem.writeUnlock();
