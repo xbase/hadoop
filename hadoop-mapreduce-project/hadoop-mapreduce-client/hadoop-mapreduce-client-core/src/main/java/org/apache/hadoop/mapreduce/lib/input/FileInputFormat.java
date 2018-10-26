@@ -377,6 +377,7 @@ public abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
    * @param job the job context
    * @throws IOException
    */
+  // 默认一个block一个InputSplit
   public List<InputSplit> getSplits(JobContext job) throws IOException {
     StopWatch sw = new StopWatch().start();
     long minSize = Math.max(getFormatMinSplitSize(), getMinSplitSize(job));
@@ -384,7 +385,7 @@ public abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
 
     // generate splits
     List<InputSplit> splits = new ArrayList<InputSplit>();
-    List<FileStatus> files = listStatus(job);
+    List<FileStatus> files = listStatus(job); // 获取inputPaths下的文件信息
     for (FileStatus file: files) {
       Path path = file.getPath();
       long length = file.getLen();
@@ -394,11 +395,11 @@ public abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
           blkLocations = ((LocatedFileStatus) file).getBlockLocations();
         } else {
           FileSystem fs = path.getFileSystem(job.getConfiguration());
-          blkLocations = fs.getFileBlockLocations(file, 0, length);
+          blkLocations = fs.getFileBlockLocations(file, 0, length); // block位置信息
         }
         if (isSplitable(job, path)) {
           long blockSize = file.getBlockSize();
-          long splitSize = computeSplitSize(blockSize, minSize, maxSize);
+          long splitSize = computeSplitSize(blockSize, minSize, maxSize); // 默认为blockSize
 
           long bytesRemaining = length;
           while (((double) bytesRemaining)/splitSize > SPLIT_SLOP) {
