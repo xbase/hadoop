@@ -255,7 +255,7 @@ public class RemoteBlockReader2  implements BlockReader {
   }
   
   @Override
-  public synchronized long skip(long n) throws IOException {
+  public synchronized long skip(long n) throws IOException { // 读出来，并丢弃
     /* How can we make sure we don't throw a ChecksumException, at least
      * in majority of the cases?. This one throws. */  
     if ( skipBuf == null ) {

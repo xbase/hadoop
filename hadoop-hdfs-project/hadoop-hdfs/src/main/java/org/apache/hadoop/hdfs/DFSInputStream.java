@@ -438,7 +438,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
 
   // Short circuit local reads are forbidden for files that are
   // under construction.  See HDFS-2757.
-  boolean shortCircuitForbidden() {
+  boolean shortCircuitForbidden() { // block未完成时，不允许短读
     synchronized(infoLock) {
       return locatedBlocks.isUnderConstruction();
     }
@@ -546,7 +546,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
     synchronized(infoLock) {
       final List<LocatedBlock> blocks;
       final long lengthOfCompleteBlk = locatedBlocks.getFileLength();
-      final boolean readOffsetWithinCompleteBlk = offset < lengthOfCompleteBlk;
+      final boolean readOffsetWithinCompleteBlk = offset < lengthOfCompleteBlk; // 要读的长度，在已完成的块的长度内
       final boolean readLengthPastCompleteBlk = offset + length > lengthOfCompleteBlk; // 要读的长度，超出已完成的块的长度
 
       if (readOffsetWithinCompleteBlk) {
@@ -969,7 +969,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
   }
 
   private DNAddrPair chooseDataNode(LocatedBlock block,
-      Collection<DatanodeInfo> ignoredNodes) throws IOException {
+      Collection<DatanodeInfo> ignoredNodes) throws IOException { // 选择一个副本
     while (true) {
       try {
         return getBestNodeDNAddrPair(block, ignoredNodes);
@@ -1439,7 +1439,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
     int remaining = realLen;
     Map<ExtendedBlock,Set<DatanodeInfo>> corruptedBlockMap 
       = new HashMap<ExtendedBlock, Set<DatanodeInfo>>();
-    for (LocatedBlock blk : blockRange) {
+    for (LocatedBlock blk : blockRange) { // 一个块一个块的读取所有数据
       long targetStart = position - blk.getStartOffset(); // 块中的offset
       long bytesToRead = Math.min(remaining, blk.getBlockSize() - targetStart); // 这个块中可以读取的长度
       try {
@@ -1533,7 +1533,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
       throw new IOException("Stream is closed!");
     }
     boolean done = false;
-    if (pos <= targetPos && targetPos <= blockEnd) {
+    if (pos <= targetPos && targetPos <= blockEnd) { // 只能向前seek
       //
       // If this seek is to a positive position in the current
       // block, and this piece of data might already be lying in
@@ -1542,7 +1542,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
       int diff = (int)(targetPos - pos);
       if (diff <= blockReader.available()) {
         try {
-          pos += blockReader.skip(diff);
+          pos += blockReader.skip(diff); // 跳到指定位置
           if (pos == targetPos) {
             done = true;
           } else {
