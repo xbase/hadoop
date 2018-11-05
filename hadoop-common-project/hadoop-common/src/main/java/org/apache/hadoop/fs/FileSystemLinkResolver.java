@@ -69,7 +69,7 @@ public abstract class FileSystemLinkResolver<T> {
    * @throws IOException
    */
   public T resolve(final FileSystem filesys, final Path path)
-      throws IOException {
+      throws IOException { // 处理软链
     int count = 0;
     T in = null;
     Path p = path;

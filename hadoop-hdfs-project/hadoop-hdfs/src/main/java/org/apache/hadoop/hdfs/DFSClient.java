@@ -635,7 +635,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
     traceSampler = new SamplerBuilder(TraceUtils.
         wrapHadoopConf(DFSConfigKeys.DFS_CLIENT_HTRACE_PREFIX, conf)).build();
     // Copy only the required DFSClient configuration
-    this.dfsClientConf = new Conf(conf);
+    this.dfsClientConf = new Conf(conf); // 客户端需要的配置
     if (this.dfsClientConf.useLegacyBlockReaderLocal) {
       LOG.debug("Using legacy short-circuit local reads.");
     }
@@ -649,7 +649,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
     
     this.authority = nameNodeUri == null? "null": nameNodeUri.getAuthority();
     this.clientName = "DFSClient_" + dfsClientConf.taskId + "_" + 
-        DFSUtil.getRandom().nextInt()  + "_" + Thread.currentThread().getId();
+        DFSUtil.getRandom().nextInt()  + "_" + Thread.currentThread().getId(); // 租约会用到
     int numResponseToDrop = conf.getInt(
         DFSConfigKeys.DFS_CLIENT_TEST_DROP_NAMENODE_RESPONSE_NUM_KEY,
         DFSConfigKeys.DFS_CLIENT_TEST_DROP_NAMENODE_RESPONSE_NUM_DEFAULT);
@@ -1447,6 +1447,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
    * Wraps the stream in a CryptoInputStream if the underlying file is
    * encrypted.
    */
+  // 块如果被加密，则把DFSInputStream再包装一下
   public HdfsDataInputStream createWrappedInputStream(DFSInputStream dfsis)
       throws IOException {
     final FileEncryptionInfo feInfo = dfsis.getFileEncryptionInfo();

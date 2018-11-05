@@ -364,7 +364,7 @@ public abstract class FileSystem extends Configured implements Closeable {
     }
     
     String disableCacheName = String.format("fs.%s.impl.disable.cache", scheme);
-    if (conf.getBoolean(disableCacheName, false)) {
+    if (conf.getBoolean(disableCacheName, false)) { // 默认使用缓存
       return createFileSystem(uri, conf);
     }
 
