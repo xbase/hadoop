@@ -137,8 +137,8 @@ class LeaseRenewer {
     /** Get a renewer. */
     private synchronized LeaseRenewer get(final String authority,
         final UserGroupInformation ugi) {
-      final Key k = new Key(authority, ugi);
-      LeaseRenewer r = renewers.get(k);
+      final Key k = new Key(authority, ugi);// authority: NN地址
+      LeaseRenewer r = renewers.get(k); // 相当于一个用户，对应于一个NN，只有一个LeaseRenewer对象
       if (r == null) {
         r = new LeaseRenewer(k);
         renewers.put(k, r);
@@ -301,7 +301,7 @@ class LeaseRenewer {
                 LOG.debug("Lease renewer daemon for " + clientsString()
                     + " with renew id " + id + " started");
               }
-              LeaseRenewer.this.run(id);
+              LeaseRenewer.this.run(id); // 定期续约
             } catch(InterruptedException e) {
               if (LOG.isDebugEnabled()) {
                 LOG.debug(LeaseRenewer.this.getClass().getSimpleName()
@@ -420,7 +420,7 @@ class LeaseRenewer {
       final DFSClient c = copies.get(i);
       //skip if current client name is the same as the previous name.
       if (!c.getClientName().equals(previousName)) {
-        if (!c.renewLease()) {
+        if (!c.renewLease()) { // 续约此DFSClient的租约
           if (LOG.isDebugEnabled()) {
             LOG.debug("Did not renew lease for client " +
                 c);
@@ -445,7 +445,7 @@ class LeaseRenewer {
       final long elapsed = Time.monotonicNow() - lastRenewed;
       if (elapsed >= getRenewalTime()) {
         try {
-          renew();
+          renew(); // 续约
           if (LOG.isDebugEnabled()) {
             LOG.debug("Lease renewer daemon for " + clientsString()
                 + " with renew id " + id + " executed");

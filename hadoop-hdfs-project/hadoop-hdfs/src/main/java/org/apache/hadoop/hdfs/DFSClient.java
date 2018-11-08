@@ -879,15 +879,6 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
     return lastLeaseRenewal;
   }
 
-  void updateLastLeaseRenewal() {
-    synchronized(filesBeingWritten) {
-      if (filesBeingWritten.isEmpty()) {
-        return;
-      }
-      lastLeaseRenewal = Time.monotonicNow();
-    }
-  }
-
   /**
    * Renew leases.
    * @return true if lease was renewed. May return false if this
@@ -900,7 +891,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
         updateLastLeaseRenewal();
         return true;
       } catch (IOException e) {
-        // Abort if the lease has already expired. 
+        // Abort if the lease has already expired.
         final long elapsed = Time.monotonicNow() - getLastLeaseRenewal();
         if (elapsed > HdfsConstants.LEASE_HARDLIMIT_PERIOD) {
           LOG.warn("Failed to renew lease for " + clientName + " for "
@@ -916,7 +907,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
     }
     return false;
   }
-  
+
   /**
    * Close connections the Namenode.
    */
@@ -924,8 +915,17 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
     RPC.stopProxy(namenode);
   }
 
+  void updateLastLeaseRenewal() {
+    synchronized(filesBeingWritten) {
+      if (filesBeingWritten.isEmpty()) {
+        return;
+      }
+      lastLeaseRenewal = Time.monotonicNow();
+    }
+  }
+
   /** Close/abort all files being written. */
-  public void closeAllFilesBeingWritten(final boolean abort) {
+  public void closeAllFilesBeingWritten(final boolean abort) { // 中断或关闭所有正在写的文件
     for(;;) {
       final long inodeId;
       final DFSOutputStream out;

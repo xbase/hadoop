@@ -50,7 +50,7 @@ abstract public class FSOutputSummer extends OutputStream {
   
   protected FSOutputSummer(DataChecksum sum) {
     this.sum = sum;
-    this.buf = new byte[sum.getBytesPerChecksum() * BUFFER_NUM_CHUNKS];
+    this.buf = new byte[sum.getBytesPerChecksum() * BUFFER_NUM_CHUNKS]; // 默认9个chunk
     this.checksum = new byte[getChecksumSize() * BUFFER_NUM_CHUNKS];
     this.count = 0;
   }
@@ -121,16 +121,16 @@ abstract public class FSOutputSummer extends OutputStream {
       // simply checksum the user buffer and send it directly to the underlying
       // stream
       final int length = buf.length;
-      writeChecksumChunks(b, off, length);
+      writeChecksumChunks(b, off, length); // 直接发送用户Buffer
       return length;
     }
     
     // copy user data to local buffer
     int bytesToCopy = buf.length-count;
     bytesToCopy = (len<bytesToCopy) ? len : bytesToCopy;
-    System.arraycopy(b, off, buf, count, bytesToCopy);
+    System.arraycopy(b, off, buf, count, bytesToCopy); // 复制用户buf数据到buf数组
     count += bytesToCopy;
-    if (count == buf.length) {
+    if (count == buf.length) { // buf满的时候，才会发送
       // local buffer is full
       flushBuffer();
     } 
@@ -199,10 +199,10 @@ abstract public class FSOutputSummer extends OutputStream {
    */
   private void writeChecksumChunks(byte b[], int off, int len)
   throws IOException {
-    sum.calculateChunkedSums(b, off, len, checksum, 0);
+    sum.calculateChunkedSums(b, off, len, checksum, 0); // 计算校验和
     for (int i = 0; i < len; i += sum.getBytesPerChecksum()) {
       int chunkLen = Math.min(sum.getBytesPerChecksum(), len - i);
-      int ckOffset = i / sum.getBytesPerChecksum() * getChecksumSize();
+      int ckOffset = i / sum.getBytesPerChecksum() * getChecksumSize(); // 校验和的offset
       writeChunk(b, off + i, chunkLen, checksum, ckOffset, getChecksumSize());
     }
   }

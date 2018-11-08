@@ -153,14 +153,6 @@ public class PipelineAck {
   }
   
   /**
-   * Get the number of replies
-   * @return the number of replies
-   */
-  public short getNumOfReplies() {
-    return (short)proto.getReplyCount();
-  }
-  
-  /**
    * get the header flag of ith reply
    */
   public int getHeaderFlag(int i) {
@@ -169,6 +161,14 @@ public class PipelineAck {
     } else {
       return combineHeader(ECN.DISABLED, proto.getReply(i));
     }
+  }
+
+  /**
+   * Get the number of replies
+   * @return the number of replies
+   */
+  public short getNumOfReplies() {
+    return (short)proto.getReplyCount(); // 获取pipeline上每个DN的reply？
   }
 
   public int getFlag(int i) {
