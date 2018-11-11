@@ -130,7 +130,7 @@ abstract public class FSOutputSummer extends OutputStream {
     bytesToCopy = (len<bytesToCopy) ? len : bytesToCopy;
     System.arraycopy(b, off, buf, count, bytesToCopy); // 复制用户buf数据到buf数组
     count += bytesToCopy;
-    if (count == buf.length) { // buf满的时候，才会发送
+    if (count == buf.length) { // buf满的时候，才会发送: 默认是9个chunk
       // local buffer is full
       flushBuffer();
     } 
