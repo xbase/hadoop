@@ -2049,7 +2049,7 @@ public class DFSOutputStream extends FSOutputSummer
           }
         }
         if (currentPacket != null) {
-          currentPacket.setSyncBlock(isSync);
+          currentPacket.setSyncBlock(isSync); // 如以上逻辑，当sync时，创建了一个packet，然后在这里设置sync标记
           waitAndQueueCurrentPacket(); // 把currentPacket放入dataQueue中
         }
 
