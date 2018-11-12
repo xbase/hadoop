@@ -154,14 +154,16 @@ abstract public class FSOutputSummer extends OutputStream {
    * Returns the number of bytes that were flushed but are still left in the
    * buffer (can only be non-zero if keep is true).
    */
+  // keep: 最后一个不完整的trunk，是否保持在buf中（和flushPartial为false时，一个意思）
+  // flushPartial: 最后一个不完整的trunk，是否flush
   protected synchronized int flushBuffer(boolean keep,
       boolean flushPartial) throws IOException {
     int bufLen = count;
-    int partialLen = bufLen % sum.getBytesPerChecksum();
+    int partialLen = bufLen % sum.getBytesPerChecksum(); // 最后一个不完整的trunk长度
     int lenToFlush = flushPartial ? bufLen : bufLen - partialLen;
     if (lenToFlush != 0) {
       writeChecksumChunks(buf, 0, lenToFlush);
-      if (!flushPartial || keep) {
+      if (!flushPartial || keep) { // 保持最后一个不完整的trunk在buf中
         count = partialLen;
         System.arraycopy(buf, bufLen - count, buf, 0, count);
       } else {
@@ -170,7 +172,7 @@ abstract public class FSOutputSummer extends OutputStream {
     }
 
     // total bytes left minus unflushed bytes left
-    return count - (bufLen - lenToFlush);
+    return count - (bufLen - lenToFlush); // 一共flush的长度
   }
 
   /**
@@ -191,7 +193,7 @@ abstract public class FSOutputSummer extends OutputStream {
 
   /** @return the size for a checksum. */
   protected int getChecksumSize() {
-    return sum.getChecksumSize();
+    return sum.getChecksumSize(); // 默认CRC32: 4字节
   }
 
   /** Generate checksums for the given data chunks and output chunks & checksums
@@ -201,9 +203,9 @@ abstract public class FSOutputSummer extends OutputStream {
   throws IOException {
     sum.calculateChunkedSums(b, off, len, checksum, 0); // 计算校验和
     for (int i = 0; i < len; i += sum.getBytesPerChecksum()) {
-      int chunkLen = Math.min(sum.getBytesPerChecksum(), len - i);
+      int chunkLen = Math.min(sum.getBytesPerChecksum(), len - i); // chunk的长度
       int ckOffset = i / sum.getBytesPerChecksum() * getChecksumSize(); // 校验和的offset
-      writeChunk(b, off + i, chunkLen, checksum, ckOffset, getChecksumSize());
+      writeChunk(b, off + i, chunkLen, checksum, ckOffset, getChecksumSize()); // 写一个chunk
     }
   }
 

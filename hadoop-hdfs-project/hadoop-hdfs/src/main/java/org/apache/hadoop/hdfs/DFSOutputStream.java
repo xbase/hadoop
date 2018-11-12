@@ -456,7 +456,7 @@ public class DFSOutputStream extends FSOutputSummer
             if(DFSClient.LOG.isDebugEnabled()) {
               DFSClient.LOG.debug("Append to block " + block);
             }
-            setupPipelineForAppendOrRecovery(); // TODOWXY
+            setupPipelineForAppendOrRecovery();
             initDataStreaming();
           }
 
@@ -586,7 +586,7 @@ public class DFSOutputStream extends FSOutputSummer
       closeResponder();       // close and join
       closeStream();
       streamerClosed = true;
-      setClosed();
+      setClosed(); // 标记DataStreamer关闭，主要是通知writeChunk()线程
       synchronized (dataQueue) {
         dataQueue.notifyAll();
       }
@@ -681,7 +681,7 @@ public class DFSOutputStream extends FSOutputSummer
      * but something failed. When the primary node is a suspect or
      * unsure about the cause, the primary node is marked as failed.
      */
-    synchronized void tryMarkPrimaryDatanodeFailed() { // 标记pipeline中第一个DN为错误节点
+    synchronized void tryMarkPrimaryDatanodeFailed() { // 不知道哪个DN出错，则标记pipeline中第一个DN为出错节点
       // There should be no existing error and no ongoing restart.
       if ((errorIndex == -1) && (restartingNodeIndex.get() == -1)) {
         errorIndex = 0;
@@ -832,7 +832,7 @@ public class DFSOutputStream extends FSOutputSummer
                 DFSClient.LOG.warn("DFSOutputStream ResponseProcessor exception "
                      + " for block " + block, e);
               }
-              responderClosed = true;
+              responderClosed = true; // 接收到异常，response线程则退出
             }
           } finally {
             scope.close();
@@ -1578,7 +1578,7 @@ public class DFSOutputStream extends FSOutputSummer
 
   @Override
   protected void checkClosed() throws IOException {
-    if (isClosed()) {
+    if (isClosed()) { // 发现dataStreamer关闭，抛异常
       IOException e = lastException.get();
       throw e != null ? e : new ClosedChannelException();
     }
@@ -1858,12 +1858,12 @@ public class DFSOutputStream extends FSOutputSummer
     dfsClient.checkOpen();
     checkClosed();
 
-    if (len > bytesPerChecksum) {
+    if (len > bytesPerChecksum) { // 检查trunk长度
       throw new IOException("writeChunk() buffer size is " + len +
                             " is larger than supported  bytesPerChecksum " +
                             bytesPerChecksum);
     }
-    if (cklen != 0 && cklen != getChecksumSize()) {
+    if (cklen != 0 && cklen != getChecksumSize()) { // 检查检验和长度
       throw new IOException("writeChunk() checksum size is supposed to be " +
                             getChecksumSize() + " but found to be " + cklen);
     }
@@ -1884,7 +1884,7 @@ public class DFSOutputStream extends FSOutputSummer
     currentPacket.writeChecksum(checksum, ckoff, cklen); // 先写校验和
     currentPacket.writeData(b, offset, len); // 再写chunk数据
     currentPacket.incNumChunks(); // 此packet的chunk数量
-    bytesCurBlock += len;
+    bytesCurBlock += len; // 当前block，已经写了多少字节，其实只是生成了packet，还没有发送到DN
 
     // If packet is full, enqueue it for transmission
     //
@@ -1903,7 +1903,7 @@ public class DFSOutputStream extends FSOutputSummer
       // If the reopened file did not end at chunk boundary and the above
       // write filled up its partial chunk. Tell the summer to generate full 
       // crc chunks from now on.
-      if (appendChunk && bytesCurBlock%bytesPerChecksum == 0) { // TODOWXY
+      if (appendChunk && bytesCurBlock%bytesPerChecksum == 0) { // 如果是appendChunk，说明之前的chunk没有写满，发送完后，重置buf大小
         appendChunk = false;
         resetChecksumBufSize();
       }
