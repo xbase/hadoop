@@ -2007,12 +2007,15 @@ public class DFSOutputStream extends FSOutputSummer
       long lastBlockLength = -1L;
       boolean updateLength = syncFlags.contains(SyncFlag.UPDATE_LENGTH);
       boolean endBlock = syncFlags.contains(SyncFlag.END_BLOCK);
+      // step 1: 处理sync逻辑
       synchronized (this) {
         // flush checksum buffer, but keep checksum buffer intact if we do not
         // need to end the current block
-        int numKept = flushBuffer(!endBlock, true);
+        int numKept = flushBuffer(!endBlock, true); // 写buffer数据到packet
         // bytesCurBlock potentially incremented if there was buffered data
 
+        // bytesCurBlock: 当前块已写长度，可能还没发送
+        // lastFlushOffset: 当前块已flush的长度，通知本方法flush
         if (DFSClient.LOG.isDebugEnabled()) {
           DFSClient.LOG.debug("DFSClient flush():"
               + " bytesCurBlock=" + bytesCurBlock
@@ -2047,12 +2050,14 @@ public class DFSOutputStream extends FSOutputSummer
         }
         if (currentPacket != null) {
           currentPacket.setSyncBlock(isSync);
-          waitAndQueueCurrentPacket();          
+          waitAndQueueCurrentPacket(); // 把currentPacket放入dataQueue中
         }
+
+        // step 2: 处理SyncFlag.END_BLOCK逻辑
         if (endBlock && bytesCurBlock > 0) {
           // Need to end the current block, thus send an empty packet to
           // indicate this is the end of the block and reset bytesCurBlock
-          currentPacket = createPacket(0, 0, bytesCurBlock, currentSeqno++, true);
+          currentPacket = createPacket(0, 0, bytesCurBlock, currentSeqno++, true); // 创建一个空packet标识block结束
           currentPacket.setSyncBlock(shouldSyncBlock || isSync);
           waitAndQueueCurrentPacket();
           bytesCurBlock = 0;
@@ -2066,13 +2071,15 @@ public class DFSOutputStream extends FSOutputSummer
         toWaitFor = lastQueuedSeqno;
       } // end synchronized
 
-      waitForAckedSeqno(toWaitFor);
+      // step 3: 处理flush逻辑，确保所有的packet DN已收到
+      waitForAckedSeqno(toWaitFor); // 等待直到lastQueuedSeqno被ack
 
+      // step 4: 处理SyncFlag.UPDATE_LENGTH逻辑：主要就是通知NN更新此文件的长度
       // update the block length first time irrespective of flag
       if (updateLength || persistBlocks.get()) {
         synchronized (this) {
           if (streamer != null && streamer.block != null) {
-            lastBlockLength = streamer.block.getNumBytes();
+            lastBlockLength = streamer.block.getNumBytes(); // 最后一个块的长度
           }
         }
       }
@@ -2082,7 +2089,7 @@ public class DFSOutputStream extends FSOutputSummer
       if (persistBlocks.getAndSet(false) || updateLength) {
         try {
           dfsClient.namenode.fsync(src, fileId, dfsClient.clientName,
-              lastBlockLength);
+              lastBlockLength); // 通知NN更新这个文件的长度
         } catch (IOException ioe) {
           DFSClient.LOG.warn("Unable to persist blocks in hflush for " + src, ioe);
           // If we got an error here, it might be because some other thread called
@@ -2266,7 +2273,7 @@ public class DFSOutputStream extends FSOutputSummer
       TraceScope scope = dfsClient.getPathTraceScope("DFSOutputStream#close",
           src);
       try {
-        closeImpl();
+        closeImpl(); // 把buffer中的数据发出，并等待所有packet的ack，最后向NN提交文件
       } finally {
         scope.close();
       }
@@ -2284,7 +2291,7 @@ public class DFSOutputStream extends FSOutputSummer
     }
 
     try {
-      // 将buffer中的数据，写入packet
+      // step 1: 将buffer中的数据，写入packet
       flushBuffer();       // flush from all upper layers
 
       if (currentPacket != null) { 
@@ -2293,18 +2300,19 @@ public class DFSOutputStream extends FSOutputSummer
 
       if (bytesCurBlock != 0) {
         // send an empty packet to mark the end of the block
-        currentPacket = createPacket(0, 0, bytesCurBlock, currentSeqno++, true);
+        currentPacket = createPacket(0, 0, bytesCurBlock, currentSeqno++, true); // 标识block结束
         currentPacket.setSyncBlock(shouldSyncBlock);
       }
 
-      // 等待最后一个packet被ack
+      // step 2: 等待最后一个packet被ack
       flushInternal();             // flush all data to Datanodes
       // get last block before destroying the streamer
       ExtendedBlock lastBlock = streamer.getBlock();
       closeThreads(false);
       TraceScope scope = Trace.startSpan("completeFile", Sampler.NEVER);
       try {
-        completeFile(lastBlock); // 向NN提交文件
+        // step 3: 向NN提交文件
+        completeFile(lastBlock);
       } finally {
         scope.close();
       }
