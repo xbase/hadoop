@@ -399,7 +399,7 @@ public abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
         }
         if (isSplitable(job, path)) {
           long blockSize = file.getBlockSize();
-          long splitSize = computeSplitSize(blockSize, minSize, maxSize); // 默认为blockSize
+          long splitSize = computeSplitSize(blockSize, minSize, maxSize); // 默认为blockSize，单位：字节
 
           long bytesRemaining = length;
           while (((double) bytesRemaining)/splitSize > SPLIT_SLOP) {
