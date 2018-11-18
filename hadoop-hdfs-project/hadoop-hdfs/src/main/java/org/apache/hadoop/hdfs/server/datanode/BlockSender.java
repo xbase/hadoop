@@ -199,7 +199,7 @@ class BlockSender implements java.io.Closeable {
        * When using DataNode defaults, we use a heuristic where we only
        * drop the cache for large reads.
        */
-      if (cachingStrategy.getDropBehind() == null) {
+      if (cachingStrategy.getDropBehind() == null) { // 如果客户端没设置，则使用DN的设置
         this.dropCacheBehindAllReads = false;
         this.dropCacheBehindLargeReads =
             datanode.getDnConf().dropCacheBehindReads;
@@ -215,14 +215,14 @@ class BlockSender implements java.io.Closeable {
        */
       if (cachingStrategy.getReadahead() == null) {
         this.alwaysReadahead = false;
-        this.readaheadLength = datanode.getDnConf().readaheadLength;
+        this.readaheadLength = datanode.getDnConf().readaheadLength; // 默认预读4M
       } else {
         this.alwaysReadahead = true;
         this.readaheadLength = cachingStrategy.getReadahead().longValue();
       }
       this.datanode = datanode;
       
-      if (verifyChecksum) {
+      if (verifyChecksum) { // 如果需要检查校验和，那么DN就必须得发送校验和
         // To simplify implementation, callers may not specify verification
         // without sending.
         Preconditions.checkArgument(sendChecksum,
@@ -232,18 +232,18 @@ class BlockSender implements java.io.Closeable {
       final Replica replica;
       final long replicaVisibleLength;
       synchronized(datanode.data) { 
-        replica = getReplica(block, datanode);
+        replica = getReplica(block, datanode); // 获取副本信息
         replicaVisibleLength = replica.getVisibleLength();
       }
       // if there is a write in progress
       ChunkChecksum chunkChecksum = null;
       if (replica instanceof ReplicaBeingWritten) {
         final ReplicaBeingWritten rbw = (ReplicaBeingWritten)replica;
-        waitForMinLength(rbw, startOffset + length);
+        waitForMinLength(rbw, startOffset + length); // 如果副本正在写，则等待此副本达到想读取的长度
         chunkChecksum = rbw.getLastChecksumAndDataLen();
       }
 
-      if (replica.getGenerationStamp() < block.getGenerationStamp()) {
+      if (replica.getGenerationStamp() < block.getGenerationStamp()) { // 副本已过期
         throw new IOException("Replica gen stamp < block genstamp, block="
             + block + ", replica=" + replica);
       } else if (replica.getGenerationStamp() > block.getGenerationStamp()) {
@@ -252,7 +252,7 @@ class BlockSender implements java.io.Closeable {
               + " block's genstamp to latest " + replica.getGenerationStamp()
               + " for block " + block);
         }
-        block.setGenerationStamp(replica.getGenerationStamp());
+        block.setGenerationStamp(replica.getGenerationStamp()); // 客户端提供的版本信息有点旧
       }
       if (replicaVisibleLength < 0) {
         throw new IOException("Replica is not readable, block="
@@ -282,7 +282,7 @@ class BlockSender implements java.io.Closeable {
         LengthInputStream metaIn = null;
         boolean keepMetaInOpen = false;
         try {
-          metaIn = datanode.data.getMetaDataInputStream(block);
+          metaIn = datanode.data.getMetaDataInputStream(block); // block meta文件输入流
           if (!corruptChecksumOk || metaIn != null) {
             if (metaIn == null) {
               //need checksum but meta-data not found
@@ -300,7 +300,7 @@ class BlockSender implements java.io.Closeable {
               checksumIn = new DataInputStream(new BufferedInputStream(
                   metaIn, HdfsConstants.IO_FILE_BUFFER_SIZE));
   
-              csum = BlockMetadataHeader.readDataChecksum(checksumIn, block);
+              csum = BlockMetadataHeader.readDataChecksum(checksumIn, block); // 读meta文件头，确认校验和信息
               keepMetaInOpen = true;
             }
           } else {
@@ -326,14 +326,14 @@ class BlockSender implements java.io.Closeable {
        * corrupted. For now just truncate bytesPerchecksum to blockLength.
        */       
       int size = csum.getBytesPerChecksum();
-      if (size > 10*1024*1024 && size > replicaVisibleLength) {
+      if (size > 10*1024*1024 && size > replicaVisibleLength) { // 修正校验块长度
         csum = DataChecksum.newDataChecksum(csum.getChecksumType(),
             Math.max((int)replicaVisibleLength, 10*1024*1024));
         size = csum.getBytesPerChecksum();        
       }
-      chunkSize = size;
-      checksum = csum;
-      checksumSize = checksum.getChecksumSize();
+      chunkSize = size; // 校验块长度
+      checksum = csum; // 校验和类型
+      checksumSize = checksum.getChecksumSize(); // 校验和长度
       length = length < 0 ? replicaVisibleLength : length;
 
       // end is either last byte on disk or the length for which we have a 
@@ -348,9 +348,11 @@ class BlockSender implements java.io.Closeable {
             ":sendBlock() : " + msg);
         throw new IOException(msg);
       }
-      
+
+      // offset: 标识读取的开始位置
+      // endOffset: 标识读取的结束位置
       // Ensure read offset is position at the beginning of chunk
-      offset = startOffset - (startOffset % chunkSize);
+      offset = startOffset - (startOffset % chunkSize); // 确保offset在一个校验块的开始位置
       if (length >= 0) {
         // Ensure endOffset points to end of chunk.
         long tmpLen = startOffset + length;
@@ -365,7 +367,7 @@ class BlockSender implements java.io.Closeable {
           this.lastChunkChecksum = chunkChecksum;
         }
       }
-      endOffset = end;
+      endOffset = end; // 确保endOffset在一个校验块的结束位置
 
       // seek to the right offsets
       if (offset > 0 && checksumIn != null) {
@@ -373,7 +375,7 @@ class BlockSender implements java.io.Closeable {
         // note blockInStream is seeked when created below
         if (checksumSkip > 0) {
           // Should we use seek() for checksum file as well?
-          IOUtils.skipFully(checksumIn, checksumSkip);
+          IOUtils.skipFully(checksumIn, checksumSkip); // seek到meta文件的offset位置
         }
       }
       seqno = 0;
@@ -381,9 +383,10 @@ class BlockSender implements java.io.Closeable {
       if (DataNode.LOG.isDebugEnabled()) {
         DataNode.LOG.debug("replica=" + replica);
       }
+      // seek到block文件的offset位置
       blockIn = datanode.data.getBlockInputStream(block, offset); // seek to offset
       if (blockIn instanceof FileInputStream) {
-        blockInFd = ((FileInputStream)blockIn).getFD();
+        blockInFd = ((FileInputStream)blockIn).getFD(); // 获取文件描述符
       } else {
         blockInFd = null;
       }
@@ -800,19 +803,19 @@ class BlockSender implements java.io.Closeable {
           (alwaysReadahead || isLongRead())) {
       curReadahead = datanode.readaheadPool.readaheadStream(
           clientTraceFmt, blockInFd, offset, readaheadLength, Long.MAX_VALUE,
-          curReadahead);
+          curReadahead); // 触发预读
     }
 
     // Drop what we've just read from cache, since we aren't
     // likely to need it again
     if (dropCacheBehindAllReads ||
         (dropCacheBehindLargeReads && isLongRead())) {
-      long nextCacheDropOffset = lastCacheDropOffset + CACHE_DROP_INTERVAL_BYTES;
-      if (offset >= nextCacheDropOffset) {
-        long dropLength = offset - lastCacheDropOffset;
+      long nextCacheDropOffset = lastCacheDropOffset + CACHE_DROP_INTERVAL_BYTES; // 丢弃cache的位置
+      if (offset >= nextCacheDropOffset) { // 如果下次读取数据的位置大于丢弃的位置，则将读取数据位置前的数据全部丢弃
+        long dropLength = offset - lastCacheDropOffset; // 上次删除的位置和本次读取位置间的数据长度
         NativeIO.POSIX.getCacheManipulator().posixFadviseIfPossible(
             block.getBlockName(), blockInFd, lastCacheDropOffset,
-            dropLength, NativeIO.POSIX.POSIX_FADV_DONTNEED);
+            dropLength, NativeIO.POSIX.POSIX_FADV_DONTNEED); // 删除cache
         lastCacheDropOffset = offset;
       }
     }

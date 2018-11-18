@@ -67,8 +67,8 @@ public class Sender implements DataTransferProtocol {
   /** Initialize a operation. */
   private static void op(final DataOutput out, final Op op
       ) throws IOException {
-    out.writeShort(DataTransferProtocol.DATA_TRANSFER_VERSION);
-    op.write(out);
+    out.writeShort(DataTransferProtocol.DATA_TRANSFER_VERSION); // 先写版本号
+    op.write(out); // 再写操作码
   }
 
   private static void send(final DataOutputStream out, final Op opcode,
@@ -77,9 +77,9 @@ public class Sender implements DataTransferProtocol {
       LOG.trace("Sending DataTransferOp " + proto.getClass().getSimpleName()
           + ": " + proto);
     }
-    op(out, opcode);
-    proto.writeDelimitedTo(out);
-    out.flush();
+    op(out, opcode); // 先写版本号，再写操作码
+    proto.writeDelimitedTo(out); // 写消息
+    out.flush(); // 发送
   }
 
   static private CachingStrategyProto getCachingStrategy(CachingStrategy cachingStrategy) {

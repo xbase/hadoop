@@ -204,7 +204,7 @@ public class ReadaheadPool {
       // other FD, which may be wasted work, but won't cause a problem.
       try {
         NativeIO.POSIX.getCacheManipulator().posixFadviseIfPossible(identifier,
-            fd, off, len, NativeIO.POSIX.POSIX_FADV_WILLNEED);
+            fd, off, len, NativeIO.POSIX.POSIX_FADV_WILLNEED); // 预读到系统的cache中
       } catch (IOException ioe) {
         if (canceled) {
           // no big deal - the reader canceled the request and closed

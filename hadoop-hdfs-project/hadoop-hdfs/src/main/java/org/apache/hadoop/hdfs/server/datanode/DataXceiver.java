@@ -186,10 +186,11 @@ class DataXceiver extends Receiver implements Runnable {
     Op op = null;
 
     try {
-      dataXceiverServer.addPeer(peer, Thread.currentThread(), this);
-      peer.setWriteTimeout(datanode.getDnConf().socketWriteTimeout);
+      dataXceiverServer.addPeer(peer, Thread.currentThread(), this); // 保存对应关系
+      peer.setWriteTimeout(datanode.getDnConf().socketWriteTimeout); // 写超时，默认：8分钟
       InputStream input = socketIn;
       try {
+        // 对输入流、输出流进行包装
         IOStreamPair saslStreams = datanode.saslServer.receive(peer, socketOut,
           socketIn, datanode.getXferAddress().getPort(),
           datanode.getDatanodeId());
@@ -222,11 +223,11 @@ class DataXceiver extends Receiver implements Runnable {
         try {
           if (opsProcessed != 0) {
             assert dnConf.socketKeepaliveTimeout > 0;
-            peer.setReadTimeout(dnConf.socketKeepaliveTimeout);
+            peer.setReadTimeout(dnConf.socketKeepaliveTimeout); // xceiver连接重用时，会用到，默认超时：4s
           } else {
-            peer.setReadTimeout(dnConf.socketTimeout);
+            peer.setReadTimeout(dnConf.socketTimeout); // 读超时，默认：60s
           }
-          op = readOp();
+          op = readOp(); // 获取操作类型
         } catch (InterruptedIOException ignored) {
           // Time out while we wait for client rpc
           break;
@@ -238,10 +239,10 @@ class DataXceiver extends Receiver implements Runnable {
               LOG.debug("Cached " + peer + " closing after " + opsProcessed + " ops");
             }
           } else {
-            incrDatanodeNetworkErrors();
+            incrDatanodeNetworkErrors(); // 记录错误次数
             throw err;
           }
-          break;
+          break; // 退出循环，意味着关闭xceiver连接
         }
 
         // restore normal timeout
@@ -250,7 +251,7 @@ class DataXceiver extends Receiver implements Runnable {
         }
 
         opStartTime = monotonicNow();
-        processOp(op);
+        processOp(op); // 执行对应操作
         ++opsProcessed;
       } while ((peer != null) &&
           (!peer.isClosed() && dnConf.socketKeepaliveTimeout > 0));
@@ -286,8 +287,8 @@ class DataXceiver extends Receiver implements Runnable {
       }
       updateCurrentThreadName("Cleaning up");
       if (peer != null) {
-        dataXceiverServer.closePeer(peer);
-        IOUtils.closeStream(in);
+        dataXceiverServer.closePeer(peer); // 清理对应关系，关闭连接
+        IOUtils.closeStream(in); // 关闭流
       }
     }
   }
@@ -519,7 +520,7 @@ class DataXceiver extends Receiver implements Runnable {
     OutputStream baseStream = getOutputStream();
     DataOutputStream out = getBufferedOutputStream();
     checkAccess(out, true, block, blockToken,
-        Op.READ_BLOCK, BlockTokenSecretManager.AccessMode.READ);
+        Op.READ_BLOCK, BlockTokenSecretManager.AccessMode.READ); // 主要是检查token
   
     // send the block
     BlockSender blockSender = null;
@@ -535,6 +536,7 @@ class DataXceiver extends Receiver implements Runnable {
 
     try {
       try {
+        // step 1: 创建BlockSender
         blockSender = new BlockSender(block, blockOffset, length,
             true, false, sendChecksum, datanode, clientTraceFmt,
             cachingStrategy);
@@ -546,15 +548,18 @@ class DataXceiver extends Receiver implements Runnable {
       }
       
       // send op status
+      // step 2: 通知客户端请求接收成功，以及校验和方式
       writeSuccessWithChecksumInfo(blockSender, new DataOutputStream(getOutputStream()));
 
       long beginRead = Time.monotonicNow();
+      // step 3: 发送block
       read = blockSender.sendBlock(out, baseStream, null); // send data
       long duration = Time.monotonicNow() - beginRead;
-      if (blockSender.didSendEntireByteRange()) {
+      if (blockSender.didSendEntireByteRange()) { // 客户端需要的数据是否发送完成
         // If we sent the entire range, then we should expect the client
         // to respond with a Status enum.
         try {
+          // step 4: 如果发送完成，等待客户端响应成功
           ClientReadStatusProto stat = ClientReadStatusProto.parseFrom(
               PBHelper.vintPrefixed(in));
           if (!stat.hasStatus()) {
@@ -597,7 +602,7 @@ class DataXceiver extends Receiver implements Runnable {
     }
 
     //update metrics
-    datanode.metrics.addReadBlockOp(elapsed());
+    datanode.metrics.addReadBlockOp(elapsed()); // 本次read block整体耗时
     datanode.metrics.incrReadsFromClient(peer.isLocal(), read);
   }
 
@@ -1243,7 +1248,7 @@ class DataXceiver extends Receiver implements Runnable {
    * Throws an exception if times out, which should fail the client request.
    * @param the requested block
    */
-  void checkAndWaitForBP(final ExtendedBlock block)
+  void checkAndWaitForBP(final ExtendedBlock block) // 检查block pool是否注册好
       throws IOException {
     String bpId = block.getBlockPoolId();
 
@@ -1283,14 +1288,14 @@ class DataXceiver extends Receiver implements Runnable {
       final Token<BlockTokenIdentifier> t,
       final Op op,
       final BlockTokenSecretManager.AccessMode mode) throws IOException {
-    checkAndWaitForBP(blk);
+    checkAndWaitForBP(blk); // 检查block pool是否注册好
     if (datanode.isBlockTokenEnabled) {
       if (LOG.isDebugEnabled()) {
         LOG.debug("Checking block access token for block '" + blk.getBlockId()
             + "' with mode '" + mode + "'");
       }
       try {
-        datanode.blockPoolTokenSecretManager.checkAccess(t, null, blk, mode);
+        datanode.blockPoolTokenSecretManager.checkAccess(t, null, blk, mode); // token检查
       } catch(InvalidToken e) {
         try {
           if (reply) {

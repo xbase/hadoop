@@ -56,19 +56,19 @@ public abstract class Receiver implements DataTransferProtocol {
   /** Read an Op.  It also checks protocol version. */
   protected final Op readOp() throws IOException {
     final short version = in.readShort();
-    if (version != DataTransferProtocol.DATA_TRANSFER_VERSION) {
+    if (version != DataTransferProtocol.DATA_TRANSFER_VERSION) { // 对比版本号
       throw new IOException( "Version Mismatch (Expected: " +
           DataTransferProtocol.DATA_TRANSFER_VERSION  +
           ", Received: " +  version + " )");
     }
-    return Op.read(in);
+    return Op.read(in); // 读取操作码
   }
 
   /** Process op by the corresponding method. */
   protected final void processOp(Op op) throws IOException {
-    switch(op) {
+    switch(op) { // 根据不同的Op操作码，调用指定的方法
     case READ_BLOCK:
-      opReadBlock();
+      opReadBlock(); // 反序列化参数，并调用DataXceiver的相应方法
       break;
     case WRITE_BLOCK:
       opWriteBlock(in);
@@ -113,6 +113,7 @@ public abstract class Receiver implements DataTransferProtocol {
     TraceScope traceScope = continueTraceSpan(proto.getHeader(),
         proto.getClass().getSimpleName());
     try {
+      // 反序列化参数，并调用DataXceiver的readBlock()方法
       readBlock(PBHelper.convert(proto.getHeader().getBaseHeader().getBlock()),
         PBHelper.convert(proto.getHeader().getBaseHeader().getToken()),
         proto.getHeader().getClientName(),

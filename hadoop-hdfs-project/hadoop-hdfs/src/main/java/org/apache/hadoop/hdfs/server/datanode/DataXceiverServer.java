@@ -120,6 +120,7 @@ class DataXceiverServer implements Runnable {
         DFSConfigKeys.DFS_BLOCK_SIZE_DEFAULT);
     
     //set up parameter for cluster balancing
+    // balance限速
     this.balanceThrottler = new BlockBalanceThrottler(
         conf.getLong(DFSConfigKeys.DFS_DATANODE_BALANCE_BANDWIDTHPERSEC_KEY,
             DFSConfigKeys.DFS_DATANODE_BALANCE_BANDWIDTHPERSEC_DEFAULT),
@@ -132,20 +133,21 @@ class DataXceiverServer implements Runnable {
     Peer peer = null;
     while (datanode.shouldRun && !datanode.shutdownForUpgrade) {
       try {
-        peer = peerServer.accept();
+        peer = peerServer.accept(); // 阻塞接收新的连接请求
 
         // Make sure the xceiver count is not exceeded
         int curXceiverCount = datanode.getXceiverCount();
-        if (curXceiverCount > maxXceiverCount) {
+        if (curXceiverCount > maxXceiverCount) { // 判断是否达到xceiver线程上限
           throw new IOException("Xceiver count " + curXceiverCount
               + " exceeds the limit of concurrent xcievers: "
               + maxXceiverCount);
         }
 
+        // 一个连接对应一个DataXceiver线程
         new Daemon(datanode.threadGroup,
             DataXceiver.create(peer, datanode, this))
             .start();
-      } catch (SocketTimeoutException ignored) {
+      } catch (SocketTimeoutException ignored) { // socket超时，直接忽略
         // wake up to see if should continue to run
       } catch (AsynchronousCloseException ace) {
         // another thread closed our listener socket - that's expected during shutdown,
@@ -156,7 +158,7 @@ class DataXceiverServer implements Runnable {
       } catch (IOException ie) {
         IOUtils.cleanup(null, peer);
         LOG.warn(datanode.getDisplayName() + ":DataXceiverServer: ", ie);
-      } catch (OutOfMemoryError ie) {
+      } catch (OutOfMemoryError ie) { // 捕获OOM异常
         IOUtils.cleanup(null, peer);
         // DataNode can run out of memory if there is too many transfers.
         // Log the event, Sleep for 30 seconds, other transfers may complete by
@@ -170,13 +172,13 @@ class DataXceiverServer implements Runnable {
       } catch (Throwable te) {
         LOG.error(datanode.getDisplayName()
             + ":DataXceiverServer: Exiting due to: ", te);
-        datanode.shouldRun = false;
+        datanode.shouldRun = false; // 除了上面之外的异常，关闭DN
       }
     }
 
     // Close the server to stop reception of more requests.
     try {
-      peerServer.close();
+      peerServer.close(); // 关闭 socket server
       closed = true;
     } catch (IOException ie) {
       LOG.warn(datanode.getDisplayName()
@@ -200,7 +202,7 @@ class DataXceiverServer implements Runnable {
       }
     }
     // Close all peers.
-    closeAllPeers();
+    closeAllPeers(); // 关闭所有的xceiver连接
   }
 
   void kill() {
