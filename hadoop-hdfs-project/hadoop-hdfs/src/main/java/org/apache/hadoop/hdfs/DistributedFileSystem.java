@@ -192,7 +192,7 @@ public class DistributedFileSystem extends FileSystem {
    */
   private String getPathName(Path file) {
     checkPath(file);
-    String result = file.toUri().getPath();
+    String result = file.toUri().getPath(); // 只获取file uri的path部分，也就是忽略scheme和authority
     if (!DFSUtil.isValidName(result)) {
       throw new IllegalArgumentException("Pathname " + result + " from " +
                                          file+" is not a valid DFS filename.");

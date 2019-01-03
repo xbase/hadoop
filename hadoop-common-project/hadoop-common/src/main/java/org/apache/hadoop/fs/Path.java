@@ -292,7 +292,7 @@ public class Path implements Comparable {
 
   /** Return the FileSystem that owns this Path. */
   public FileSystem getFileSystem(Configuration conf) throws IOException {
-    return FileSystem.get(this.toUri(), conf);
+    return FileSystem.get(this.toUri(), conf); // 根据此path的uri，创建一个FS
   }
 
   /**

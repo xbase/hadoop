@@ -167,7 +167,7 @@ public abstract class FileSystem extends Configured implements Closeable {
    * @param conf the configuration to use
    */
   public static FileSystem get(Configuration conf) throws IOException {
-    return get(getDefaultUri(conf), conf);
+    return get(getDefaultUri(conf), conf); // 创建到默认HDFS的FS
   }
   
   /** Get the default filesystem URI from a configuration.
@@ -362,7 +362,8 @@ public abstract class FileSystem extends Configured implements Closeable {
         return get(defaultUri, conf);              // return default
       }
     }
-    
+
+    // createFileSystem时，就会根据scheme和authority创建DFSClient，所以uri中的scheme和authority也只有在创建FS的时候，才会生效
     String disableCacheName = String.format("fs.%s.impl.disable.cache", scheme);
     if (conf.getBoolean(disableCacheName, false)) { // 默认使用缓存
       return createFileSystem(uri, conf);
@@ -1503,7 +1504,7 @@ public abstract class FileSystem extends Configured implements Closeable {
    * @throws FileNotFoundException when the path does not exist;
    *         IOException see specific implementation
    */
-  public abstract FileStatus[] listStatus(Path f) throws FileNotFoundException, 
+  public abstract FileStatus[] listStatus(Path f) throws FileNotFoundException,
                                                          IOException;
     
   /*
