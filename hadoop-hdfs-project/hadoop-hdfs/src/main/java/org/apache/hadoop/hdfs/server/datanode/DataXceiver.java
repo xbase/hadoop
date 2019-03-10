@@ -631,14 +631,14 @@ class DataXceiver extends Receiver implements Runnable {
     // pipeline 上游是否是Client节点
     final boolean isClient = !isDatanode;
     final boolean isTransfer = stage == BlockConstructionStage.TRANSFER_RBW
-        || stage == BlockConstructionStage.TRANSFER_FINALIZED;
+        || stage == BlockConstructionStage.TRANSFER_FINALIZED; // 是否是复制操作
     long size = 0;
     // reply to upstream datanode or client 
     final DataOutputStream replyOut = getBufferedOutputStream();
     checkAccess(replyOut, isClient, block, blockToken,
-        Op.WRITE_BLOCK, BlockTokenSecretManager.AccessMode.WRITE);
+        Op.WRITE_BLOCK, BlockTokenSecretManager.AccessMode.WRITE); // 检查token
     // check single target for transfer-RBW/Finalized 
-    if (isTransfer && targets.length > 0) {
+    if (isTransfer && targets.length > 0) { // 复制时，targets不能是多个
       throw new IOException(stage + " does not support multiple targets "
           + Arrays.asList(targets));
     }

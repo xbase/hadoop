@@ -265,7 +265,7 @@ class BlockSender implements java.io.Closeable {
       // transferToFully() fails on 32 bit platforms for block sizes >= 2GB,
       // use normal transfer in those cases
       this.transferToAllowed = datanode.getDnConf().transferToAllowed &&
-        (!is32Bit || length <= Integer.MAX_VALUE);
+        (!is32Bit || length <= Integer.MAX_VALUE); // 是否允许零拷贝
 
       // Obtain a reference before reading data
       this.volumeRef = datanode.data.getVolume(block).obtainReference();
@@ -409,7 +409,7 @@ class BlockSender implements java.io.Closeable {
         NativeIO.POSIX.getCacheManipulator().posixFadviseIfPossible(
             block.getBlockName(), blockInFd, lastCacheDropOffset,
             offset - lastCacheDropOffset,
-            NativeIO.POSIX.POSIX_FADV_DONTNEED);
+            NativeIO.POSIX.POSIX_FADV_DONTNEED); // 清缓存（操作系统cache）
       } catch (Exception e) {
         LOG.warn("Unable to drop cache on file close", e);
       }
@@ -520,12 +520,12 @@ class BlockSender implements java.io.Closeable {
   private int sendPacket(ByteBuffer pkt, int maxChunks, OutputStream out,
       boolean transferTo, DataTransferThrottler throttler) throws IOException {
     int dataLen = (int) Math.min(endOffset - offset,
-                             (chunkSize * (long) maxChunks));
-    
+                             (chunkSize * (long) maxChunks)); // 校验块的总长度
+    // 有多少个校验块(chunk)
     int numChunks = numberOfChunks(dataLen); // Number of chunks be sent in the packet
-    int checksumDataLen = numChunks * checksumSize;
-    int packetLen = dataLen + checksumDataLen + 4;
-    boolean lastDataPacket = offset + dataLen == endOffset && dataLen > 0;
+    int checksumDataLen = numChunks * checksumSize; // 校验和的总长度
+    int packetLen = dataLen + checksumDataLen + 4; // 数据包的总长度
+    boolean lastDataPacket = offset + dataLen == endOffset && dataLen > 0; // 是否是最后一个packet
 
     // The packet buffer is organized as follows:
     // _______HHHHCCCCD?D?D?D?
@@ -537,20 +537,20 @@ class BlockSender implements java.io.Closeable {
     // C = checksums
     // D? = data, if transferTo is false.
     
-    int headerLen = writePacketHeader(pkt, dataLen, packetLen);
+    int headerLen = writePacketHeader(pkt, dataLen, packetLen); // 写包头到buffer
     
     // Per above, the header doesn't start at the beginning of the
     // buffer
-    int headerOff = pkt.position() - headerLen;
+    int headerOff = pkt.position() - headerLen; // 包头偏移量
     
-    int checksumOff = pkt.position();
+    int checksumOff = pkt.position(); // 校验和偏移量
     byte[] buf = pkt.array();
     
     if (checksumSize > 0 && checksumIn != null) {
-      readChecksum(buf, checksumOff, checksumDataLen);
+      readChecksum(buf, checksumOff, checksumDataLen); // 读取校验和
 
       // write in progress that we need to use to get last checksum
-      if (lastDataPacket && lastChunkChecksum != null) {
+      if (lastDataPacket && lastChunkChecksum != null) { // 正在写的块，填充最后一个chunk的校验和到buffer
         int start = checksumOff + checksumDataLen - checksumSize;
         byte[] updatedChecksum = lastChunkChecksum.getChecksum();
         
@@ -560,32 +560,35 @@ class BlockSender implements java.io.Closeable {
       }
     }
     
-    int dataOff = checksumOff + checksumDataLen;
+    int dataOff = checksumOff + checksumDataLen; // 校验块偏移量
     if (!transferTo) { // normal transfer
-      IOUtils.readFully(blockIn, buf, dataOff, dataLen);
+      IOUtils.readFully(blockIn, buf, dataOff, dataLen); // 读取校验块到buffer
 
       if (verifyChecksum) {
-        verifyChecksum(buf, dataOff, dataLen, numChunks, checksumOff);
+        verifyChecksum(buf, dataOff, dataLen, numChunks, checksumOff); // 验证校验和
       }
     }
     
     try {
       if (transferTo) {
+        // 零拷贝方式，发送数据块
         SocketOutputStream sockOut = (SocketOutputStream)out;
         // First write header and checksums
+        // step 1: 先发送header和checksum
         sockOut.write(buf, headerOff, dataOff - headerOff);
         
         // no need to flush since we know out is not a buffered stream
         FileChannel fileCh = ((FileInputStream)blockIn).getChannel();
         LongWritable waitTime = new LongWritable();
         LongWritable transferTime = new LongWritable();
+        // step 2: 发送chunk
         sockOut.transferToFully(fileCh, blockInPosition, dataLen, 
-            waitTime, transferTime);
+            waitTime, transferTime); // 零拷贝方式发送数据块
         datanode.metrics.addSendDataPacketBlockedOnNetworkNanos(waitTime.get());
         datanode.metrics.addSendDataPacketTransferNanos(transferTime.get());
         blockInPosition += dataLen;
       } else {
-        // normal transfer
+        // normal transfer 正常方式，发送整个packet
         out.write(buf, headerOff, dataOff + dataLen - headerOff);
       }
     } catch (IOException e) {
@@ -638,7 +641,7 @@ class BlockSender implements java.io.Closeable {
       return;
     }
     try {
-      checksumIn.readFully(buf, checksumOffset, checksumLen);
+      checksumIn.readFully(buf, checksumOffset, checksumLen); // 从stream中读取checksum到buffer中
     } catch (IOException e) {
       LOG.warn(" Could not read or failed to veirfy checksum for data"
           + " at offset " + offset + " for block " + block, e);
@@ -739,7 +742,7 @@ class BlockSender implements java.io.Closeable {
       int pktBufSize = PacketHeader.PKT_MAX_HEADER_LEN;
       boolean transferTo = transferToAllowed && !verifyChecksum
           && baseStream instanceof SocketOutputStream
-          && blockIn instanceof FileInputStream;
+          && blockIn instanceof FileInputStream; // 零拷贝模式
       if (transferTo) {
         FileChannel fileChannel = ((FileInputStream)blockIn).getChannel();
         blockInPosition = fileChannel.position();
@@ -747,12 +750,12 @@ class BlockSender implements java.io.Closeable {
         maxChunksPerPacket = numberOfChunks(TRANSFERTO_BUFFER_SIZE);
         
         // Smaller packet size to only hold checksum when doing transferTo
-        pktBufSize += checksumSize * maxChunksPerPacket;
+        pktBufSize += checksumSize * maxChunksPerPacket; // 零拷贝模式，packet buffer中只有checksum
       } else {
         maxChunksPerPacket = Math.max(1,
             numberOfChunks(HdfsConstants.IO_FILE_BUFFER_SIZE));
         // Packet size includes both checksum and data
-        pktBufSize += (chunkSize + checksumSize) * maxChunksPerPacket;
+        pktBufSize += (chunkSize + checksumSize) * maxChunksPerPacket; // 普通模式，packet buffer大小
       }
 
       ByteBuffer pktBuf = ByteBuffer.allocate(pktBufSize);
@@ -770,7 +773,7 @@ class BlockSender implements java.io.Closeable {
         try {
           // send an empty packet to mark the end of the block
           sendPacket(pktBuf, maxChunksPerPacket, streamForSendChunks, transferTo,
-              throttler);
+              throttler); // 发送一个空packet代表结束
           out.flush();
         } catch (IOException e) { //socket error
           throw ioeToSocketException(e);
@@ -833,7 +836,7 @@ class BlockSender implements java.io.Closeable {
    * This is also used to determine when to invoke
    * posix_fadvise(POSIX_FADV_SEQUENTIAL).
    */
-  private boolean isLongRead() {
+  private boolean isLongRead() { // 读取的数据大于 256KB
     return (endOffset - initialOffset) > LONG_READ_THRESHOLD_BYTES;
   }
 

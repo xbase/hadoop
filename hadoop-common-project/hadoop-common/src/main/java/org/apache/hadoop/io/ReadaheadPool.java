@@ -111,7 +111,8 @@ public class ReadaheadPool {
     // trigger each readahead when we have reached the halfway mark
     // in the previous readahead. This gives the system time
     // to satisfy the readahead before we start reading the data.
-    long nextOffset = lastOffset + readaheadLength / 2; 
+    long nextOffset = lastOffset + readaheadLength / 2;
+    // 当上次预读的数据使用一半时，会触发新的预读
     if (curPos >= nextOffset) {
       // cancel any currently pending readahead, to avoid
       // piling things up in the queue. Each reader should have at most
@@ -129,7 +130,7 @@ public class ReadaheadPool {
         return null;
       }
       
-      return submitReadahead(identifier, fd, curPos, length);
+      return submitReadahead(identifier, fd, curPos, length); // 提交预读任务
     } else {
       return lastReadahead;
     }
@@ -147,7 +148,7 @@ public class ReadaheadPool {
       String identifier, FileDescriptor fd, long off, long len) {
     ReadaheadRequestImpl req = new ReadaheadRequestImpl(
         identifier, fd, off, len);
-    pool.execute(req);
+    pool.execute(req); // 提交到线程池，执行预读
     if (LOG.isTraceEnabled()) {
       LOG.trace("submit readahead: " + req);
     }
