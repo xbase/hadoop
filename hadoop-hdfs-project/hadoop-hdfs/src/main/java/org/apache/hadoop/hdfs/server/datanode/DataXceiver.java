@@ -631,7 +631,7 @@ class DataXceiver extends Receiver implements Runnable {
     // pipeline 上游是否是Client节点
     final boolean isClient = !isDatanode;
     final boolean isTransfer = stage == BlockConstructionStage.TRANSFER_RBW
-        || stage == BlockConstructionStage.TRANSFER_FINALIZED; // 是否是复制操作
+        || stage == BlockConstructionStage.TRANSFER_FINALIZED; // 是否是复制操作，pipeline recovery时使用
     long size = 0;
     // reply to upstream datanode or client 
     final DataOutputStream replyOut = getBufferedOutputStream(); // 上游output
@@ -819,6 +819,7 @@ class DataXceiver extends Receiver implements Runnable {
             LOG.trace("TRANSFER: send close-ack");
           }
           // 向上游发送响应
+          // 对于复制操作，不需要向下游转发数据块，也不需要接收下游的确认，接收完数据块之后，直接返回确认消息
           writeResponse(SUCCESS, null, replyOut);
         }
       }
@@ -826,13 +827,14 @@ class DataXceiver extends Receiver implements Runnable {
       // update its generation stamp
       if (isClient && 
           stage == BlockConstructionStage.PIPELINE_CLOSE_RECOVERY) {
-        block.setGenerationStamp(latestGenerationStamp);
-        block.setNumBytes(minBytesRcvd);
+        block.setGenerationStamp(latestGenerationStamp); // 更新时间戳
+        block.setNumBytes(minBytesRcvd); // 更新长度
       }
       
       // if this write is for a replication request or recovering
       // a failed close for client, then confirm block. For other client-writes,
       // the block is finalized in the PacketResponder.
+      // 客户端发起的写数据请求，在PacketResponder线程中调用datanode.closeBlock()方法
       if (isDatanode ||
           stage == BlockConstructionStage.PIPELINE_CLOSE_RECOVERY) {
         datanode.closeBlock(block, DataNode.EMPTY_DEL_HINT, storageUuid); // 增量块汇报

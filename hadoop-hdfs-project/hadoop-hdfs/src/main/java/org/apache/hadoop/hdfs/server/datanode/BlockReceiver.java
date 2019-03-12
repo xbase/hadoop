@@ -887,6 +887,7 @@ class BlockReceiver implements Closeable {
 
     try {
       if (isClient && !isTransfer) {
+        // 处理Ack包的接收和转发
         responder = new Daemon(datanode.threadGroup, 
             new PacketResponder(replyOut, mirrIn, downstreams));
         responder.start(); // start thread to processes responses
