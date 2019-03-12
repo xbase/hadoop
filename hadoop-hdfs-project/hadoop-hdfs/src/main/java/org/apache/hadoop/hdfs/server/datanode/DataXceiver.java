@@ -634,7 +634,7 @@ class DataXceiver extends Receiver implements Runnable {
         || stage == BlockConstructionStage.TRANSFER_FINALIZED; // 是否是复制操作
     long size = 0;
     // reply to upstream datanode or client 
-    final DataOutputStream replyOut = getBufferedOutputStream();
+    final DataOutputStream replyOut = getBufferedOutputStream(); // 上游output
     checkAccess(replyOut, isClient, block, blockToken,
         Op.WRITE_BLOCK, BlockTokenSecretManager.AccessMode.WRITE); // 检查token
     // check single target for transfer-RBW/Finalized 
@@ -667,10 +667,10 @@ class DataXceiver extends Receiver implements Runnable {
     LOG.info("Receiving " + block + " src: " + remoteAddress + " dest: "
         + localAddress);
 
-    DataOutputStream mirrorOut = null;  // stream to next target
-    DataInputStream mirrorIn = null;    // reply from next target
-    Socket mirrorSock = null;           // socket to next target
-    String mirrorNode = null;           // the name:port of next target
+    DataOutputStream mirrorOut = null;  // stream to next target          下游output
+    DataInputStream mirrorIn = null;    // reply from next target         下游input
+    Socket mirrorSock = null;           // socket to next target          下游socket
+    String mirrorNode = null;           // the name:port of next target   下游ip和port
     String firstBadLink = "";           // first datanode that failed in connection setup
     Status mirrorInStatus = SUCCESS;
     final String storageUuid;
@@ -697,12 +697,12 @@ class DataXceiver extends Receiver implements Runnable {
       if (targets.length > 0) {
         InetSocketAddress mirrorTarget = null;
         // Connect to backup machine
-        mirrorNode = targets[0].getXferAddr(connectToDnViaHostname);
+        mirrorNode = targets[0].getXferAddr(connectToDnViaHostname); // 下游节点地址 targets数组内容是否会变？
         if (LOG.isDebugEnabled()) {
           LOG.debug("Connecting to datanode " + mirrorNode);
         }
         mirrorTarget = NetUtils.createSocketAddr(mirrorNode);
-        mirrorSock = datanode.newSocket();
+        mirrorSock = datanode.newSocket(); // 下游节点socket
         try {
           int timeoutValue = dnConf.socketTimeout
               + (HdfsServerConstants.READ_TIMEOUT_EXTENSION * targets.length);
@@ -726,6 +726,7 @@ class DataXceiver extends Receiver implements Runnable {
           mirrorIn = new DataInputStream(unbufMirrorIn);
 
           // Do not propagate allowLazyPersist to downstream DataNodes.
+          // 向下游发送写块请求
           if (targetPinnings != null && targetPinnings.length > 0) {
             new Sender(mirrorOut).writeBlock(originalBlock, targetStorageTypes[0],
               blockToken, clientname, targets, targetStorageTypes, srcDataNode,
@@ -746,6 +747,7 @@ class DataXceiver extends Receiver implements Runnable {
 
           // read connect ack (only for clients, not for replication req)
           if (isClient) {
+            // 解析下游响应
             BlockOpResponseProto connectAck =
               BlockOpResponseProto.parseFrom(PBHelper.vintPrefixed(mirrorIn));
             mirrorInStatus = connectAck.getStatus();
@@ -760,6 +762,7 @@ class DataXceiver extends Receiver implements Runnable {
 
         } catch (IOException e) {
           if (isClient) {
+            // 向客户端发送响应
             BlockOpResponseProto.newBuilder()
               .setStatus(ERROR)
                // NB: Unconditionally using the xfer addr w/o hostname
@@ -794,6 +797,7 @@ class DataXceiver extends Receiver implements Runnable {
                    " forwarding connect ack to upstream firstbadlink is " +
                    firstBadLink);
         }
+        // 向客户端发送响应
         BlockOpResponseProto.newBuilder()
           .setStatus(mirrorInStatus)
           .setFirstBadLink(firstBadLink)
@@ -805,6 +809,7 @@ class DataXceiver extends Receiver implements Runnable {
       // receive the block and mirror to the next target
       if (blockReceiver != null) {
         String mirrorAddr = (mirrorSock == null) ? null : mirrorNode;
+        // 从上游接收block并发送到下游
         blockReceiver.receiveBlock(mirrorOut, mirrorIn, replyOut,
             mirrorAddr, null, targets, false);
 
@@ -813,6 +818,7 @@ class DataXceiver extends Receiver implements Runnable {
           if (LOG.isTraceEnabled()) {
             LOG.trace("TRANSFER: send close-ack");
           }
+          // 向上游发送响应
           writeResponse(SUCCESS, null, replyOut);
         }
       }
@@ -829,7 +835,7 @@ class DataXceiver extends Receiver implements Runnable {
       // the block is finalized in the PacketResponder.
       if (isDatanode ||
           stage == BlockConstructionStage.PIPELINE_CLOSE_RECOVERY) {
-        datanode.closeBlock(block, DataNode.EMPTY_DEL_HINT, storageUuid);
+        datanode.closeBlock(block, DataNode.EMPTY_DEL_HINT, storageUuid); // 增量块汇报
         LOG.info("Received " + block + " src: " + remoteAddress + " dest: "
             + localAddress + " of size " + block.getNumBytes());
       }

@@ -2190,7 +2190,7 @@ public class DataNode extends ReconfigurableBase
     metrics.incrBlocksWritten();
     BPOfferService bpos = blockPoolManager.get(block.getBlockPoolId());
     if(bpos != null) {
-      bpos.notifyNamenodeReceivedBlock(block, delHint, storageUuid);
+      bpos.notifyNamenodeReceivedBlock(block, delHint, storageUuid); // 向NN，增量块汇报
     } else {
       LOG.warn("Cannot find BPOfferService for reporting block received for bpid="
           + block.getBlockPoolId());
