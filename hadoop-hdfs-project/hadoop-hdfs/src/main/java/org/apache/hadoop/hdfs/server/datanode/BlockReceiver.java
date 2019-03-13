@@ -891,7 +891,7 @@ class BlockReceiver implements Closeable {
   /**
    * 1、启动PacketResponder线程，处理Ack包的接收和转发
    * 2、接收、转发packet
-   * 3、结束PacketResponder线程
+   * 3、等待所有的packet被ack，然后结束PacketResponder线程
    */
   void receiveBlock(
       DataOutputStream mirrOut, // output to next datanode
@@ -925,7 +925,7 @@ class BlockReceiver implements Closeable {
       // indicate responder to gracefully shutdown.
       // Mark that responder has been closed for future processing
       if (responder != null) {
-        // step 3：结束PacketResponder线程
+        // step 3：等待所有的packet被ack，然后结束PacketResponder线程
         ((PacketResponder)responder.getRunnable()).close();
         responderClosed = true;
       }
@@ -1268,7 +1268,7 @@ class BlockReceiver implements Closeable {
     @Override
     public void close() {
       synchronized(ackQueue) {
-        while (isRunning() && ackQueue.size() != 0) {
+        while (isRunning() && ackQueue.size() != 0) { // 等待所有的packet被ack
           try {
             ackQueue.wait();
           } catch (InterruptedException e) {
