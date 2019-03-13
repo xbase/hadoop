@@ -606,6 +606,12 @@ class DataXceiver extends Receiver implements Runnable {
     datanode.metrics.incrReadsFromClient(peer.isLocal(), read);
   }
 
+  /**
+   * 1、建立到下游节点的socket、输入输出流
+   * 2、向下游发送写块请求
+   * 3、从上游接收block并发送到下游
+   * 4、关闭到下游的socket、输入输出流
+   */
   @Override
   public void writeBlock(final ExtendedBlock block,
       final StorageType storageType, 
@@ -638,7 +644,7 @@ class DataXceiver extends Receiver implements Runnable {
     checkAccess(replyOut, isClient, block, blockToken,
         Op.WRITE_BLOCK, BlockTokenSecretManager.AccessMode.WRITE); // 检查token
     // check single target for transfer-RBW/Finalized 
-    if (isTransfer && targets.length > 0) { // 复制时，targets不能是多个
+    if (isTransfer && targets.length > 0) { // 复制时，没有targets(不需要建立pipeline)
       throw new IOException(stage + " does not support multiple targets "
           + Arrays.asList(targets));
     }
@@ -694,14 +700,15 @@ class DataXceiver extends Receiver implements Runnable {
       //
       // Connect to downstream machine, if appropriate
       //
-      if (targets.length > 0) {
+      if (targets.length > 0) { // 当有下游节点的时候
         InetSocketAddress mirrorTarget = null;
         // Connect to backup machine
-        mirrorNode = targets[0].getXferAddr(connectToDnViaHostname); // 下游节点地址 targets数组内容是否会变？
+        mirrorNode = targets[0].getXferAddr(connectToDnViaHostname); // 下游节点地址 targets数组内容在Sender时会变
         if (LOG.isDebugEnabled()) {
           LOG.debug("Connecting to datanode " + mirrorNode);
         }
         mirrorTarget = NetUtils.createSocketAddr(mirrorNode);
+        // step 1：建立到下游节点的socket、输入输出流
         mirrorSock = datanode.newSocket(); // 下游节点socket
         try {
           int timeoutValue = dnConf.socketTimeout
@@ -726,7 +733,7 @@ class DataXceiver extends Receiver implements Runnable {
           mirrorIn = new DataInputStream(unbufMirrorIn);
 
           // Do not propagate allowLazyPersist to downstream DataNodes.
-          // 向下游发送写块请求
+          // step 2：向下游发送写块请求
           if (targetPinnings != null && targetPinnings.length > 0) {
             new Sender(mirrorOut).writeBlock(originalBlock, targetStorageTypes[0],
               blockToken, clientname, targets, targetStorageTypes, srcDataNode,
@@ -771,6 +778,7 @@ class DataXceiver extends Receiver implements Runnable {
               .writeDelimitedTo(replyOut);
             replyOut.flush();
           }
+          // 关闭下游节点的socket、输入输出流
           IOUtils.closeStream(mirrorOut);
           mirrorOut = null;
           IOUtils.closeStream(mirrorIn);
@@ -809,7 +817,7 @@ class DataXceiver extends Receiver implements Runnable {
       // receive the block and mirror to the next target
       if (blockReceiver != null) {
         String mirrorAddr = (mirrorSock == null) ? null : mirrorNode;
-        // 从上游接收block并发送到下游
+        // step 3：从上游接收block并发送到下游
         blockReceiver.receiveBlock(mirrorOut, mirrorIn, replyOut,
             mirrorAddr, null, targets, false);
 
@@ -851,6 +859,7 @@ class DataXceiver extends Receiver implements Runnable {
       throw ioe;
     } finally {
       // close all opened streams
+      // step 4：关闭到下游的socket、输入输出流
       IOUtils.closeStream(mirrorOut);
       IOUtils.closeStream(mirrorIn);
       IOUtils.closeStream(replyOut);

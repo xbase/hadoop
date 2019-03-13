@@ -244,7 +244,7 @@ class BlockReceiver implements Closeable {
       // read checksum meta information
       this.clientChecksum = requestedChecksum;
       this.diskChecksum = streams.getChecksum();
-      this.needsChecksumTranslation = !clientChecksum.equals(diskChecksum);
+      this.needsChecksumTranslation = !clientChecksum.equals(diskChecksum); // 客户端和DN的checksum算法不同，需要转换
       this.bytesPerChecksum = diskChecksum.getBytesPerChecksum();
       this.checksumSize = diskChecksum.getChecksumSize();
 
@@ -488,16 +488,23 @@ class BlockReceiver implements Closeable {
    * checksum.
    * @return true if checksum verification is needed, otherwise false.
    */
-  private boolean shouldVerifyChecksum() {
+  private boolean shouldVerifyChecksum() { // 如果当前节点是pipeline的最后一个节点，需验证checksum
     return (mirrorOut == null || isDatanode || needsChecksumTranslation);
   }
 
   /** 
    * Receives and processes a packet. It can contain many chunks.
    * returns the number of data bytes that the packet has.
+   *
+   * 1、从流中读出一个packet
+   * 2、发送给下游节点
+   * 3、数据和checksum写本地磁盘
+   * 4、添加到Ack队列
+   * 5、向上游响应
    */
   private int receivePacket() throws IOException {
     // read the next packet
+    // step 1: 从流中读出一个packet
     packetReceiver.receiveNextPacket(in);
 
     PacketHeader header = packetReceiver.getHeader();
@@ -519,11 +526,11 @@ class BlockReceiver implements Closeable {
                             header.getDataLen()); 
     }
 
-    long offsetInBlock = header.getOffsetInBlock();
-    long seqno = header.getSeqno();
-    boolean lastPacketInBlock = header.isLastPacketInBlock();
+    long offsetInBlock = header.getOffsetInBlock(); // 在block中的偏移量
+    long seqno = header.getSeqno(); // packet 序号
+    boolean lastPacketInBlock = header.isLastPacketInBlock(); // 是否是最后一个packet
     final int len = header.getDataLen();
-    boolean syncBlock = header.getSyncBlock();
+    boolean syncBlock = header.getSyncBlock(); // 是否需要sync
 
     // avoid double sync'ing on close
     if (syncBlock && lastPacketInBlock) {
@@ -539,8 +546,9 @@ class BlockReceiver implements Closeable {
     
     // put in queue for pending acks, unless sync was requested
     if (responder != null && !syncBlock && !shouldVerifyChecksum()) {
+      // 优先处理Ack，如果不需要立即sync (syncBlock=false)
       ((PacketResponder) responder.getRunnable()).enqueue(seqno,
-          lastPacketInBlock, offsetInBlock, Status.SUCCESS);
+          lastPacketInBlock, offsetInBlock, Status.SUCCESS); // 放入等待ack队列
     }
 
     // Drop heartbeat for testing.
@@ -550,10 +558,11 @@ class BlockReceiver implements Closeable {
     }
 
     //First write the packet to the mirror:
+    // step 2: 发送给下游节点
     if (mirrorOut != null && !mirrorError) {
       try {
         long begin = Time.monotonicNow();
-        packetReceiver.mirrorPacketTo(mirrorOut);
+        packetReceiver.mirrorPacketTo(mirrorOut); // 发送给下游节点
         mirrorOut.flush();
         long now = Time.monotonicNow();
         setLastSentTime(now);
@@ -575,7 +584,7 @@ class BlockReceiver implements Closeable {
         LOG.debug("Receiving an empty packet or the end of the block " + block);
       }
       // sync block if requested
-      if (syncBlock) {
+      if (syncBlock) { // 如果接收了完整的数据块，并且启动了sync标识，则立即sync
         flushOrSync(true);
       }
     } else {
@@ -587,13 +596,15 @@ class BlockReceiver implements Closeable {
             + checksumReceivedLen + " but expected length is " + checksumLen);
       }
 
+      // 如果当前节点是pipeline的最后一个节点，需验证checksum
       if (checksumReceivedLen > 0 && shouldVerifyChecksum()) {
         try {
-          verifyChunks(dataBuf, checksumBuf);
+          verifyChunks(dataBuf, checksumBuf); // 验证校验和
         } catch (IOException ioe) {
           // checksum error detected locally. there is no reason to continue.
           if (responder != null) {
             try {
+              // pipeline最后一个节点，自己enqueue一个Ack
               ((PacketResponder) responder.getRunnable()).enqueue(seqno,
                   lastPacketInBlock, offsetInBlock,
                   Status.ERROR_CHECKSUM);
@@ -608,14 +619,15 @@ class BlockReceiver implements Closeable {
         if (needsChecksumTranslation) {
           // overwrite the checksums in the packet buffer with the
           // appropriate polynomial for the disk storage.
-          translateChunks(dataBuf, checksumBuf);
+          translateChunks(dataBuf, checksumBuf); // 转换checksum算法
         }
       }
 
+      // TODOWXY: 什么时候会发生 checksum is missing ?
       if (checksumReceivedLen == 0 && !streams.isTransientStorage()) {
         // checksum is missing, need to calculate it
         checksumBuf = ByteBuffer.allocate(checksumLen);
-        diskChecksum.calculateChunkedSums(dataBuf, checksumBuf);
+        diskChecksum.calculateChunkedSums(dataBuf, checksumBuf); // 重新计算checksum
       }
       
       // by this point, the data in the buffer uses the disk checksum
@@ -641,13 +653,13 @@ class BlockReceiver implements Closeable {
 
           // If the end of the on-disk data is not chunk-aligned, the last
           // checksum needs to be overwritten.
-          boolean overwriteLastCrc = !alignedOnDisk && !shouldNotWriteChecksum;
+          boolean overwriteLastCrc = !alignedOnDisk && !shouldNotWriteChecksum; // 是否需要复写最后一个checksum
           // If the starting offset of the packat data is at the last chunk
           // boundary of the data on disk, the partial checksum recalculation
           // can be skipped and the checksum supplied by the client can be used
           // instead. This reduces disk reads and cpu load.
           boolean doCrcRecalc = overwriteLastCrc &&
-              (lastChunkBoundary != firstByteInBlock);
+              (lastChunkBoundary != firstByteInBlock); // firstByteInBlock == lastChunkBoundary，则不用重新计算checksum
 
           // If this is a partial chunk, then verify that this is the only
           // chunk in the packet. If the starting offset is not chunk
@@ -674,7 +686,7 @@ class BlockReceiver implements Closeable {
             }
             long offsetInChecksum = BlockMetadataHeader.getHeaderSize() +
                 onDiskLen / bytesPerChecksum * checksumSize;
-            partialCrc = computePartialChunkCrc(onDiskLen, offsetInChecksum);
+            partialCrc = computePartialChunkCrc(onDiskLen, offsetInChecksum); // 最后一个不完整的chunk，重新计算checksum
           }
 
           // The data buffer position where write will begin. If the packet
@@ -687,7 +699,9 @@ class BlockReceiver implements Closeable {
           int numBytesToDisk = (int)(offsetInBlock-onDiskLen);
           
           // Write data to disk.
+          // step 3: 数据和checksum写本地磁盘
           long begin = Time.monotonicNow();
+          // step 3.1：写数据
           out.write(dataBuf.array(), startByteToDisk, numBytesToDisk);
           long duration = Time.monotonicNow() - begin;
           if (duration > datanodeSlowLogThresholdMs) {
@@ -705,7 +719,7 @@ class BlockReceiver implements Closeable {
             // First, prepare to overwrite the partial crc at the end.
             if (overwriteLastCrc) { // not chunk-aligned on disk
               // prepare to overwrite last checksum
-              adjustCrcFilePosition();
+              adjustCrcFilePosition(); // 先把meta的文件指针移动到指定位置，为复写checksum做准备
             }
 
             // The CRC was recalculated for the last partial chunk. Update the
@@ -723,6 +737,7 @@ class BlockReceiver implements Closeable {
               byte[] buf = FSOutputSummer.convertToByteStream(partialCrc,
                   checksumSize);
               crcBytes = copyLastChunkChecksum(buf, checksumSize, buf.length);
+              // 复写checksum
               checksumOut.write(buf);
               if(LOG.isDebugEnabled()) {
                 LOG.debug("Writing out partial crc for data len " + len +
@@ -756,6 +771,7 @@ class BlockReceiver implements Closeable {
               final int remainingBytes = checksumLen - skip;
               lastCrc = copyLastChunkChecksum(checksumBuf.array(),
                   checksumSize, end);
+              // step 3.2：写checksum
               checksumOut.write(checksumBuf.array(), offset, remainingBytes);
             }
           }
@@ -768,6 +784,7 @@ class BlockReceiver implements Closeable {
           datanode.metrics.incrBytesWritten(len);
           datanode.metrics.incrTotalWriteTime(duration);
 
+          // 清除操作系统缓存
           manageWriterOsCache(offsetInBlock);
         }
       } catch (IOException iex) {
@@ -778,7 +795,9 @@ class BlockReceiver implements Closeable {
 
     // if sync was requested, put in queue for pending acks here
     // (after the fsync finished)
+    // 如果是pipeline的最后一个节点，或者syncBlock=true，则在数据落盘之后再处理Ack
     if (responder != null && (syncBlock || shouldVerifyChecksum())) {
+      // step 4：处理Ack
       ((PacketResponder) responder.getRunnable()).enqueue(seqno,
           lastPacketInBlock, offsetInBlock, Status.SUCCESS);
     }
@@ -789,6 +808,7 @@ class BlockReceiver implements Closeable {
      */
     if (isReplaceBlock
         && (Time.monotonicNow() - lastResponseTime > responseInterval)) {
+      // step 5：向上游响应
       BlockOpResponseProto.Builder response = BlockOpResponseProto.newBuilder()
           .setStatus(Status.IN_PROGRESS);
       response.build().writeDelimitedTo(replyOut);
@@ -867,7 +887,12 @@ class BlockReceiver implements Closeable {
     ((PacketResponder) responder.getRunnable()).sendOOBResponse(PipelineAck
         .getRestartOOBStatus());
   }
-  
+
+  /**
+   * 1、启动PacketResponder线程，处理Ack包的接收和转发
+   * 2、接收、转发packet
+   * 3、结束PacketResponder线程
+   */
   void receiveBlock(
       DataOutputStream mirrOut, // output to next datanode
       DataInputStream mirrIn,   // input from next datanode
@@ -887,18 +912,20 @@ class BlockReceiver implements Closeable {
 
     try {
       if (isClient && !isTransfer) {
-        // 处理Ack包的接收和转发
+        // step 1：启动PacketResponder线程，处理Ack包的接收和转发
         responder = new Daemon(datanode.threadGroup, 
             new PacketResponder(replyOut, mirrIn, downstreams));
         responder.start(); // start thread to processes responses
       }
 
+      // step 2：接收、转发packet
       while (receivePacket() >= 0) { /* Receive until the last packet */ }
 
       // wait for all outstanding packet responses. And then
       // indicate responder to gracefully shutdown.
       // Mark that responder has been closed for future processing
       if (responder != null) {
+        // step 3：结束PacketResponder线程
         ((PacketResponder)responder.getRunnable()).close();
         responderClosed = true;
       }
@@ -915,6 +942,7 @@ class BlockReceiver implements Closeable {
 
           if (stage == BlockConstructionStage.TRANSFER_RBW) {
             // for TRANSFER_RBW, convert temporary to RBW
+            // 从临时目录移动到RBW目录
             datanode.data.convertTemporaryToRbw(block);
           } else {
             // for isDatnode or TRANSFER_FINALIZED
@@ -1170,7 +1198,7 @@ class BlockReceiver implements Closeable {
       }
       synchronized(ackQueue) {
         if (running) {
-          ackQueue.addLast(p);
+          ackQueue.addLast(p); // 添加到ackQueue
           ackQueue.notifyAll();
         }
       }
@@ -1264,6 +1292,12 @@ class BlockReceiver implements Closeable {
     /**
      * Thread to process incoming acks.
      * @see java.lang.Runnable#run()
+     *
+     * 1、从下游流中读取一个Ack
+     * 2、从ackQueue中获取一个等待Ack的packet
+     * 3、对比Ack
+     * 4、向上游发送Ack
+     * 5、移除已经Ack过的packet
      */
     @Override
     public void run() {
@@ -1281,6 +1315,7 @@ class BlockReceiver implements Closeable {
           try {
             if (type != PacketResponderType.LAST_IN_PIPELINE && !mirrorError) {
               // read an ack from downstream datanode
+              // step 1：从下游流中读取一个Ack
               ack.readFields(downstreamIn);
               ackRecvNanoTime = System.nanoTime();
               if (LOG.isDebugEnabled()) {
@@ -1288,7 +1323,7 @@ class BlockReceiver implements Closeable {
               }
               // Process an OOB ACK.
               Status oobStatus = ack.getOOBStatus();
-              if (oobStatus != null) {
+              if (oobStatus != null) { // 如果有OOB消息，则立即转发给上游(DN写数据时，如果发生重启，会向上游发送一个OOB消息)
                 LOG.info("Relaying an out of band ack of type " + oobStatus);
                 sendAckUpstream(ack, PipelineAck.UNKOWN_SEQNO, 0L, 0L,
                     PipelineAck.combineHeader(datanode.getECN(),
@@ -1299,13 +1334,15 @@ class BlockReceiver implements Closeable {
             }
             if (seqno != PipelineAck.UNKOWN_SEQNO
                 || type == PacketResponderType.LAST_IN_PIPELINE) {
+              // step 2：从ackQueue中获取一个等待Ack的packet
               pkt = waitForAckHead(seqno);
               if (!isRunning()) {
                 break;
               }
               expected = pkt.seqno;
+              // step 3：对比Ack
               if (type == PacketResponderType.HAS_DOWNSTREAM_IN_PIPELINE
-                  && seqno != expected) {
+                  && seqno != expected) { // seqno和期望的是否一致
                 throw new IOException(myString + "seqno: expected=" + expected
                     + ", received=" + seqno);
               }
@@ -1350,7 +1387,7 @@ class BlockReceiver implements Closeable {
               // continue to run even if can not read from mirror
               // notify client of the error
               // and wait for the client to shut down the pipeline
-              mirrorError = true;
+              mirrorError = true; // 如果从下游读取数据时发送异常，则设置为true
               LOG.info(myString, ioe);
             }
           }
@@ -1374,32 +1411,34 @@ class BlockReceiver implements Closeable {
 
           if (lastPacketInBlock) {
             // Finalize the block and close the block file
-            finalizeBlock(startTime);
+            finalizeBlock(startTime); // 完成一个block，向NN增量块汇报
           }
 
           Status myStatus = pkt != null ? pkt.ackStatus : Status.SUCCESS;
+          // step 4：向上游发送Ack（复制上游状态，加入当前节点状态）
           sendAckUpstream(ack, expected, totalAckTimeNanos,
             (pkt != null ? pkt.offsetInBlock : 0),
             PipelineAck.combineHeader(datanode.getECN(), myStatus));
           if (pkt != null) {
             // remove the packet from the ack queue
+            // step 5：移除已经Ack过的packet
             removeAckHead();
           }
         } catch (IOException e) {
           LOG.warn("IOException in BlockReceiver.run(): ", e);
           if (running) {
-            datanode.checkDiskErrorAsync();
+            datanode.checkDiskErrorAsync(); // 检查磁盘是否有问题
             LOG.info(myString, e);
             running = false;
             if (!Thread.interrupted()) { // failure not caused by interruption
-              receiverThread.interrupt();
+              receiverThread.interrupt(); // 中断当前线程（PacketResponder）
             }
           }
         } catch (Throwable e) {
           if (running) {
             LOG.info(myString, e);
             running = false;
-            receiverThread.interrupt();
+            receiverThread.interrupt(); // 中断当前线程（PacketResponder）
           }
         }
       }
@@ -1458,7 +1497,7 @@ class BlockReceiver implements Closeable {
         // the responder won't have to wait.
         synchronized(this) {
           while(sending) {
-            wait();
+            wait(); // 同时只能发送一个Ack响应到上游
           }
           sending = true;
         }
@@ -1492,11 +1531,11 @@ class BlockReceiver implements Closeable {
         long totalAckTimeNanos, long offsetInBlock, int myHeader)
         throws IOException {
       final int[] replies;
-      if (ack == null) {
+      if (ack == null) { // 如果下游节点发送的是OOB消息，则保留下游节点的响应内容
         // A new OOB response is being sent from this node. Regardless of
         // downstream nodes, reply should contain one reply.
         replies = new int[] { myHeader };
-      } else if (mirrorError) { // ack read error
+      } else if (mirrorError) { // ack read error 如果当前节点读取下游节点响应时发生异常，则将当前节点的错误信息记录在响应消息中
         int h = PipelineAck.combineHeader(datanode.getECN(), Status.SUCCESS);
         int h1 = PipelineAck.combineHeader(datanode.getECN(), Status.ERROR);
         replies = new int[] {h, h1};
@@ -1504,30 +1543,30 @@ class BlockReceiver implements Closeable {
         short ackLen = type == PacketResponderType.LAST_IN_PIPELINE ? 0 : ack
             .getNumOfReplies();
         replies = new int[ackLen + 1];
-        replies[0] = myHeader;
+        replies[0] = myHeader; // 当前节点的响应内容
         for (int i = 0; i < ackLen; ++i) {
-          replies[i + 1] = ack.getHeaderFlag(i);
+          replies[i + 1] = ack.getHeaderFlag(i); // 下游节点的响应内容
         }
         // If the mirror has reported that it received a corrupt packet,
         // do self-destruct to mark myself bad, instead of making the
         // mirror node bad. The mirror is guaranteed to be good without
         // corrupt data on disk.
         if (ackLen > 0 && PipelineAck.getStatusFromHeader(replies[1]) ==
-          Status.ERROR_CHECKSUM) {
+          Status.ERROR_CHECKSUM) { // 如果下游节点检测到checksum错误，则当前节点发送的数据有错误
           throw new IOException("Shutting down writer and responder "
               + "since the down streams reported the data sent by this "
               + "thread is corrupt");
         }
       }
       PipelineAck replyAck = new PipelineAck(seqno, replies,
-          totalAckTimeNanos);
+          totalAckTimeNanos); // 构造新的响应消息
       if (replyAck.isSuccess()
           && offsetInBlock > replicaInfo.getBytesAcked()) {
         replicaInfo.setBytesAcked(offsetInBlock);
       }
       // send my ack back to upstream datanode
       long begin = Time.monotonicNow();
-      replyAck.write(upstreamOut);
+      replyAck.write(upstreamOut); // 发送给上游
       upstreamOut.flush();
       long duration = Time.monotonicNow() - begin;
       if (duration > datanodeSlowLogThresholdMs) {
@@ -1541,7 +1580,7 @@ class BlockReceiver implements Closeable {
       // If a corruption was detected in the received data, terminate after
       // sending ERROR_CHECKSUM back.
       Status myStatus = PipelineAck.getStatusFromHeader(myHeader);
-      if (myStatus == Status.ERROR_CHECKSUM) {
+      if (myStatus == Status.ERROR_CHECKSUM) { // 当前节点检测到checksum错误(pipeline最后一个节点会做checksum检查)
         throw new IOException("Shutting down writer and responder "
             + "due to a checksum error in received data. The error "
             + "response has been sent upstream.");
@@ -1553,7 +1592,7 @@ class BlockReceiver implements Closeable {
      * 
      * This should be called only when the ack queue is not empty
      */
-    private void removeAckHead() {
+    private void removeAckHead() { // 移除queue中的第一个packet（已经Ack过）
       synchronized(ackQueue) {
         ackQueue.removeFirst();
         ackQueue.notifyAll();

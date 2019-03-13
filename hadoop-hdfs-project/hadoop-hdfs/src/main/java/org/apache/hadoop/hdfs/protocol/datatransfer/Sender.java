@@ -141,7 +141,7 @@ public class Sender implements DataTransferProtocol {
     OpWriteBlockProto.Builder proto = OpWriteBlockProto.newBuilder()
       .setHeader(header)
       .setStorageType(PBHelper.convertStorageType(storageType))
-      .addAllTargets(PBHelper.convert(targets, 1))
+      .addAllTargets(PBHelper.convert(targets, 1)) // pipeline中每个DN的targets不一样
       .addAllTargetStorageTypes(PBHelper.convertStorageTypes(targetStorageTypes, 1))
       .setStage(toProto(stage))
       .setPipelineSize(pipelineSize)
