@@ -27,6 +27,18 @@ public enum BlockConstructionStage {
   /** The enumerates are always listed as regular stage followed by the
    * recovery stage. 
    * Changing this order will make getRecoveryStage not working.
+   *
+   * PIPELINE_SETUP_CREATE, // 创建文件、创建新block时，pipeline的初始状态
+   * PIPELINE_SETUP_APPEND, // 追加文件时，pipeline的初始状态
+   * DATA_STREAMING,        // pipeline已经建立好，可以开始传输数据了
+   * PIPELINE_CLOSE,        // block已经写满，关闭pipeline
+   *
+   * TRANSFER_RBW,          // pipeline recovery时，复制block到新添加的节点，block还未写完
+   * TRANSFER_FINALIZED,    // pipeline recovery时，复制block到新添加的节点，block已经写完
+   *
+   * PIPELINE_SETUP_APPEND_RECOVERY,     // 参照getRecoveryStage()方法，PIPELINE_SETUP_APPEND阶段出错时，pipeline recovery状态
+   * PIPELINE_SETUP_STREAMING_RECOVERY,  // 参照getRecoveryStage()方法，DATA_STREAMING阶段出错时，pipeline recovery状态
+   * PIPELINE_CLOSE_RECOVERY,            // 参照getRecoveryStage()方法，PIPELINE_CLOSE阶段出错时，pipeline recovery状态
    */
   // pipeline set up for block append
   PIPELINE_SETUP_APPEND,
