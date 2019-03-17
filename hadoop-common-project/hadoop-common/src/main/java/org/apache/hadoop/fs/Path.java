@@ -307,7 +307,7 @@ public class Path implements Comparable {
   /**
    *  True if the path component (i.e. directory) of this URI is absolute.
    */
-  public boolean isUriPathAbsolute() {
+  public boolean isUriPathAbsolute() { // 是否已 "/" 开始
     int start = startPositionWithoutWindowsDrive(uri.getPath());
     return uri.getPath().startsWith(SEPARATOR, start);
    }

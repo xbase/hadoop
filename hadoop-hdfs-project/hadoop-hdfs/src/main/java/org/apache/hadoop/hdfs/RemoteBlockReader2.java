@@ -412,7 +412,7 @@ public class RemoteBlockReader2  implements BlockReader {
     final DataOutputStream out = new DataOutputStream(new BufferedOutputStream(
           peer.getOutputStream()));
     new Sender(out).readBlock(block, blockToken, clientName, startOffset, len,
-        verifyChecksum, cachingStrategy);
+        verifyChecksum, cachingStrategy); // 创建到DN的流连接
 
     //
     // Get bytes in block

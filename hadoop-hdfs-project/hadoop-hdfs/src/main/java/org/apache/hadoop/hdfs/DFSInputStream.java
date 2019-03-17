@@ -671,7 +671,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
             setClientCacheContext(dfsClient.getClientContext()).
             setUserGroupInformation(dfsClient.ugi).
             setConfiguration(dfsClient.getConfiguration()).
-            build(); // 默认创建RemoteBlockReader2
+            build(); // 默认创建RemoteBlockReader2，内部会创建到DN的流连接
         if(connectFailedOnce) {
           DFSClient.LOG.info("Successfully connected to " + targetAddr +
                              " for " + blk);
@@ -925,6 +925,8 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
 
   /**
    * Read the entire buffer.
+   *
+   * off: 指从buf[]第几位开始存，而不是指从文件第几个字符开始读
    */
   @Override
   public synchronized int read(final byte buf[], int off, int len) throws IOException {
@@ -1216,7 +1218,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
         }
       } finally {
         if (reader != null) {
-          reader.close();
+          reader.close(); // 关闭到DN的连接
         }
       }
     }
