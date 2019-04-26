@@ -779,13 +779,13 @@ public class DataNode extends ReconfigurableBase
   }
   
 
-  private void initIpcServer(Configuration conf) throws IOException {
+  private void initIpcServer(Configuration conf) throws IOException { // 初始化RPC server
     InetSocketAddress ipcAddr = NetUtils.createSocketAddr(
         conf.getTrimmed(DFS_DATANODE_IPC_ADDRESS_KEY));
     
     // Add all the RPC protocols that the Datanode implements    
     RPC.setProtocolEngine(conf, ClientDatanodeProtocolPB.class,
-        ProtobufRpcEngine.class);
+        ProtobufRpcEngine.class); // 注册和client之间的协议
     ClientDatanodeProtocolServerSideTranslatorPB clientDatanodeProtocolXlator = 
           new ClientDatanodeProtocolServerSideTranslatorPB(this);
     BlockingService service = ClientDatanodeProtocolService
@@ -798,21 +798,21 @@ public class DataNode extends ReconfigurableBase
         .setNumHandlers(
             conf.getInt(DFS_DATANODE_HANDLER_COUNT_KEY,
                 DFS_DATANODE_HANDLER_COUNT_DEFAULT)).setVerbose(false)
-        .setSecretManager(blockPoolTokenSecretManager).build();
+        .setSecretManager(blockPoolTokenSecretManager).build(); // 初始化RPC server
     
     InterDatanodeProtocolServerSideTranslatorPB interDatanodeProtocolXlator = 
         new InterDatanodeProtocolServerSideTranslatorPB(this);
     service = InterDatanodeProtocolService
         .newReflectiveBlockingService(interDatanodeProtocolXlator);
     DFSUtil.addPBProtocol(conf, InterDatanodeProtocolPB.class, service,
-        ipcServer);
+        ipcServer);  // 注册和DN之间的协议
 
     TraceAdminProtocolServerSideTranslatorPB traceAdminXlator =
         new TraceAdminProtocolServerSideTranslatorPB(this);
     BlockingService traceAdminService = TraceAdminService
         .newReflectiveBlockingService(traceAdminXlator);
     DFSUtil.addPBProtocol(conf, TraceAdminProtocolPB.class, traceAdminService,
-        ipcServer);
+        ipcServer); // 注册HTrace相关协议
 
     LOG.info("Opened IPC server at " + ipcServer.getListenerAddress());
 
@@ -1101,12 +1101,12 @@ public class DataNode extends ReconfigurableBase
     LOG.info("Starting DataNode with maxLockedMemory = " +
         dnConf.maxLockedMemory);
 
-    storage = new DataStorage();
+    storage = new DataStorage(); // 主要是定义了回滚、升级操作
     
     // global DN settings
     registerMXBean();
-    initDataXceiver(conf);
-    startInfoServer(conf);
+    initDataXceiver(conf); // 初始化DataXceiverServer
+    startInfoServer(conf); // 启动httpServer
     pauseMonitor = new JvmPauseMonitor(conf);
     pauseMonitor.start();
   
@@ -1117,7 +1117,7 @@ public class DataNode extends ReconfigurableBase
     dnUserName = UserGroupInformation.getCurrentUser().getShortUserName();
     LOG.info("dnUserName = " + dnUserName);
     LOG.info("supergroup = " + supergroup);
-    initIpcServer(conf);
+    initIpcServer(conf); // 初始化RPC server
 
     metrics = DataNodeMetrics.create(conf, getDisplayName());
     metrics.getJvmMetrics().setPauseMonitor(pauseMonitor);
@@ -1794,9 +1794,12 @@ public class DataNode extends ReconfigurableBase
       }
     }
   }
-  
+
+  // 坏盘数，是否超过可容忍数
+  // 没超过，触发一次全量块汇报
+  // 超过，停止DN
   private void handleDiskError(String errMsgr) {
-    final boolean hasEnoughResources = data.hasEnoughResource();
+    final boolean hasEnoughResources = data.hasEnoughResource(); // 坏盘数，是否超过可容忍数
     LOG.warn("DataNode.handleDiskError: Keep Running: " + hasEnoughResources);
     
     // If we have enough active valid volumes then we do not want to 
@@ -1807,16 +1810,16 @@ public class DataNode extends ReconfigurableBase
 
     //inform NameNodes
     for(BPOfferService bpos: blockPoolManager.getAllNamenodeThreads()) {
-      bpos.trySendErrorReport(dpError, errMsgr);
+      bpos.trySendErrorReport(dpError, errMsgr); // 通知NN，有坏盘
     }
     
     if(hasEnoughResources) {
-      scheduleAllBlockReport(0);
+      scheduleAllBlockReport(0); // 触发一次全量块汇报
       return; // do not shutdown
     }
     
     LOG.warn("DataNode is shutting down: " + errMsgr);
-    shouldRun = false;
+    shouldRun = false; // 坏盘数，超过可容忍数，则停止DN
   }
     
   /** Number of concurrent xceivers per node. */
@@ -2251,7 +2254,7 @@ public class DataNode extends ReconfigurableBase
       printUsage(System.err);
       return null;
     }
-    Collection<StorageLocation> dataLocations = getStorageLocations(conf);
+    Collection<StorageLocation> dataLocations = getStorageLocations(conf); // 解析data目录列表
     UserGroupInformation.setConfiguration(conf);
     SecurityUtil.login(conf, DFS_DATANODE_KEYTAB_FILE_KEY,
         DFS_DATANODE_KERBEROS_PRINCIPAL_KEY);
@@ -2339,7 +2342,7 @@ public class DataNode extends ReconfigurableBase
 
     public void checkDir(LocalFileSystem localFS, Path path)
         throws DiskErrorException, IOException {
-      DiskChecker.checkDir(localFS, path, expectedPermission);
+      DiskChecker.checkDir(localFS, path, expectedPermission); // 检查对path目录是否有读、写、执行权限
     }
   }
 
@@ -2381,7 +2384,7 @@ public class DataNode extends ReconfigurableBase
     for (StorageLocation location : dataDirs) {
       final URI uri = location.getUri();
       try {
-        dataNodeDiskChecker.checkDir(localFS, new Path(uri));
+        dataNodeDiskChecker.checkDir(localFS, new Path(uri)); // 检查是否有读、写、执行权限
         locations.add(location);
       } catch (IOException ioe) {
         LOG.warn("Invalid " + DFS_DATANODE_DATA_DIR_KEY + " "
@@ -2478,7 +2481,7 @@ public class DataNode extends ReconfigurableBase
   public static void secureMain(String args[], SecureResources resources) {
     int errorCode = 0;
     try {
-      StringUtils.startupShutdownMessage(DataNode.class, args, LOG);
+      StringUtils.startupShutdownMessage(DataNode.class, args, LOG); // 启动或退出日志
       DataNode datanode = createDataNode(args, null, resources);
       if (datanode != null) {
         datanode.join();
@@ -2487,7 +2490,7 @@ public class DataNode extends ReconfigurableBase
       }
     } catch (Throwable e) {
       LOG.fatal("Exception in secureMain", e);
-      terminate(1, e);
+      terminate(1, e); // 退出进程
     } finally {
       // We need to terminate the process here because either shutdown was called
       // or some disk related conditions like volumes tolerated or volumes required
@@ -3135,6 +3138,7 @@ public class DataNode extends ReconfigurableBase
    * Check the disk error
    */
   private void checkDiskError() {
+    // 检查finalize、tmp、rbw目录是否可读、写、执行，并从volumes中移除问题目录
     Set<File> unhealthyDataDirs = data.checkDataDir();
     if (unhealthyDataDirs != null && !unhealthyDataDirs.isEmpty()) {
       try {
@@ -3148,7 +3152,7 @@ public class DataNode extends ReconfigurableBase
       for (File dataDir : unhealthyDataDirs) {
         sb.append(dataDir.getAbsolutePath() + ";");
       }
-      handleDiskError(sb.toString());
+      handleDiskError(sb.toString()); // 检查坏盘数，是否超过可容忍数，并处理
     }
   }
 
@@ -3168,7 +3172,7 @@ public class DataNode extends ReconfigurableBase
               }
               if(tempFlag) {
                 try {
-                  checkDiskError();
+                  checkDiskError(); // 检查磁盘是否有问题，并处理
                 } catch (Exception e) {
                   LOG.warn("Unexpected exception occurred while checking disk error  " + e);
                   checkDiskErrorThread = null;

@@ -647,7 +647,7 @@ public class StringUtils {
                                      final LogAdapter LOG) { 
     final String hostname = NetUtils.getHostname();
     final String classname = clazz.getSimpleName();
-    LOG.info(
+    LOG.info( // 启动日志
         toStartupShutdownString("STARTUP_MSG: ", new String[] {
             "Starting " + classname,
             "  host = " + hostname,
@@ -672,7 +672,7 @@ public class StringUtils {
     ShutdownHookManager.get().addShutdownHook(
       new Runnable() {
         @Override
-        public void run() {
+        public void run() { // 退出日志
           LOG.info(toStartupShutdownString("SHUTDOWN_MSG: ", new String[]{
             "Shutting down " + classname + " at " + hostname}));
         }

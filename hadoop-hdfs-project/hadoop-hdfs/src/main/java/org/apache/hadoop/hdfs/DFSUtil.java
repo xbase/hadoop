@@ -646,7 +646,7 @@ public class DFSUtil {
    */
   private static Map<String, Map<String, InetSocketAddress>>
     getAddressesForNsIds(Configuration conf, Collection<String> nsIds,
-                         String defaultAddress, String... keys) {
+                         String defaultAddress, String... keys) { // 获取所有NN的地址: <nameserviceId, <namenodeId, InetSocketAddress>>
     // Look for configurations of the form <key>[.<nameserviceId>][.<namenodeId>]
     // across all of the configured nameservices and namenodes.
     Map<String, Map<String, InetSocketAddress>> ret = Maps.newLinkedHashMap();
@@ -840,12 +840,13 @@ public class DFSUtil {
    * @return list of InetSocketAddress
    * @throws IOException on error
    */
+  // 获取所有NN的地址: <nameserviceId, <namenodeId, InetSocketAddress>>
   public static Map<String, Map<String, InetSocketAddress>>
     getNNServiceRpcAddressesForCluster(Configuration conf) throws IOException {
     // Use default address as fall back
     String defaultAddress;
     try {
-      defaultAddress = NetUtils.getHostPortString(NameNode.getAddress(conf));
+      defaultAddress = NetUtils.getHostPortString(NameNode.getAddress(conf)); // defaultFS 的 ip:port
     } catch (IllegalArgumentException e) {
       defaultAddress = null;
     }
@@ -857,8 +858,8 @@ public class DFSUtil {
       parentNameServices = conf.getTrimmedStringCollection
               (DFSConfigKeys.DFS_NAMESERVICES);
     } else {
-      // Ensure that the internal service is ineed in the list of all available
-      // nameservices.
+      // Ensure that the internal service is ineed in the list of all available nameservices.
+      // dfs.internal.nameservices 应该是 dfs.nameservices 的一个子集
       Set<String> availableNameServices = Sets.newHashSet(conf
               .getTrimmedStringCollection(DFSConfigKeys.DFS_NAMESERVICES));
       for (String nsId : parentNameServices) {
@@ -868,6 +869,7 @@ public class DFSUtil {
       }
     }
 
+    // 所有NN的地址: <nameserviceId, <namenodeId, InetSocketAddress>>
     Map<String, Map<String, InetSocketAddress>> addressList =
             getAddressesForNsIds(conf, parentNameServices, defaultAddress,
                     DFS_NAMENODE_SERVICE_RPC_ADDRESS_KEY, DFS_NAMENODE_RPC_ADDRESS_KEY);

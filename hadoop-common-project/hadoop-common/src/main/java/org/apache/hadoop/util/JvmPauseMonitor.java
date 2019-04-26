@@ -43,7 +43,7 @@ import com.google.common.collect.Sets;
  * detected, the thread logs a message.
  */
 @InterfaceAudience.Private
-public class JvmPauseMonitor {
+public class JvmPauseMonitor { // 监控JVM是否停顿
   private static final Log LOG = LogFactory.getLog(
       JvmPauseMonitor.class);
 

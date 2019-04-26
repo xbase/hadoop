@@ -241,7 +241,7 @@ public class FsVolumeImpl implements FsVolumeSpi {
       throw new IOException("The volume has already closed.", e);
     }
     final int SLEEP_MILLIS = 500;
-    while (this.reference.getReferenceCount() > 0) {
+    while (this.reference.getReferenceCount() > 0) { // 等待对这个volume的引用为0
       if (FsDatasetImpl.LOG.isDebugEnabled()) {
         FsDatasetImpl.LOG.debug(String.format(
             "The reference count for %s is %d, wait to be 0.",

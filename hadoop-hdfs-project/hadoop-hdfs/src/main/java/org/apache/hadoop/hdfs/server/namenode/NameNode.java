@@ -473,13 +473,13 @@ public class NameNode implements NameNodeStatusMXBean {
           FileSystem.FS_DEFAULT_NAME_KEY, filesystemURI.toString()));
     }
     if (!HdfsConstants.HDFS_URI_SCHEME.equalsIgnoreCase(
-        filesystemURI.getScheme())) {
+        filesystemURI.getScheme())) { // scheme 必须是 hdfs
       throw new IllegalArgumentException(String.format(
           "Invalid URI for NameNode address (check %s): %s is not of scheme '%s'.",
           FileSystem.FS_DEFAULT_NAME_KEY, filesystemURI.toString(),
           HdfsConstants.HDFS_URI_SCHEME));
     }
-    return getAddress(authority);
+    return getAddress(authority); // 创建InetSocketAddress对象
   }
 
   public static URI getUri(InetSocketAddress namenode) {

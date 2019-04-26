@@ -79,6 +79,8 @@ import java.util.concurrent.Future;
  * <p>
  * @see Storage
  */
+// 包含多个BlockpoolSliceStorage对象
+// 主要是定义了回滚、升级操作
 @InterfaceAudience.Private
 public class DataStorage extends Storage {
 

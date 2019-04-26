@@ -174,7 +174,7 @@ public abstract class FileSystem extends Configured implements Closeable {
    * @param conf the configuration to use
    * @return the uri of the default filesystem
    */
-  public static URI getDefaultUri(Configuration conf) {
+  public static URI getDefaultUri(Configuration conf) { // 获取默认fs地址：fs.defaultFS
     return URI.create(fixName(conf.get(FS_DEFAULT_NAME_KEY, DEFAULT_FS)));
   }
 

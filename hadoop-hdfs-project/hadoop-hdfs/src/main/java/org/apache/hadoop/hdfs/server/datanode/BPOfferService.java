@@ -117,11 +117,13 @@ class BPOfferService {
     mWriteLock.unlock();
   }
 
+  // 一个命名空间（块池）一个BPOfferService对象
   BPOfferService(List<InetSocketAddress> nnAddrs, DataNode dn) {
     Preconditions.checkArgument(!nnAddrs.isEmpty(),
         "Must pass at least one NN.");
     this.dn = dn;
 
+    // HA架构中：包含两个BPServiceActor对象，一个和Active NN通信，另一个和Standby NN通信
     for (InetSocketAddress addr : nnAddrs) {
       this.bpServices.add(new BPServiceActor(addr, this));
     }
@@ -134,7 +136,8 @@ class BPOfferService {
     }
     Set<InetSocketAddress> newAddrs = Sets.newHashSet(addrs);
 
-    if (!Sets.symmetricDifference(oldAddrs, newAddrs).isEmpty()) {
+    // 如果不同会抛异常，refresh目前没实现
+    if (!Sets.symmetricDifference(oldAddrs, newAddrs).isEmpty()) { // 两个集合只要不同，都会返回（1中有2中没有，2中有1中没有）
       // Keep things simple for now -- we can implement this at a later date.
       throw new IOException(
           "HA does not currently support adding a new standby to a running DN. " +
@@ -274,7 +277,7 @@ class BPOfferService {
   //This must be called only by blockPoolManager
   void start() {
     for (BPServiceActor actor : bpServices) {
-      actor.start();
+      actor.start(); // 启动Actor
     }
   }
 
@@ -306,7 +309,7 @@ class BPOfferService {
   void verifyAndSetNamespaceInfo(NamespaceInfo nsInfo) throws IOException {
     writeLock();
     try {
-      if (this.bpNSInfo == null) {
+      if (this.bpNSInfo == null) { // 说明是连接的第一个NN，初始化BlockPool
         this.bpNSInfo = nsInfo;
         boolean success = false;
 
@@ -324,7 +327,7 @@ class BPOfferService {
             this.bpNSInfo = null;
           }
         }
-      } else {
+      } else { // 连接的第二个NN，比较两个NN返回的信息是否一致
         checkNSEquality(bpNSInfo.getBlockPoolID(), nsInfo.getBlockPoolID(),
             "Blockpool ID");
         checkNSEquality(bpNSInfo.getNamespaceID(), nsInfo.getNamespaceID(),
@@ -346,7 +349,7 @@ class BPOfferService {
                              DatanodeRegistration reg) throws IOException {
     writeLock();
     try {
-      if (bpRegistration != null) {
+      if (bpRegistration != null) { // 比较和第一个NN返回的信息是否一致
         checkNSEquality(bpRegistration.getStorageInfo().getNamespaceID(),
             reg.getStorageInfo().getNamespaceID(), "namespace ID");
         checkNSEquality(bpRegistration.getStorageInfo().getClusterID(),

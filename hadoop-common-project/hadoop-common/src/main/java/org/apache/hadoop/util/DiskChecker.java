@@ -63,7 +63,7 @@ public class DiskChecker {
    * @param dir
    * @return true on success, false on failure
    */
-  public static boolean mkdirsWithExistsCheck(File dir) {
+  public static boolean mkdirsWithExistsCheck(File dir) { // 递归创建目录
     if (dir.mkdir() || dir.exists()) {
       return true;
     }
@@ -85,7 +85,7 @@ public class DiskChecker {
    * @throws DiskErrorException
    */
   public static void checkDirs(File dir) throws DiskErrorException {
-    checkDir(dir);
+    checkDir(dir); // 检查目录是否可读、写、执行
     for (File child : dir.listFiles()) {
       if (child.isDirectory()) {
         checkDirs(child);
@@ -101,11 +101,11 @@ public class DiskChecker {
    * @throws DiskErrorException
    */
   public static void checkDir(File dir) throws DiskErrorException {
-    if (!mkdirsWithExistsCheck(dir)) {
+    if (!mkdirsWithExistsCheck(dir)) { // 递归创建目录
       throw new DiskErrorException("Cannot create directory: "
                                    + dir.toString());
     }
-    checkDirAccess(dir);
+    checkDirAccess(dir); // 检查目录是否可读、写、执行
   }
 
   /**
@@ -133,11 +133,11 @@ public class DiskChecker {
     File directory = localFS.pathToFile(dir);
     boolean created = false;
 
-    if (!directory.exists())
+    if (!directory.exists()) // 如果目录不存在，则创建
       created = mkdirsWithExistsCheck(directory);
 
     if (created || !localFS.getFileStatus(dir).getPermission().equals(expected))
-        localFS.setPermission(dir, expected);
+        localFS.setPermission(dir, expected); // 修改为期望权限700
   }
 
   /**
@@ -183,7 +183,7 @@ public class DiskChecker {
    *   executable
    */
   private static void checkAccessByFileMethods(File dir)
-      throws DiskErrorException {
+      throws DiskErrorException { // 检查目录是否可读、写、执行
     if (!FileUtil.canRead(dir)) {
       throw new DiskErrorException("Directory is not readable: "
                                    + dir.toString());

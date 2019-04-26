@@ -129,7 +129,7 @@ class BlockPoolManager {
             @Override
             public Object run() throws Exception {
               for (BPOfferService bpos : offerServices) {
-                bpos.start();
+                bpos.start(); // 启动 BPOfferService
               }
               return null;
             }
@@ -152,6 +152,7 @@ class BlockPoolManager {
     LOG.info("Refresh request received for nameservices: " + conf.get
             (DFSConfigKeys.DFS_NAMESERVICES));
 
+    // 所有NN的地址: <nameserviceId, <namenodeId, InetSocketAddress>>
     Map<String, Map<String, InetSocketAddress>> newAddressMap = DFSUtil
             .getNNServiceRpcAddressesForCluster(conf);
 
@@ -164,6 +165,7 @@ class BlockPoolManager {
       Map<String, Map<String, InetSocketAddress>> addrMap) throws IOException {
     assert Thread.holdsLock(refreshNamenodesLock);
 
+    // 判断 bpByNameserviceId 中是否有相应的 nameserviceId
     Set<String> toRefresh = Sets.newLinkedHashSet();
     Set<String> toAdd = Sets.newLinkedHashSet();
     Set<String> toRemove;
@@ -183,7 +185,7 @@ class BlockPoolManager {
       // Step 2. Any nameservices we currently have but are no longer present
       // need to be removed.
       toRemove = Sets.newHashSet(Sets.difference(
-          bpByNameserviceId.keySet(), addrMap.keySet()));
+          bpByNameserviceId.keySet(), addrMap.keySet())); // 1中有，2中没有
       
       assert toRefresh.size() + toAdd.size() ==
         addrMap.size() :
@@ -200,12 +202,12 @@ class BlockPoolManager {
         for (String nsToAdd : toAdd) {
           ArrayList<InetSocketAddress> addrs =
             Lists.newArrayList(addrMap.get(nsToAdd).values());
-          BPOfferService bpos = createBPOS(addrs);
+          BPOfferService bpos = createBPOS(addrs); // 一个命名空间（块池）一个BPOfferService对象
           bpByNameserviceId.put(nsToAdd, bpos);
           offerServices.add(bpos);
         }
       }
-      startAll();
+      startAll(); // 启动所有toAdd的 BPOfferService
     }
 
     // Step 4. Shut down old nameservices. This happens outside
@@ -213,11 +215,11 @@ class BlockPoolManager {
     // back to .remove() from another thread
     if (!toRemove.isEmpty()) {
       LOG.info("Stopping BPOfferServices for nameservices: " +
-          Joiner.on(",").useForNull("<default>").join(toRemove));
-      
+              Joiner.on(",").useForNull("<default>").join(toRemove));
+
       for (String nsToRemove : toRemove) {
         BPOfferService bpos = bpByNameserviceId.get(nsToRemove);
-        bpos.stop();
+        bpos.stop(); // 停止 BPOfferService
         bpos.join();
         // they will call remove on their own
       }

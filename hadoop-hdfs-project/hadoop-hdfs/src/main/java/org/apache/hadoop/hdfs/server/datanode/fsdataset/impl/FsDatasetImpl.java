@@ -547,7 +547,7 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
    * Return true - if there are still valid volumes on the DataNode. 
    */
   @Override // FsDatasetSpi
-  public boolean hasEnoughResource() {
+  public boolean hasEnoughResource() { // 坏盘数是否超过可容忍数
     return getVolumes().size() >= validVolsRequired; 
   }
 

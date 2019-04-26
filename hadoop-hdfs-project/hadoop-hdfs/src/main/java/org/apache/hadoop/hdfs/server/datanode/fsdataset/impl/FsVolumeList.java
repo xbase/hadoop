@@ -238,15 +238,15 @@ class FsVolumeList {
       for(Iterator<FsVolumeImpl> i = volumeList.iterator(); i.hasNext(); ) {
         final FsVolumeImpl fsv = i.next();
         try (FsVolumeReference ref = fsv.obtainReference()) {
-          fsv.checkDirs();
+          fsv.checkDirs(); // 检查finalize、tmp、rbw目录是否可读、写、执行
         } catch (DiskErrorException e) {
           FsDatasetImpl.LOG.warn("Removing failed volume " + fsv + ": ", e);
           if (failedVols == null) {
             failedVols = new HashSet<>(1);
           }
           failedVols.add(new File(fsv.getBasePath()).getAbsoluteFile());
-          addVolumeFailureInfo(fsv);
-          removeVolume(fsv);
+          addVolumeFailureInfo(fsv); // 添加到volumeFailureInfos map
+          removeVolume(fsv); // 从volumes中移除问题目录
         } catch (ClosedChannelException e) {
           FsDatasetImpl.LOG.debug("Caught exception when obtaining " +
             "reference count on closed volume", e);
@@ -313,13 +313,14 @@ class FsVolumeList {
       final FsVolumeImpl[] curVolumes = volumes.get();
       final List<FsVolumeImpl> volumeList = Lists.newArrayList(curVolumes);
       if (volumeList.remove(target)) {
+        // 从volumes中移除问题目录
         if (volumes.compareAndSet(curVolumes,
             volumeList.toArray(new FsVolumeImpl[volumeList.size()]))) {
           if (blockScanner != null) {
             blockScanner.removeVolumeScanner(target);
           }
           try {
-            target.closeAndWait();
+            target.closeAndWait(); // 等待对这个volume的引用为0
           } catch (IOException e) {
             FsDatasetImpl.LOG.warn(
                 "Error occurs when waiting volume to close: " + target, e);

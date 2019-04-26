@@ -33,7 +33,7 @@ import org.apache.hadoop.classification.InterfaceStability;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-public enum SignalLogger {
+public enum SignalLogger { // 记录进程退出时，接收到了什么系统信号
   INSTANCE;
 
   private boolean registered = false;

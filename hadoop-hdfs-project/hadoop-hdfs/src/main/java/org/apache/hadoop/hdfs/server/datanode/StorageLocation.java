@@ -86,8 +86,8 @@ public class StorageLocation {
     String location = rawLocation;
 
     if (matcher.matches()) {
-      String classString = matcher.group(1);
-      location = matcher.group(2);
+      String classString = matcher.group(1); // 目录类型
+      location = matcher.group(2); // 目录地址
       if (!classString.isEmpty()) {
         storageType =
             StorageType.valueOf(StringUtils.toUpperCase(classString));

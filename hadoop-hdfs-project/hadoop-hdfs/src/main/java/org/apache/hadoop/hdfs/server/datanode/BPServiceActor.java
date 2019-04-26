@@ -118,6 +118,7 @@ class BPServiceActor implements Runnable {
   final LinkedList<BPServiceActorAction> bpThreadQueue 
       = new LinkedList<BPServiceActorAction>();
 
+  // 一个BPServiceActor对象负责和一个NN通信
   BPServiceActor(InetSocketAddress nnAddr, BPOfferService bpos) {
     this.bpos = bpos;
     this.dn = bpos.getDataNode();
@@ -169,7 +170,7 @@ class BPServiceActor implements Runnable {
     NamespaceInfo nsInfo = null;
     while (shouldRun()) {
       try {
-        nsInfo = bpNamenode.versionRequest();
+        nsInfo = bpNamenode.versionRequest(); // 获取命名空间信息
         LOG.debug(this + " received versionRequest response: " + nsInfo);
         break;
       } catch(SocketTimeoutException e) {  // namenode is busy
@@ -183,7 +184,7 @@ class BPServiceActor implements Runnable {
     }
     
     if (nsInfo != null) {
-      checkNNVersion(nsInfo);
+      checkNNVersion(nsInfo); // 检查NN版本
     } else {
       throw new IOException("DN shut down before block pool connected");
     }
@@ -195,6 +196,7 @@ class BPServiceActor implements Runnable {
     // build and layout versions should match
     String nnVersion = nsInfo.getSoftwareVersion();
     String minimumNameNodeVersion = dnConf.getMinimumNameNodeVersion();
+    // 检查NN的版本，是否在可接受范围内（NN版本大于 2.1.0-beta 即可）
     if (VersionUtil.compareVersions(nnVersion, minimumNameNodeVersion) < 0) {
       IncorrectVersionException ive = new IncorrectVersionException(
           minimumNameNodeVersion, nnVersion, "NameNode", "DataNode");
@@ -202,6 +204,7 @@ class BPServiceActor implements Runnable {
       throw ive;
     }
     String dnVersion = VersionInfo.getVersion();
+    // DN和NN版本不一致，会输出提示信息
     if (!nnVersion.equals(dnVersion)) {
       LOG.info("Reported NameNode version '" + nnVersion + "' does not match " +
           "DataNode version '" + dnVersion + "' but is within acceptable " +
@@ -211,11 +214,11 @@ class BPServiceActor implements Runnable {
 
   private void connectToNNAndHandshake() throws IOException {
     // get NN proxy
-    bpNamenode = dn.connectToNN(nnAddr);
+    bpNamenode = dn.connectToNN(nnAddr); // 和NN建立连接，创建RPC对象
 
     // First phase of the handshake with NN - get the namespace
     // info.
-    NamespaceInfo nsInfo = retrieveNamespaceInfo();
+    NamespaceInfo nsInfo = retrieveNamespaceInfo(); // 获取并检查NN版本信息
     
     // Verify that this matches the other NN in this HA pair.
     // This also initializes our block pool in the DN if we are
@@ -744,14 +747,14 @@ class BPServiceActor implements Runnable {
   void register(NamespaceInfo nsInfo) throws IOException {
     // The handshake() phase loaded the block pool storage
     // off disk - so update the bpRegistration object from that info
-    DatanodeRegistration newBpRegistration = bpos.createRegistration();
+    DatanodeRegistration newBpRegistration = bpos.createRegistration(); // 此DN的基本信息
 
     LOG.info(this + " beginning handshake with NN");
 
     while (shouldRun()) {
       try {
         // Use returned registration from namenode with updated fields
-        newBpRegistration = bpNamenode.registerDatanode(newBpRegistration);
+        newBpRegistration = bpNamenode.registerDatanode(newBpRegistration); // 向NN注册
         newBpRegistration.setNamespaceInfo(nsInfo);
         bpRegistration = newBpRegistration;
         break;
@@ -769,7 +772,7 @@ class BPServiceActor implements Runnable {
     bpos.registrationSucceeded(this, bpRegistration);
 
     // random short delay - helps scatter the BR from all DNs
-    scheduler.scheduleBlockReport(dnConf.initialBlockReportDelay);
+    scheduler.scheduleBlockReport(dnConf.initialBlockReportDelay); // 触发一次全量块汇报
   }
 
 
@@ -799,7 +802,7 @@ class BPServiceActor implements Runnable {
         // init stuff
         try {
           // setup storage
-          connectToNNAndHandshake();
+          connectToNNAndHandshake(); // 和NN连接握手
           break;
         } catch (IOException ioe) {
           // Initial handshake, storage recovery or registration failed
@@ -1002,6 +1005,7 @@ class BPServiceActor implements Runnable {
    * Utility class that wraps the timestamp computations for scheduling
    * heartbeats and block reports.
    */
+  // 计算心跳和块汇报的周期
   static class Scheduler {
     // nextBlockReportTime and nextHeartbeatTime may be assigned/read
     // by testing threads (through BPServiceActor#triggerXXX), while also

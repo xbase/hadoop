@@ -301,7 +301,7 @@ class BlockPoolSlice {
   }
 
   void checkDirs() throws DiskErrorException {
-    DiskChecker.checkDirs(finalizedDir);
+    DiskChecker.checkDirs(finalizedDir); // 检查目录是否可读、写、执行
     DiskChecker.checkDir(tmpDir);
     DiskChecker.checkDir(rbwDir);
   }
