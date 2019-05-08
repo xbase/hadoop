@@ -50,6 +50,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * and delegates calls to both NNs. 
  * It also maintains the state about which of the NNs is considered active.
  */
+// 一个命名空间（块池）一个BPOfferService对象
+// HA架构中：包含两个BPServiceActor对象，一个和Active NN通信，另一个和Standby NN通信
 @InterfaceAudience.Private
 class BPOfferService {
   static final Log LOG = DataNode.LOG;
@@ -117,7 +119,6 @@ class BPOfferService {
     mWriteLock.unlock();
   }
 
-  // 一个命名空间（块池）一个BPOfferService对象
   BPOfferService(List<InetSocketAddress> nnAddrs, DataNode dn) {
     Preconditions.checkArgument(!nnAddrs.isEmpty(),
         "Must pass at least one NN.");
@@ -218,6 +219,7 @@ class BPOfferService {
     }
   }
 
+  // 向NN汇报 坏块
   void reportBadBlocks(ExtendedBlock block,
                        String storageUuid, StorageType storageType) {
     checkBlock(block);
@@ -233,6 +235,7 @@ class BPOfferService {
    * till namenode is informed before responding with success to the
    * client? For now we don't.
    */
+  // 向NN汇报 添加块
   void notifyNamenodeReceivedBlock(
       ExtendedBlock block, String delHint, String storageUuid) {
     checkBlock(block);
@@ -254,6 +257,7 @@ class BPOfferService {
         block.getBlockPoolId(), getBlockPoolId());
   }
 
+  // 向NN汇报 删除块
   void notifyNamenodeDeletedBlock(ExtendedBlock block, String storageUuid) {
     checkBlock(block);
     ReceivedDeletedBlockInfo bInfo = new ReceivedDeletedBlockInfo(
@@ -264,6 +268,7 @@ class BPOfferService {
     }
   }
 
+  // 向NN汇报 正在接收块
   void notifyNamenodeReceivingBlock(ExtendedBlock block, String storageUuid) {
     checkBlock(block);
     ReceivedDeletedBlockInfo bInfo = new ReceivedDeletedBlockInfo(
@@ -418,6 +423,7 @@ class BPOfferService {
   /**
    * Called by the DN to report an error to the NNs.
    */
+  // 向NN汇报 错误消息：坏盘等
   void trySendErrorReport(int errCode, String errMsg) {
     for (BPServiceActor actor : bpServices) {
       ErrorReportAction errorReportAction = new ErrorReportAction
@@ -430,6 +436,7 @@ class BPOfferService {
    * Ask each of the actors to schedule a block report after
    * the specified delay.
    */
+  // 指定间隔之后，触发一次全量块汇报
   void scheduleBlockReport(long delay) {
     for (BPServiceActor actor : bpServices) {
       actor.getScheduler().scheduleBlockReport(delay);
@@ -439,6 +446,7 @@ class BPOfferService {
   /**
    * Ask each of the actors to report a bad block hosted on another DN.
    */
+  // 向NN汇报 从其他DN接到一个坏块
   void reportRemoteBadBlock(DatanodeInfo dnInfo, ExtendedBlock block) {
     for (BPServiceActor actor : bpServices) {
       try {
@@ -498,6 +506,7 @@ class BPOfferService {
    * @param actor the actor which received the heartbeat
    * @param nnHaState the HA-related heartbeat contents
    */
+  // 根据NN心跳信息，设置active
   void updateActorStatesFromHeartbeat(
       BPServiceActor actor,
       NNHAStatusHeartbeat nnHaState) {
@@ -508,7 +517,7 @@ class BPOfferService {
       final boolean nnClaimsActive =
           nnHaState.getState() == HAServiceState.ACTIVE;
       final boolean bposThinksActive = bpServiceToActive == actor;
-      final boolean isMoreRecentClaim = txid > lastActiveClaimTxId;
+      final boolean isMoreRecentClaim = txid > lastActiveClaimTxId; // txid需比之前接收的大
 
       if (nnClaimsActive && !bposThinksActive) {
         LOG.info("Namenode " + actor + " trying to claim ACTIVE state with " +
@@ -521,7 +530,7 @@ class BPOfferService {
               txid + " but there was already a more recent claim at txid=" +
               lastActiveClaimTxId);
           return;
-        } else {
+        } else { // 设置新的active
           if (bpServiceToActive == null) {
             LOG.info("Acknowledging ACTIVE Namenode " + actor);
           } else {
@@ -530,7 +539,7 @@ class BPOfferService {
           }
           bpServiceToActive = actor;
         }
-      } else if (!nnClaimsActive && bposThinksActive) {
+      } else if (!nnClaimsActive && bposThinksActive) { // NN不再是active
         LOG.info("Namenode " + actor + " relinquishing ACTIVE state with " +
             "txid=" + nnHaState.getTxId());
         bpServiceToActive = null;
@@ -656,13 +665,13 @@ class BPOfferService {
         cmd instanceof BlockIdCommand ? (BlockIdCommand)cmd: null;
 
     switch(cmd.getAction()) {
-      case DatanodeProtocol.DNA_TRANSFER:
+      case DatanodeProtocol.DNA_TRANSFER: // 移动block到另一个DN
         // Send a copy of a block to another datanode
         dn.transferBlocks(bcmd.getBlockPoolId(), bcmd.getBlocks(),
             bcmd.getTargets(), bcmd.getTargetStorageTypes());
         dn.metrics.incrBlocksReplicated(bcmd.getBlocks().length);
         break;
-      case DatanodeProtocol.DNA_INVALIDATE:
+      case DatanodeProtocol.DNA_INVALIDATE: // 删除一个block
         //
         // Some local block(s) are obsolete and can be
         // safely garbage-collected.
@@ -702,7 +711,7 @@ class BPOfferService {
 
         dn.finalizeUpgradeForPool(bp);
         break;
-      case DatanodeProtocol.DNA_RECOVERBLOCK:
+      case DatanodeProtocol.DNA_RECOVERBLOCK: // block recovery
         String who = "NameNode at " + actor.getNNSocketAddress();
         dn.recoverBlocks(who, ((BlockRecoveryCommand)cmd).getRecoveringBlocks());
         break;
@@ -714,7 +723,7 @@ class BPOfferService {
               ((KeyUpdateCommand) cmd).getExportedKeys());
         }
         break;
-      case DatanodeProtocol.DNA_BALANCERBANDWIDTHUPDATE:
+      case DatanodeProtocol.DNA_BALANCERBANDWIDTHUPDATE: // 修改balance限速
         LOG.info("DatanodeCommand action: DNA_BALANCERBANDWIDTHUPDATE");
         long bandwidth =
             ((BalancerBandwidthCommand) cmd).getBalancerBandwidthValue();
@@ -737,6 +746,7 @@ class BPOfferService {
    * This method should handle commands from Standby namenode except
    * DNA_REGISTER which should be handled earlier itself.
    */
+  // Standby发送的指令，不需要处理
   private boolean processCommandFromStandby(DatanodeCommand cmd,
                                             BPServiceActor actor) throws IOException {
     switch(cmd.getAction()) {

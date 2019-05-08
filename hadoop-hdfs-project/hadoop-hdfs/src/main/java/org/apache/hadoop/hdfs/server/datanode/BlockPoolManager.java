@@ -44,6 +44,7 @@ import com.google.common.collect.Sets;
  * Creation, removal, starting, stopping, shutdown on BPOfferService
  * objects must be done via APIs in this class.
  */
+// 管理BPOfferService（块池）的启动、停止、添加、删除等
 @InterfaceAudience.Private
 class BlockPoolManager {
   private static final Log LOG = DataNode.LOG;
