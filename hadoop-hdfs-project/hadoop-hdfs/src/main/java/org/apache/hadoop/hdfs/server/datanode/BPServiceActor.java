@@ -235,6 +235,7 @@ class BPServiceActor implements Runnable {
    *
    * @throws IOException
    */
+  // 增量块汇报
   private void reportReceivedDeletedBlocks() throws IOException {
 
     // Generate a list of the pending reports for each storage under the lock
@@ -248,7 +249,7 @@ class BPServiceActor implements Runnable {
 
         if (perStorageMap.getBlockInfoCount() > 0) {
           // Send newly-received and deleted blockids to namenode
-          ReceivedDeletedBlockInfo[] rdbi = perStorageMap.dequeueBlockInfos();
+          ReceivedDeletedBlockInfo[] rdbi = perStorageMap.dequeueBlockInfos(); // 获取所有增量汇报块
           reports.add(new StorageReceivedDeletedBlocks(storage, rdbi));
         }
       }
@@ -266,7 +267,7 @@ class BPServiceActor implements Runnable {
     try {
       bpNamenode.blockReceivedAndDeleted(bpRegistration,
           bpos.getBlockPoolId(),
-          reports.toArray(new StorageReceivedDeletedBlocks[reports.size()]));
+          reports.toArray(new StorageReceivedDeletedBlocks[reports.size()])); // 向NN做增量块汇报
       success = true;
     } finally {
       dn.getMetrics().addIncrementalBlockReport(monotonicNow() - startTime);
@@ -278,7 +279,7 @@ class BPServiceActor implements Runnable {
             // didn't put something newer in the meantime.
             PerStoragePendingIncrementalBR perStorageMap =
                 pendingIncrementalBRperStorage.get(report.getStorage());
-            perStorageMap.putMissingBlockInfos(report.getBlocks());
+            perStorageMap.putMissingBlockInfos(report.getBlocks()); // 如果增量块汇报失败，则再放回去
             sendImmediateIBR = true;
           }
         }
@@ -311,6 +312,7 @@ class BPServiceActor implements Runnable {
    *
    * Caller must synchronize access using pendingIncrementalBRperStorage.
    */
+  // 添加到增量块汇报Map
   void addPendingReplicationBlockInfo(ReceivedDeletedBlockInfo bInfo,
       DatanodeStorage storage) {
     // Make sure another entry for the same block is first removed.
@@ -329,6 +331,7 @@ class BPServiceActor implements Runnable {
    * till namenode is informed before responding with success to the
    * client? For now we don't.
    */
+  // 添加到增量块汇报Map
   void notifyNamenodeBlock(ReceivedDeletedBlockInfo bInfo,
       String storageUuid, boolean now) {
     synchronized (pendingIncrementalBRperStorage) {
@@ -343,6 +346,7 @@ class BPServiceActor implements Runnable {
     }
   }
 
+  // 添加到增量块汇报Map
   void notifyNamenodeDeletedBlock(
       ReceivedDeletedBlockInfo bInfo, String storageUuid) {
     synchronized (pendingIncrementalBRperStorage) {
@@ -422,6 +426,7 @@ class BPServiceActor implements Runnable {
    * @return DatanodeCommands returned by the NN. May be null.
    * @throws IOException
    */
+  // 全量块汇报
   List<DatanodeCommand> blockReport() throws IOException {
     // send block report if timer has expired.
     final long startTime = scheduler.monotonicNow(); 
@@ -435,7 +440,7 @@ class BPServiceActor implements Runnable {
     // we have a chance that we will miss the delHint information
     // or we will report an RBW replica after the BlockReport already reports
     // a FINALIZED one.
-    reportReceivedDeletedBlocks();
+    reportReceivedDeletedBlocks(); // 先做一次增量块汇报
     lastDeletedReport = startTime;
 
     long brCreateStartTime = monotonicNow();
@@ -450,7 +455,7 @@ class BPServiceActor implements Runnable {
 
     for(Map.Entry<DatanodeStorage, BlockListAsLongs> kvPair : perVolumeBlockLists.entrySet()) {
       BlockListAsLongs blockList = kvPair.getValue();
-      reports[i++] = new StorageBlockReport(kvPair.getKey(), blockList);
+      reports[i++] = new StorageBlockReport(kvPair.getKey(), blockList); // 一个目录下的块
       totalBlockCount += blockList.getNumberOfBlocks();
     }
 
@@ -461,7 +466,7 @@ class BPServiceActor implements Runnable {
     long brSendStartTime = monotonicNow();
     long reportId = generateUniqueBlockReportId();
     try {
-      if (totalBlockCount < dnConf.blockReportSplitThreshold) {
+      if (totalBlockCount < dnConf.blockReportSplitThreshold) { // 如果少于1000万，则一次全部汇报
         // Below split threshold, send all reports in a single message.
         DatanodeCommand cmd = bpNamenode.blockReport(
             bpRegistration, bpos.getBlockPoolId(), reports,
@@ -471,7 +476,7 @@ class BPServiceActor implements Runnable {
         if (cmd != null) {
           cmds.add(cmd);
         }
-      } else {
+      } else { // 一次汇报一个目录下的块
         // Send one block report per message.
         for (int r = 0; r < reports.length; r++) {
           StorageBlockReport singleReport[] = { reports[r] };
@@ -540,7 +545,8 @@ class BPServiceActor implements Runnable {
     }
     return cmd;
   }
-  
+
+  // 发送心跳
   HeartbeatResponse sendHeartBeat() throws IOException {
     scheduler.scheduleNextHeartbeat();
     StorageReport[] reports =
@@ -625,6 +631,11 @@ class BPServiceActor implements Runnable {
    * Main loop for each BP thread. Run until shutdown,
    * forever calling remote NameNode functions.
    */
+  // 1. 心跳
+  // 2. 增量块汇报
+  // 3. 全量块汇报
+  // 4. 汇报缓存
+  // 5. 汇报坏块、坏盘等信息
   private void offerService() throws Exception {
     LOG.info("For namenode " + nnAddr + " using"
         + " DELETEREPORT_INTERVAL of " + dnConf.deleteReportInterval + " msec "
@@ -643,7 +654,7 @@ class BPServiceActor implements Runnable {
         //
         // Every so often, send heartbeat or block-report
         //
-        final boolean sendHeartbeat = scheduler.isHeartbeatDue(startTime);
+        final boolean sendHeartbeat = scheduler.isHeartbeatDue(startTime); // 是否触发心跳
         if (sendHeartbeat) {
           //
           // All heartbeat messages include following info:
@@ -653,7 +664,7 @@ class BPServiceActor implements Runnable {
           // -- Bytes remaining
           //
           if (!dn.areHeartbeatsDisabledForTests()) {
-            HeartbeatResponse resp = sendHeartBeat();
+            HeartbeatResponse resp = sendHeartBeat(); // 发送心跳
             assert resp != null;
             dn.getMetrics().addHeartbeat(scheduler.monotonicNow() - startTime);
 
@@ -664,7 +675,7 @@ class BPServiceActor implements Runnable {
             // since the first heartbeat to a new active might have commands
             // that we should actually process.
             bpos.updateActorStatesFromHeartbeat(
-                this, resp.getNameNodeHaState());
+                this, resp.getNameNodeHaState()); // 设置active
             state = resp.getNameNodeHaState().getState();
 
             if (state == HAServiceState.ACTIVE) {
@@ -672,7 +683,7 @@ class BPServiceActor implements Runnable {
             }
 
             long startProcessCommands = monotonicNow();
-            if (!processCommand(resp.getCommands()))
+            if (!processCommand(resp.getCommands())) // 处理NN返回的指令
               continue;
             long endProcessCommands = monotonicNow();
             if (endProcessCommands - startProcessCommands > 2000) {
@@ -683,15 +694,15 @@ class BPServiceActor implements Runnable {
           }
         }
         if (sendImmediateIBR ||
-            (startTime - lastDeletedReport > dnConf.deleteReportInterval)) {
+            (startTime - lastDeletedReport > dnConf.deleteReportInterval)) { // 是否触发增量块汇报
           reportReceivedDeletedBlocks();
           lastDeletedReport = startTime;
         }
 
-        List<DatanodeCommand> cmds = blockReport();
+        List<DatanodeCommand> cmds = blockReport(); // 全量块汇报
         processCommand(cmds == null ? null : cmds.toArray(new DatanodeCommand[cmds.size()]));
 
-        DatanodeCommand cmd = cacheReport();
+        DatanodeCommand cmd = cacheReport(); // 汇报缓存
         processCommand(new DatanodeCommand[]{ cmd });
 
         //
@@ -702,7 +713,7 @@ class BPServiceActor implements Runnable {
         synchronized(pendingIncrementalBRperStorage) {
           if (waitTime > 0 && !sendImmediateIBR) {
             try {
-              pendingIncrementalBRperStorage.wait(waitTime);
+              pendingIncrementalBRperStorage.wait(waitTime); // 等待到下次心跳
             } catch (InterruptedException ie) {
               LOG.warn("BPOfferService for " + this + " interrupted");
             }
@@ -727,7 +738,7 @@ class BPServiceActor implements Runnable {
       } catch (IOException e) {
         LOG.warn("IOException in offerService", e);
       }
-      processQueueMessages();
+      processQueueMessages(); // 向NN汇报坏块、坏盘等信息
     } // while (shouldRun())
   } // offerService
 
@@ -908,6 +919,7 @@ class BPServiceActor implements Runnable {
      * Dequeue and return all pending incremental block report state.
      * @return
      */
+    // 获取所有的增量块
     ReceivedDeletedBlockInfo[] dequeueBlockInfos() {
       ReceivedDeletedBlockInfo[] blockInfos =
           pendingIncrementalBR.values().toArray(
@@ -923,6 +935,7 @@ class BPServiceActor implements Runnable {
      * @param blockArray list of blocks to add.
      * @return the number of missing blocks that we added.
      */
+    // 添加到增量块Map
     int putMissingBlockInfos(ReceivedDeletedBlockInfo[] blockArray) {
       int blocksPut = 0;
       for (ReceivedDeletedBlockInfo rdbi : blockArray) {
@@ -979,6 +992,7 @@ class BPServiceActor implements Runnable {
     }
   }
 
+  // 向NN汇报坏块、坏盘等信息
   private void processQueueMessages() {
     LinkedList<BPServiceActorAction> duplicateQueue;
     synchronized (bpThreadQueue) {
@@ -1035,11 +1049,13 @@ class BPServiceActor implements Runnable {
     // 4. Given NN receives Blockreport after Heartbeat, it won't mark
     //    DatanodeStorageInfo#blockContentsStale to false until the next
     //    Blockreport.
+    // 本次触发心跳的时间
     long scheduleHeartbeat() {
       nextHeartbeatTime = monotonicNow();
       return nextHeartbeatTime;
     }
 
+    // 下次触发心跳的时间
     long scheduleNextHeartbeat() {
       // Numerical overflow is possible here and is okay.
       nextHeartbeatTime = monotonicNow() + heartbeatIntervalMs;
@@ -1058,6 +1074,7 @@ class BPServiceActor implements Runnable {
      * This methods  arranges for the data node to send the block report at
      * the next heartbeat.
      */
+    // 本次触发全量块汇报的时间
     long scheduleBlockReport(long delay) {
       if (delay > 0) { // send BR after random delay
         // Numerical overflow is possible here and is okay.
@@ -1076,6 +1093,7 @@ class BPServiceActor implements Runnable {
      * the original schedule.
      * Numerical overflow is possible here.
      */
+    // 下次触发全量块汇报的时间
     void scheduleNextBlockReport() {
       // If we have sent the first set of block reports, then wait a random
       // time before we start the periodic block reports.
@@ -1090,6 +1108,7 @@ class BPServiceActor implements Runnable {
          *   1) normal like 9:20:18, next report should be at 10:20:14
          *   2) unexpected like 11:35:43, next report should be at 12:20:14
          */
+        // 绝对固定的间隔
         nextBlockReportTime +=
               (((monotonicNow() - nextBlockReportTime + blockReportIntervalMs) /
                   blockReportIntervalMs)) * blockReportIntervalMs;
