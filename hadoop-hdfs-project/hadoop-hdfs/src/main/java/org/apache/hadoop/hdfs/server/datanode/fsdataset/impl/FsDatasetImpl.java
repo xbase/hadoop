@@ -271,7 +271,7 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
     String[] dataDirs = conf.getTrimmedStrings(DFSConfigKeys.DFS_DATANODE_DATA_DIR_KEY);
     Collection<StorageLocation> dataLocations = DataNode.getStorageLocations(conf);
     List<VolumeFailureInfo> volumeFailureInfos = getInitialVolumeFailureInfos(
-        dataLocations, storage);
+        dataLocations, storage); // 初始化失败的目录
 
     int volsConfigured = (dataDirs == null) ? 0 : dataDirs.length;
     int volsFailed = volumeFailureInfos.size();
@@ -298,7 +298,7 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
         ReflectionUtils.newInstance(conf.getClass(
             DFSConfigKeys.DFS_DATANODE_FSDATASET_VOLUME_CHOOSING_POLICY_KEY,
             RoundRobinVolumeChoosingPolicy.class,
-            VolumeChoosingPolicy.class), conf);
+            VolumeChoosingPolicy.class), conf); // 目录选择策略，默认为：轮巡
     volumes = new FsVolumeList(volumeFailureInfos, datanode.getBlockScanner(),
         blockChooserImpl);
     asyncDiskService = new FsDatasetAsyncDiskService(datanode, this);

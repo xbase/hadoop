@@ -1346,7 +1346,7 @@ public class DataNode extends ReconfigurableBase
    */
   private void initStorage(final NamespaceInfo nsInfo) throws IOException {
     final FsDatasetSpi.Factory<? extends FsDatasetSpi<?>> factory
-        = FsDatasetSpi.Factory.getFactory(conf);
+        = FsDatasetSpi.Factory.getFactory(conf); // 创建FsDatasetImpl对象的工厂类
     
     if (!factory.isSimulated()) {
       final StartupOption startOpt = getStartupOption(conf);
@@ -1356,7 +1356,7 @@ public class DataNode extends ReconfigurableBase
       final String bpid = nsInfo.getBlockPoolID();
       //read storage info, lock data dirs and transition fs state if necessary
       synchronized (this) {
-        storage.recoverTransitionRead(this, nsInfo, dataDirs, startOpt);
+        storage.recoverTransitionRead(this, nsInfo, dataDirs, startOpt); // 初始化布局，或者升级相关
       }
       final StorageInfo bpStorage = storage.getBPStorage(bpid);
       LOG.info("Setting up storage: nsid=" + bpStorage.getNamespaceID()
@@ -1369,7 +1369,7 @@ public class DataNode extends ReconfigurableBase
 
     synchronized(this)  {
       if (data == null) {
-        data = factory.newInstance(this, storage, conf);
+        data = factory.newInstance(this, storage, conf); // 创建FsDatasetImpl
       }
     }
   }
@@ -2270,7 +2270,7 @@ public class DataNode extends ReconfigurableBase
     for(String locationString : rawLocations) {
       final StorageLocation location;
       try {
-        location = StorageLocation.parse(locationString);
+        location = StorageLocation.parse(locationString); // 解析data dir
       } catch (IOException ioe) {
         LOG.error("Failed to initialize storage directory " + locationString
             + ". Exception details: " + ioe);
