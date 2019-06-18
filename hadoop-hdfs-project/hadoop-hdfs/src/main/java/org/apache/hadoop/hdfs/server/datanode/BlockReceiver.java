@@ -842,6 +842,7 @@ class BlockReceiver implements Closeable {
         // start                  last                      curPos
         // of file                 
         //
+        // 刷写脏页到磁盘
         if (syncBehindWrites) {
           if (syncBehindWritesInBackground) {
             this.datanode.getFSDataset().submitBackgroundSyncFileRangeRequest(
@@ -864,7 +865,8 @@ class BlockReceiver implements Closeable {
         // +--------------+--------O--------------------------X
         // start        dropPos   last                      curPos
         // of file             
-        //                     
+        //
+        // 清除指定缓存
         long dropPos = lastCacheManagementOffset - CACHE_DROP_LAG_BYTES;
         if (dropPos > 0 && dropCacheBehindWrites) {
           NativeIO.POSIX.getCacheManipulator().posixFadviseIfPossible(

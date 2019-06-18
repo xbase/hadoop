@@ -73,17 +73,17 @@ public class NativeIO {
 
     // Flags for posix_fadvise() from bits/fcntl.h
     /* No further special treatment.  */
-    public static final int POSIX_FADV_NORMAL = 0;
+    public static final int POSIX_FADV_NORMAL = 0; // 没有任何意见
     /* Expect random page references.  */
-    public static final int POSIX_FADV_RANDOM = 1;
+    public static final int POSIX_FADV_RANDOM = 1; // 程序打算随机读写，内核禁用预读功能，每次读取最少量的数据
     /* Expect sequential page references.  */
-    public static final int POSIX_FADV_SEQUENTIAL = 2;
+    public static final int POSIX_FADV_SEQUENTIAL = 2; // 打算顺序的方式访问，内核把预读的大小扩大一倍
     /* Will need these pages.  */
-    public static final int POSIX_FADV_WILLNEED = 3;
+    public static final int POSIX_FADV_WILLNEED = 3; // 在不久的将来程序将访问该段内容，内核开启预读，把它们读入
     /* Don't need these pages.  */
-    public static final int POSIX_FADV_DONTNEED = 4;
+    public static final int POSIX_FADV_DONTNEED = 4; // 在不久的将来应用程序不打算访问指定范围中的页面，内核从页缓冲中删除指定的范围
     /* Data will be accessed once.  */
-    public static final int POSIX_FADV_NOREUSE = 5;
+    public static final int POSIX_FADV_NOREUSE = 5; // 将来打算访问当只访问一次，但内核行为如同POSIX_FADV_WILLNEED
 
 
     /* Wait upon writeout of all pages
@@ -93,6 +93,10 @@ public class NativeIO {
     /* Initiate writeout of all those
        dirty pages in the range which are
        not presently under writeback.  */
+    // 当我们对大文件进行修改时，如果修改了大量的数据块，我们最后fsync的时候，可能会很慢。
+    // sync_file_range 可以将文件的部分范围作为目标，将对应范围内的脏页刷回磁盘，而不是整个文件的范围。
+    // 而且 sync_file_range 不会写metadata (inode)
+    // SYNC_FILE_RANGE_WRITE是异步的
     public static final int SYNC_FILE_RANGE_WRITE = 2;
 
     /* Wait upon writeout of all pages in
