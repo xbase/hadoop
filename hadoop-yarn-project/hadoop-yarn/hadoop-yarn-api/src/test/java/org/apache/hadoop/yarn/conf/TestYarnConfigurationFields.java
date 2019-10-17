@@ -68,6 +68,10 @@ public class TestYarnConfigurationFields extends TestConfigurationFieldsBase {
             .YARN_SECURITY_SERVICE_AUTHORIZATION_RESOURCETRACKER_PROTOCOL);
     configurationPropsToSkipCompare.add(YarnConfiguration
         .YARN_SECURITY_SERVICE_AUTHORIZATION_COLLECTOR_NODEMANAGER_PROTOCOL);
+    configurationPropsToSkipCompare.add(YarnConfiguration
+        .YARN_SECURITY_SERVICE_AUTHORIZATION_DISTRIBUTEDSCHEDULING_PROTOCOL);
+    configurationPropsToSkipCompare.add(YarnConfiguration
+        .YARN_SECURITY_SERVICE_AUTHORIZATION_APPLICATIONMASTER_NODEMANAGER_PROTOCOL);
     configurationPropsToSkipCompare.add(YarnConfiguration.CURATOR_LEADER_ELECTOR);
     configurationPropsToSkipCompare
         .add(YarnConfiguration.RM_RESERVATION_SYSTEM_MAX_PERIODICITY);
@@ -79,6 +83,8 @@ public class TestYarnConfigurationFields extends TestConfigurationFieldsBase {
         .add(YarnConfiguration.FEDERATION_FAILOVER_ENABLED);
     configurationPropsToSkipCompare
         .add(YarnConfiguration.FEDERATION_STATESTORE_HEARTBEAT_INTERVAL_SECS);
+    configurationPrefixToSkipCompare
+        .add(YarnConfiguration.FEDERATION_FLUSH_CACHE_FOR_RM_ADDR);
     configurationPropsToSkipCompare
         .add(YarnConfiguration.RM_EPOCH);
     configurationPropsToSkipCompare
@@ -159,9 +165,13 @@ public class TestYarnConfigurationFields extends TestConfigurationFieldsBase {
     configurationPrefixToSkipCompare
         .add(YarnConfiguration.NM_DISK_RESOURCE_ENABLED);
     configurationPrefixToSkipCompare
-        .add(YarnConfiguration.NM_MEMORY_RESOURCE_PREFIX);
-    configurationPrefixToSkipCompare
         .add(YarnConfiguration.NM_CPU_RESOURCE_ENABLED);
+    configurationPrefixToSkipCompare.add(
+        YarnConfiguration.NM_NETWORK_TAG_MAPPING_MANAGER);
+    configurationPrefixToSkipCompare.add(
+        YarnConfiguration.NM_NETWORK_TAG_MAPPING_FILE_PATH);
+    configurationPrefixToSkipCompare.add(
+        YarnConfiguration.NM_NETWORK_TAG_PREFIX);
 
     // Ignore all Router Federation variables
 
@@ -176,6 +186,8 @@ public class TestYarnConfigurationFields extends TestConfigurationFieldsBase {
     // Ignore deprecated properties
     configurationPrefixToSkipCompare
         .add(YarnConfiguration.YARN_CLIENT_APP_SUBMISSION_POLL_INTERVAL_MS);
+    configurationPrefixToSkipCompare
+        .add(YarnConfiguration.DISPLAY_APPS_FOR_LOGGED_IN_USER);
 
     // Allocate for usage
     xmlPropsToSkipCompare = new HashSet<String>();

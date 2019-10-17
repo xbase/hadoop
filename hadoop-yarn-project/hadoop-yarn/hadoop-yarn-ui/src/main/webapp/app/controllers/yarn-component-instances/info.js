@@ -18,11 +18,16 @@
 
 import Ember from 'ember';
 import ColumnDef from 'em-table/utils/column-definition';
+import TableDefinition from 'em-table/utils/table-definition';
 
 export default Ember.Controller.extend({
   queryParams: ["service", "appid"],
   appid: undefined,
   service: undefined,
+
+  tableDefinition: TableDefinition.create({
+    searchType: 'manual',
+  }),
 
   tableColumns: Ember.computed('model.appId', 'model.serviceName', function() {
     var cols = [];
@@ -37,9 +42,10 @@ export default Ember.Controller.extend({
       getCellContent: function(row) {
         var component = row.get('component');
         var instance = row.get('instanceName');
+        var containerId = row.get('containerId');
         return {
           text: instance,
-          href: `#/yarn-component-instance/${component}/instances/${instance}/info?appid=${appId}&&service=${serviceName}`
+          href: `#/yarn-component-instance/${component}/instances/${instance}/info?appid=${appId}&service=${serviceName}&containerid=${containerId}`
         };
       }
     }, {

@@ -66,6 +66,7 @@ message RegisterNodeManagerRequestProto {
   repeated ApplicationIdProto runningApplications = 7;
   optional NodeLabelsProto nodeLabels = 8;
   optional ResourceProto physicalResource = 9;
+  repeated LogAggregationReportProto log_aggregation_reports_for_apps = 10;
 }
 
 message RegisterNodeManagerResponseProto {
@@ -177,6 +178,7 @@ message NMContainerStatusProto {
   optional int32 version = 9;
   optional ExecutionTypeProto executionType = 10 [default = GUARANTEED];
   optional int64 allocation_request_id = 11 [default = -1];
+  repeated string allocation_tags = 12;
 }
 
 message SCMUploaderNotifyRequestProto {

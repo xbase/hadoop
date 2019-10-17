@@ -49,6 +49,8 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.ContainerAlloca
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ResourceScheduler;
 
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.constraint.AllocationTagsManager;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.constraint.PlacementConstraintManager;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.distributed.QueueLimitCalculator;
 import org.apache.hadoop.yarn.server.resourcemanager.security.AMRMTokenSecretManager;
 import org.apache.hadoop.yarn.server.resourcemanager.security.ClientToAMTokenSecretManagerInRM;
@@ -90,8 +92,6 @@ public class RMContextImpl implements RMContext {
    * ACTIVE->STANDBY.
    */
   private RMActiveServiceContext activeServiceContext;
-
-  private ResourceProfilesManager resourceProfilesManager;
 
   private String proxyHostAndPort = null;
 
@@ -504,6 +504,29 @@ public class RMContextImpl implements RMContext {
   }
 
   @Override
+  public AllocationTagsManager getAllocationTagsManager() {
+    return activeServiceContext.getAllocationTagsManager();
+  }
+
+  @Override
+  public void setAllocationTagsManager(
+      AllocationTagsManager allocationTagsManager) {
+    activeServiceContext.setAllocationTagsManager(allocationTagsManager);
+  }
+
+  @Override
+  public PlacementConstraintManager getPlacementConstraintManager() {
+    return activeServiceContext.getPlacementConstraintManager();
+  }
+
+  @Override
+  public void setPlacementConstraintManager(
+      PlacementConstraintManager placementConstraintManager) {
+    activeServiceContext
+        .setPlacementConstraintManager(placementConstraintManager);
+  }
+
+  @Override
   public RMDelegatedNodeLabelsUpdater getRMDelegatedNodeLabelsUpdater() {
     return activeServiceContext.getRMDelegatedNodeLabelsUpdater();
   }
@@ -566,7 +589,7 @@ public class RMContextImpl implements RMContext {
 
   @Override
   public ResourceProfilesManager getResourceProfilesManager() {
-    return this.resourceProfilesManager;
+    return this.activeServiceContext.getResourceProfilesManager();
   }
 
   String getProxyHostAndPort(Configuration conf) {
@@ -594,7 +617,7 @@ public class RMContextImpl implements RMContext {
 
   @Override
   public void setResourceProfilesManager(ResourceProfilesManager mgr) {
-    this.resourceProfilesManager = mgr;
+    this.activeServiceContext.setResourceProfilesManager(mgr);
   }
   // Note: Read java doc before adding any services over here.
 }

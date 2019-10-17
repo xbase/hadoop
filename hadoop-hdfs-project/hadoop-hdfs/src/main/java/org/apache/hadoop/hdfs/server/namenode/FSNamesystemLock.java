@@ -26,6 +26,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.log.LogThrottlingHelper;
 import org.apache.hadoop.metrics2.lib.MutableRatesWithAggregation;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.util.Timer;
@@ -40,6 +41,7 @@ import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NAMENODE_READ_LOCK_REPORT
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NAMENODE_READ_LOCK_REPORTING_THRESHOLD_MS_KEY;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NAMENODE_WRITE_LOCK_REPORTING_THRESHOLD_MS_DEFAULT;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NAMENODE_WRITE_LOCK_REPORTING_THRESHOLD_MS_KEY;
+import static org.apache.hadoop.log.LogThrottlingHelper.LogAction;
 
 /**
  * Mimics a ReentrantReadWriteLock but does not directly implement the interface
@@ -74,11 +76,8 @@ class FSNamesystemLock {
   private final long writeLockReportingThresholdMs;
   /** Last time stamp for write lock. Keep the longest one for multi-entrance.*/
   private long writeLockHeldTimeStampNanos;
-  private int numWriteLockWarningsSuppressed = 0;
-  /** Time stamp (ms) of the last time a write lock report was written. */
-  private long timeStampOfLastWriteLockReportMs = 0;
-  /** Longest time (ms) a write lock was held since the last report. */
-  private long longestWriteLockHeldIntervalMs = 0;
+  /** Frequency limiter used for reporting long write lock hold times. */
+  private final LogThrottlingHelper writeLockReportLogger;
 
   /** Threshold (ms) for long holding read lock report. */
   private final long readLockReportingThresholdMs;
@@ -107,6 +106,8 @@ class FSNamesystemLock {
   private static final String WRITE_LOCK_METRIC_PREFIX = "FSNWriteLock";
   private static final String LOCK_METRIC_SUFFIX = "Nanos";
 
+  private static final String OVERALL_METRIC_NAME = "Overall";
+
   FSNamesystemLock(Configuration conf,
       MutableRatesWithAggregation detailedHoldTimeMetrics) {
     this(conf, detailedHoldTimeMetrics, new Timer());
@@ -130,6 +131,8 @@ class FSNamesystemLock {
     this.lockSuppressWarningIntervalMs = conf.getTimeDuration(
         DFS_LOCK_SUPPRESS_WARNING_INTERVAL_KEY,
         DFS_LOCK_SUPPRESS_WARNING_INTERVAL_DEFAULT, TimeUnit.MILLISECONDS);
+    this.writeLockReportLogger =
+        new LogThrottlingHelper(lockSuppressWarningIntervalMs);
     this.metricsEnabled = conf.getBoolean(
         DFS_NAMENODE_LOCK_DETAILED_METRICS_KEY,
         DFS_NAMENODE_LOCK_DETAILED_METRICS_DEFAULT);
@@ -140,6 +143,13 @@ class FSNamesystemLock {
 
   public void readLock() {
     coarseLock.readLock().lock();
+    if (coarseLock.getReadHoldCount() == 1) {
+      readLockHeldTimeStampNanos.set(timer.monotonicNowNanos());
+    }
+  }
+
+  public void readLockInterruptibly() throws InterruptedException {
+    coarseLock.readLock().lockInterruptibly();
     if (coarseLock.getReadHoldCount() == 1) {
       readLockHeldTimeStampNanos.set(timer.monotonicNowNanos());
     }
@@ -242,25 +252,11 @@ class FSNamesystemLock {
     final long writeLockIntervalMs =
         TimeUnit.NANOSECONDS.toMillis(writeLockIntervalNanos);
 
-    boolean logReport = false;
-    int numSuppressedWarnings = 0;
-    long longestLockHeldIntervalMs = 0;
+    LogAction logAction = LogThrottlingHelper.DO_NOT_LOG;
     if (needReport &&
         writeLockIntervalMs >= this.writeLockReportingThresholdMs) {
-      if (writeLockIntervalMs > longestWriteLockHeldIntervalMs) {
-        longestWriteLockHeldIntervalMs = writeLockIntervalMs;
-      }
-      if (currentTimeMs - timeStampOfLastWriteLockReportMs >
-          this.lockSuppressWarningIntervalMs) {
-        logReport = true;
-        numSuppressedWarnings = numWriteLockWarningsSuppressed;
-        numWriteLockWarningsSuppressed = 0;
-        longestLockHeldIntervalMs = longestWriteLockHeldIntervalMs;
-        longestWriteLockHeldIntervalMs = 0;
-        timeStampOfLastWriteLockReportMs = currentTimeMs;
-      } else {
-        numWriteLockWarningsSuppressed++;
-      }
+      logAction = writeLockReportLogger
+          .record("write", currentTimeMs, writeLockIntervalMs);
     }
 
     coarseLock.writeLock().unlock();
@@ -269,13 +265,14 @@ class FSNamesystemLock {
       addMetric(opName, writeLockIntervalNanos, true);
     }
 
-    if (logReport) {
-      FSNamesystem.LOG.info("FSNamesystem write lock held for " +
-          writeLockIntervalMs + " ms via\n" +
-          StringUtils.getStackTrace(Thread.currentThread()) +
-          "\tNumber of suppressed write-lock reports: " +
-          numSuppressedWarnings + "\n\tLongest write-lock held interval: " +
-          longestLockHeldIntervalMs);
+    if (logAction.shouldLog()) {
+      FSNamesystem.LOG.info("FSNamesystem write lock held for {} ms via {}\t" +
+          "Number of suppressed write-lock reports: {}\n\tLongest write-lock " +
+          "held interval: {} \n\tTotal suppressed write-lock held time: {}",
+          writeLockIntervalMs,
+          StringUtils.getStackTrace(Thread.currentThread()),
+          logAction.getCount() - 1, logAction.getStats(0).getMax(),
+          logAction.getStats(0).getSum() - writeLockIntervalMs);
     }
   }
 
@@ -313,12 +310,17 @@ class FSNamesystemLock {
    */
   private void addMetric(String operationName, long value, boolean isWrite) {
     if (metricsEnabled) {
-      String metricName =
-          (isWrite ? WRITE_LOCK_METRIC_PREFIX : READ_LOCK_METRIC_PREFIX) +
-          org.apache.commons.lang.StringUtils.capitalize(operationName) +
-          LOCK_METRIC_SUFFIX;
-      detailedHoldTimeMetrics.add(metricName, value);
+      String opMetric = getMetricName(operationName, isWrite);
+      detailedHoldTimeMetrics.add(opMetric, value);
+
+      String overallMetric = getMetricName(OVERALL_METRIC_NAME, isWrite);
+      detailedHoldTimeMetrics.add(overallMetric, value);
     }
   }
 
+  private static String getMetricName(String operationName, boolean isWrite) {
+    return (isWrite ? WRITE_LOCK_METRIC_PREFIX : READ_LOCK_METRIC_PREFIX) +
+        org.apache.commons.lang.StringUtils.capitalize(operationName) +
+        LOCK_METRIC_SUFFIX;
+  }
 }

@@ -16,7 +16,6 @@
  * limitations under the License.
  */
 
-import Ember from 'ember';
 import RESTAbstractAdapter from './restabstract';
 
 export default RESTAbstractAdapter.extend({
@@ -24,21 +23,36 @@ export default RESTAbstractAdapter.extend({
   restNameSpace: "dashService",
   serverName: "DASH",
 
-  deployService(request) {
+  normalizeErrorResponse(status, headers, payload) {
+    if (payload && typeof payload === 'object' && payload.errors) {
+      return payload.errors;
+    } else {
+      return [
+        payload
+      ];
+    }
+  },
+
+  deployService(request, user) {
     var url = this.buildURL();
+    if(user) {
+      url += "/?user.name=" + user;
+    }
     return this.ajax(url, "POST", {data: request});
   },
 
-  stopService(serviceName) {
+  stopService(serviceName, user) {
     var url = this.buildURL();
     url += "/" + serviceName;
+    url += "/?user.name=" + user;
     var data = {"state": "STOPPED", "name": serviceName};
     return this.ajax(url, "PUT", {data: data});
   },
 
-  deleteService(serviceName) {
+  deleteService(serviceName, user) {
     var url = this.buildURL();
     url += "/" + serviceName;
+    url += "/?user.name=" + user;
     return this.ajax(url, "DELETE", {data: {}});
   }
 });

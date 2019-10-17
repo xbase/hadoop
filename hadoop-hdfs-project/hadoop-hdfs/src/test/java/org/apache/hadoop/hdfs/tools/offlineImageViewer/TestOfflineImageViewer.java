@@ -18,6 +18,8 @@
 package org.apache.hadoop.hdfs.tools.offlineImageViewer;
 
 import com.google.common.collect.ImmutableMap;
+
+import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.HADOOP_SECURITY_AUTHENTICATION;
 import static org.apache.hadoop.fs.permission.AclEntryScope.ACCESS;
 import static org.apache.hadoop.fs.permission.AclEntryType.GROUP;
 import static org.apache.hadoop.fs.permission.AclEntryType.OTHER;
@@ -100,8 +102,10 @@ import org.apache.hadoop.hdfs.server.namenode.NameNodeLayoutVersion;
 import org.apache.hadoop.hdfs.web.WebHdfsFileSystem;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.net.NetUtils;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.test.GenericTestUtils;
+import org.apache.hadoop.test.LambdaTestUtils;
 import org.apache.log4j.Level;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -194,10 +198,15 @@ public class TestOfflineImageViewer {
       dirCount++;
       writtenFiles.put(emptydir.toString(), hdfs.getFileStatus(emptydir));
 
-      //Create a directory whose name should be escaped in XML
+      //Create directories whose name should be escaped in XML
       Path invalidXMLDir = new Path("/dirContainingInvalidXMLChar\u0000here");
       hdfs.mkdirs(invalidXMLDir);
       dirCount++;
+      Path entityRefXMLDir = new Path("/dirContainingEntityRef&here");
+      hdfs.mkdirs(entityRefXMLDir);
+      dirCount++;
+      writtenFiles.put(entityRefXMLDir.toString(),
+          hdfs.getFileStatus(entityRefXMLDir));
 
       //Create a directory with sticky bits
       Path stickyBitDir = new Path("/stickyBit");
@@ -340,9 +349,11 @@ public class TestOfflineImageViewer {
       in = new FileInputStream(src);
       out = new FileOutputStream(dest);
       in.getChannel().transferTo(0, MAX_BYTES, out.getChannel());
+      out.close();
+      out = null;
     } finally {
-      IOUtils.cleanup(null, in);
-      IOUtils.cleanup(null, out);
+      IOUtils.closeStream(in);
+      IOUtils.closeStream(out);
     }
   }
 
@@ -577,6 +588,22 @@ public class TestOfflineImageViewer {
   }
 
   @Test
+  public void testWebImageViewerSecureMode() throws Exception {
+    Configuration conf = new Configuration();
+    conf.set(HADOOP_SECURITY_AUTHENTICATION, "kerberos");
+    try (WebImageViewer viewer =
+        new WebImageViewer(
+            NetUtils.createSocketAddr("localhost:0"), conf)) {
+      RuntimeException ex = LambdaTestUtils.intercept(RuntimeException.class,
+          "WebImageViewer does not support secure mode.",
+          () -> viewer.start("foo"));
+    } finally {
+      conf.set(HADOOP_SECURITY_AUTHENTICATION, "simple");
+      UserGroupInformation.setConfiguration(conf);
+    }
+  }
+
+  @Test
   public void testPBDelimitedWriter() throws IOException, InterruptedException {
     testPBDelimitedWriter("");  // Test in memory db.
     testPBDelimitedWriter(
@@ -614,6 +641,25 @@ public class TestOfflineImageViewer {
     } finally {
       System.setOut(oldOut);
       IOUtils.closeStream(out);
+    }
+  }
+
+  @Test(expected = IOException.class)
+  public void testDelimitedWithExistingFolder() throws IOException,
+      InterruptedException {
+    File tempDelimitedDir = null;
+    try {
+      String tempDelimitedDirName = "tempDirDelimited";
+      String tempDelimitedDirPath = new FileSystemTestHelper().
+          getTestRootDir() + "/" + tempDelimitedDirName;
+      tempDelimitedDir = new File(tempDelimitedDirPath);
+      Assert.assertTrue("Couldn't create temp directory!",
+          tempDelimitedDir.mkdirs());
+      testPBDelimitedWriter(tempDelimitedDirPath);
+    } finally {
+      if (tempDelimitedDir != null) {
+        FileUtils.deleteDirectory(tempDelimitedDir);
+      }
     }
   }
 

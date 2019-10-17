@@ -181,6 +181,50 @@ public class TestClientRMService {
   private final static String QUEUE_2 = "Q-2";
 
   @Test
+  public void testGetDecommissioningClusterNodes() throws Exception {
+    MockRM rm = new MockRM() {
+      protected ClientRMService createClientRMService() {
+        return new ClientRMService(this.rmContext, scheduler,
+            this.rmAppManager, this.applicationACLsManager,
+            this.queueACLsManager,
+            this.getRMContext().getRMDelegationTokenSecretManager());
+      };
+    };
+    rm.start();
+
+    int nodeMemory = 1024;
+    MockNM nm1 = rm.registerNode("host1:1234", nodeMemory);
+    rm.sendNodeStarted(nm1);
+    nm1.nodeHeartbeat(true);
+    rm.waitForState(nm1.getNodeId(), NodeState.RUNNING);
+    Integer decommissioningTimeout = 600;
+    rm.sendNodeGracefulDecommission(nm1, decommissioningTimeout);
+    rm.waitForState(nm1.getNodeId(), NodeState.DECOMMISSIONING);
+
+    // Create a client.
+    Configuration conf = new Configuration();
+    YarnRPC rpc = YarnRPC.create(conf);
+    InetSocketAddress rmAddress = rm.getClientRMService().getBindAddress();
+    LOG.info("Connecting to ResourceManager at " + rmAddress);
+    ApplicationClientProtocol client =
+        (ApplicationClientProtocol) rpc
+            .getProxy(ApplicationClientProtocol.class, rmAddress, conf);
+
+    // Make call
+    List<NodeReport> nodeReports = client.getClusterNodes(
+        GetClusterNodesRequest.newInstance(
+            EnumSet.of(NodeState.DECOMMISSIONING)))
+        .getNodeReports();
+    Assert.assertEquals(1, nodeReports.size());
+    NodeReport nr = nodeReports.iterator().next();
+    Assert.assertEquals(decommissioningTimeout, nr.getDecommissioningTimeout());
+    Assert.assertNull(nr.getNodeUpdateType());
+
+    rpc.stopProxy(client, conf);
+    rm.close();
+  }
+
+  @Test
   public void testGetClusterNodes() throws Exception {
     MockRM rm = new MockRM() {
       protected ClientRMService createClientRMService() {
@@ -228,6 +272,8 @@ public class TestClientRMService {
     
     // Check node's label = x
     Assert.assertTrue(nodeReports.get(0).getNodeLabels().contains("x"));
+    Assert.assertNull(nodeReports.get(0).getDecommissioningTimeout());
+    Assert.assertNull(nodeReports.get(0).getNodeUpdateType());
 
     // Now make the node unhealthy.
     node.nodeHeartbeat(false);
@@ -251,6 +297,8 @@ public class TestClientRMService {
         nodeReports.get(0).getNodeState());
     
     Assert.assertTrue(nodeReports.get(0).getNodeLabels().contains("y"));
+    Assert.assertNull(nodeReports.get(0).getDecommissioningTimeout());
+    Assert.assertNull(nodeReports.get(0).getNodeUpdateType());
     
     // Remove labels of host1
     map = new HashMap<NodeId, Set<String>>();
@@ -267,6 +315,8 @@ public class TestClientRMService {
     for (NodeReport report : nodeReports) {
       Assert.assertTrue(report.getNodeLabels() != null
           && report.getNodeLabels().isEmpty());
+      Assert.assertNull(report.getDecommissioningTimeout());
+      Assert.assertNull(report.getNodeUpdateType());
     }
 
     rpc.stopProxy(client, conf);
@@ -1014,7 +1064,7 @@ public class TestClientRMService {
   }
 
   @Test
-  public void testGetApplications() throws IOException, YarnException {
+  public void testGetApplications() throws Exception {
     /**
      * 1. Submit 3 applications alternately in two queues
      * 2. Test each of the filters
@@ -1063,8 +1113,12 @@ public class TestClientRMService {
       SubmitApplicationRequest submitRequest = mockSubmitAppRequest(
           appId, appNames[i], queues[i % queues.length],
           new HashSet<String>(tags.subList(0, i + 1)));
+      // make sure each app is submitted at a different time
+      Thread.sleep(1);
       rmService.submitApplication(submitRequest);
-      submitTimeMillis[i] = System.currentTimeMillis();
+      submitTimeMillis[i] = rmService.getApplicationReport(
+          GetApplicationReportRequest.newInstance(appId))
+          .getApplicationReport().getStartTime();
     }
 
     // Test different cases of ClientRMService#getApplications()
@@ -1079,19 +1133,19 @@ public class TestClientRMService {
     
     // Check start range
     request = GetApplicationsRequest.newInstance();
-    request.setStartRange(submitTimeMillis[0], System.currentTimeMillis());
+    request.setStartRange(submitTimeMillis[0] + 1, System.currentTimeMillis());
     
     // 2 applications are submitted after first timeMills
     assertEquals("Incorrect number of matching start range", 
         2, rmService.getApplications(request).getApplicationList().size());
     
     // 1 application is submitted after the second timeMills
-    request.setStartRange(submitTimeMillis[1], System.currentTimeMillis());
+    request.setStartRange(submitTimeMillis[1] + 1, System.currentTimeMillis());
     assertEquals("Incorrect number of matching start range", 
         1, rmService.getApplications(request).getApplicationList().size());
     
     // no application is submitted after the third timeMills
-    request.setStartRange(submitTimeMillis[2], System.currentTimeMillis());
+    request.setStartRange(submitTimeMillis[2] + 1, System.currentTimeMillis());
     assertEquals("Incorrect number of matching start range", 
         0, rmService.getApplications(request).getApplicationList().size());
 
@@ -1418,6 +1472,9 @@ public class TestClientRMService {
             YarnConfiguration.DEFAULT_RM_SCHEDULER_MINIMUM_ALLOCATION_MB));
     when(yarnScheduler.getMaximumResourceCapability()).thenReturn(
         Resources.createResource(
+            YarnConfiguration.DEFAULT_RM_SCHEDULER_MAXIMUM_ALLOCATION_MB));
+    when(yarnScheduler.getMaximumResourceCapability(any(String.class)))
+        .thenReturn(Resources.createResource(
             YarnConfiguration.DEFAULT_RM_SCHEDULER_MAXIMUM_ALLOCATION_MB));
     when(yarnScheduler.getAppsInQueue(QUEUE_1)).thenReturn(
         Arrays.asList(getApplicationAttemptId(101), getApplicationAttemptId(102)));

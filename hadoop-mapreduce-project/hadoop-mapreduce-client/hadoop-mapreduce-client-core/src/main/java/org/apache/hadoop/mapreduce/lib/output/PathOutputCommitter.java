@@ -57,8 +57,8 @@ public abstract class PathOutputCommitter extends OutputCommitter {
   protected PathOutputCommitter(Path outputPath,
       TaskAttemptContext context) throws IOException {
     this.context = Preconditions.checkNotNull(context, "Null context");
-    LOG.debug("Creating committer with output path {} and task context"
-        + " {}", outputPath, context);
+    LOG.debug("Instantiating committer {} with output path {} and task context"
+        + " {}", this, outputPath, context);
   }
 
   /**
@@ -71,14 +71,31 @@ public abstract class PathOutputCommitter extends OutputCommitter {
   protected PathOutputCommitter(Path outputPath,
       JobContext context) throws IOException {
     this.context = Preconditions.checkNotNull(context, "Null context");
-    LOG.debug("Creating committer with output path {} and job context"
-        + " {}", outputPath, context);
+    LOG.debug("Instantiating committer {} with output path {} and job context"
+        + " {}", this, outputPath, context);
+  }
+
+  /**
+   * Get the final directory where work will be placed once the job
+   * is committed. This may be null, in which case, there is no output
+   * path to write data to.
+   * @return the path where final output of the job should be placed.
+   */
+  public abstract Path getOutputPath();
+
+  /**
+   * Predicate: is there an output path?
+   * @return true if we have an output path set, else false.
+   */
+  public boolean hasOutputPath() {
+    return getOutputPath() != null;
   }
 
   /**
    * Get the directory that the task should write results into.
    * Warning: there's no guarantee that this work path is on the same
    * FS as the final output, or that it's visible across machines.
+   * May be null.
    * @return the work directory
    * @throws IOException IO problem
    */
@@ -86,6 +103,8 @@ public abstract class PathOutputCommitter extends OutputCommitter {
 
   @Override
   public String toString() {
-    return "PathOutputCommitter{context=" + context + '}';
+    return "PathOutputCommitter{context=" + context
+        + "; " + super.toString()
+        + '}';
   }
 }

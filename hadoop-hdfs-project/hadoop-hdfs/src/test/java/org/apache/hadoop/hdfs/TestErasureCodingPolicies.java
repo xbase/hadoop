@@ -19,6 +19,7 @@ package org.apache.hadoop.hdfs;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeys;
+import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.fs.CreateFlag;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -151,6 +152,19 @@ public class TestErasureCodingPolicies {
     assertNotNull(files[0].getErasureCodingPolicy());
     assertEquals(ecFile.getName(), files[1].getLocalName());
     assertNotNull(files[1].getErasureCodingPolicy());
+  }
+
+  @Test
+  public void testContentSummaryOfECSubdir() throws IOException {
+    final Path testDir = new Path("/ec");
+    fs.mkdir(testDir, FsPermission.getDirDefault());
+    fs.setErasureCodingPolicy(testDir, ecPolicy.getName());
+    final Path fPath = new Path("ec/file");
+    fs.create(fPath).close();
+    final Path subdir = new Path("/ec/sub");
+    fs.mkdir(subdir, FsPermission.getDirDefault());
+    ContentSummary contentSummary = fs.getContentSummary(subdir);
+    assertEquals(ecPolicy.getName(),contentSummary.getErasureCodingPolicy());
   }
 
   @Test
@@ -304,6 +318,40 @@ public class TestErasureCodingPolicies {
     fs.create(new Path(ecDir, "child1")).close();
     // verify for the files in ec dir
     verifyErasureCodingInfo(src + "/child1", sysDefaultECPolicy);
+  }
+
+  @Test
+  public void testErasureCodingPolicyOnReservedDir() throws IOException {
+    final Path reserveDir = new Path("/.reserved");
+    // verify the EC policy is null, not an exception
+    ErasureCodingPolicy policy = fs.getErasureCodingPolicy(reserveDir);
+    assertNull("Got unexpected erasure coding policy", policy);
+
+    // root EC policy before being set is null, verify the reserved raw dir
+    // is treated as root
+    final Path root = new Path("/");
+    final Path rawRoot = new Path("/.reserved/raw");
+    final Path rawRootSlash = new Path("/.reserved/raw/");
+    assertNull("Got unexpected erasure coding policy",
+        fs.getErasureCodingPolicy(root));
+    assertNull("Got unexpected erasure coding policy",
+        fs.getErasureCodingPolicy(rawRoot));
+    assertNull("Got unexpected erasure coding policy",
+        fs.getErasureCodingPolicy(rawRootSlash));
+
+    // verify the EC policy correctness under the reserved raw dir
+    final Path ecDir = new Path("/ec");
+    fs.mkdirs(ecDir);
+    fs.setErasureCodingPolicy(ecDir, ecPolicy.getName());
+
+    ErasureCodingPolicy policyBase = fs.getErasureCodingPolicy(ecDir);
+    assertEquals("Got unexpected erasure coding policy", ecPolicy,
+        policyBase);
+
+    final Path rawRootEc = new Path("/.reserved/raw/ec");
+    ErasureCodingPolicy policyMap = fs.getErasureCodingPolicy(rawRootEc);
+    assertEquals("Got unexpected erasure coding policy", ecPolicy,
+        policyMap);
   }
 
   @Test

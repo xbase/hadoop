@@ -42,17 +42,17 @@ export default DS.JSONAPISerializer.extend({
           user: payload.user,
           queue: payload.queue,
           state: payload.state,
-          startTime: Converter.timeStampToDate(payload.startedTime),
+          startTime: payload.startedTime, // will be formatted in yarn-app model
           elapsedTime: payload.elapsedTime,
-          finishedTime: Converter.timeStampToDate(payload.finishedTime),
+          finishedTime: payload.finishedTime, // will be formatted in yarn-app model
           finalStatus: payload.finalStatus,
           progress: payload.progress,
           applicationType: payload.applicationType,
           diagnostics: (payload.diagnostics && payload.diagnostics !== 'null')? payload.diagnostics : '',
-          amContainerLogs: payload.amContainerLogs,
           amHostHttpAddress: payload.amHostHttpAddress,
+          masterNodeId: payload.masterNodeId,
           logAggregationStatus: payload.logAggregationStatus,
-          unmanagedApplication: payload.unmanagedApplication || 'N/A',
+          unmanagedApplication: payload.unmanagedApplication,
           amNodeLabelExpression: payload.amNodeLabelExpression,
           priority: (payload.priority !== undefined)? payload.priority : 'N/A',
           allocatedMB: payload.allocatedMB,
@@ -69,7 +69,9 @@ export default DS.JSONAPISerializer.extend({
           queueUsagePercentage: payload.queueUsagePercentage,
           currentAppAttemptId: payload.currentAppAttemptId,
           remainingTimeoutInSeconds: timeoutInSecs,
-          applicationExpiryTime: appExpiryTime
+          applicationExpiryTime: appExpiryTime,
+          trackingUI : payload.trackingUI,
+          trackingUrl : payload.trackingUrl
         }
       };
 

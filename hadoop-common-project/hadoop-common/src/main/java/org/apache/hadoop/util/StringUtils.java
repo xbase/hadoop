@@ -743,7 +743,7 @@ public class StringUtils {
     return toStartupShutdownString("STARTUP_MSG: ", new String[] {
         "Starting " + classname,
         "  host = " + hostname,
-        "  args = " + Arrays.asList(args),
+        "  args = " + (args != null ? Arrays.asList(args) : new ArrayList<>()),
         "  version = " + VersionInfo.getVersion(),
         "  classpath = " + System.getProperty("java.class.path"),
         "  build = " + VersionInfo.getUrl() + " -r "
@@ -1150,6 +1150,37 @@ public class StringUtils {
     // don't check non-null against s2 to make the semantics same as
     // s1.equals(s2)
     return s1.equalsIgnoreCase(s2);
+  }
+
+  /**
+   * <p>Checks if the String contains only unicode letters.</p>
+   *
+   * <p><code>null</code> will return <code>false</code>.
+   * An empty String (length()=0) will return <code>true</code>.</p>
+   *
+   * <pre>
+   * StringUtils.isAlpha(null)   = false
+   * StringUtils.isAlpha("")     = true
+   * StringUtils.isAlpha("  ")   = false
+   * StringUtils.isAlpha("abc")  = true
+   * StringUtils.isAlpha("ab2c") = false
+   * StringUtils.isAlpha("ab-c") = false
+   * </pre>
+   *
+   * @param str  the String to check, may be null
+   * @return <code>true</code> if only contains letters, and is non-null
+   */
+  public static boolean isAlpha(String str) {
+    if (str == null) {
+      return false;
+    }
+    int sz = str.length();
+    for (int i = 0; i < sz; i++) {
+      if (!Character.isLetter(str.charAt(i))) {
+        return false;
+      }
+    }
+    return true;
   }
 
 }

@@ -57,6 +57,7 @@ import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.NodeReport;
 import org.apache.hadoop.yarn.api.records.NodeState;
+import org.apache.hadoop.yarn.api.records.NodeUpdateType;
 import org.apache.hadoop.yarn.api.records.PreemptionMessage;
 import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
@@ -182,28 +183,31 @@ public class BuilderUtils {
   public static NodeId newNodeId(String host, int port) {
     return NodeId.newInstance(host, port);
   }
-  
+
   public static NodeReport newNodeReport(NodeId nodeId, NodeState nodeState,
       String httpAddress, String rackName, Resource used, Resource capability,
       int numContainers, String healthReport, long lastHealthReportTime) {
     return newNodeReport(nodeId, nodeState, httpAddress, rackName, used,
-        capability, numContainers, healthReport, lastHealthReportTime, null);
+        capability, numContainers, healthReport, lastHealthReportTime,
+        null, null, null);
   }
 
   public static NodeReport newNodeReport(NodeId nodeId, NodeState nodeState,
       String httpAddress, String rackName, Resource used, Resource capability,
       int numContainers, String healthReport, long lastHealthReportTime,
-      Set<String> nodeLabels) {
+      Set<String> nodeLabels, Integer decommissioningTimeout,
+      NodeUpdateType nodeUpdateType) {
     return newNodeReport(nodeId, nodeState, httpAddress, rackName, used,
         capability, numContainers, healthReport, lastHealthReportTime,
-        nodeLabels, null, null);
+        nodeLabels, null, null, decommissioningTimeout, nodeUpdateType);
   }
 
   public static NodeReport newNodeReport(NodeId nodeId, NodeState nodeState,
       String httpAddress, String rackName, Resource used, Resource capability,
       int numContainers, String healthReport, long lastHealthReportTime,
       Set<String> nodeLabels, ResourceUtilization containersUtilization,
-      ResourceUtilization nodeUtilization) {
+      ResourceUtilization nodeUtilization, Integer decommissioningTimeout,
+      NodeUpdateType nodeUpdateType) {
     NodeReport nodeReport = recordFactory.newRecordInstance(NodeReport.class);
     nodeReport.setNodeId(nodeId);
     nodeReport.setNodeState(nodeState);
@@ -217,6 +221,8 @@ public class BuilderUtils {
     nodeReport.setNodeLabels(nodeLabels);
     nodeReport.setAggregatedContainersUtilization(containersUtilization);
     nodeReport.setNodeUtilization(nodeUtilization);
+    nodeReport.setDecommissioningTimeout(decommissioningTimeout);
+    nodeReport.setNodeUpdateType(nodeUpdateType);
     return nodeReport;
   }
 
@@ -378,7 +384,6 @@ public class BuilderUtils {
     request.setNumContainers(r.getNumContainers());
     request.setNodeLabelExpression(r.getNodeLabelExpression());
     request.setExecutionTypeRequest(r.getExecutionTypeRequest());
-    request.setProfileCapability(r.getProfileCapability());
     return request;
   }
 
@@ -416,7 +421,7 @@ public class BuilderUtils {
     report.setPriority(priority);
     return report;
   }
-  
+
   public static ApplicationSubmissionContext newApplicationSubmissionContext(
       ApplicationId applicationId, String applicationName, String queue,
       Priority priority, ContainerLaunchContext amContainer,
@@ -469,6 +474,10 @@ public class BuilderUtils {
     resource.setMemorySize(memory);
     resource.setVirtualCores(vCores);
     return resource;
+  }
+
+  public static Resource newEmptyResource() {
+    return recordFactory.newRecordInstance(Resource.class);
   }
 
   public static URL newURL(String scheme, String host, int port, String file) {

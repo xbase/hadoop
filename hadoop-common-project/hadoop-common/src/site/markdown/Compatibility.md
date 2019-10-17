@@ -117,13 +117,7 @@ Compatibility types
 
 Developers SHOULD annotate all Hadoop interfaces and classes with the
 @InterfaceAudience and @InterfaceStability annotations to describe the
-intended audience and stability. Annotations may be at the package, class, or
-member variable or method level. Member variable and method annotations SHALL
-override class annotations, and class annotations SHALL override package
-annotations. A package, class, or member variable or method that is not
-annotated SHALL be interpreted as implicitly
-[Private](./InterfaceClassification.html#Private) and
-[Unstable](./InterfaceClassification.html#Unstable).
+intended audience and stability.
 
 * @InterfaceAudience captures the intended audience. Possible values are
 [Public](./InterfaceClassification.html#Public) (for end users and external
@@ -133,6 +127,27 @@ etc.), and [Private](./InterfaceClassification.html#Private)
 (for intra component use).
 * @InterfaceStability describes what types of interface changes are permitted. Possible values are [Stable](./InterfaceClassification.html#Stable), [Evolving](./InterfaceClassification.html#Evolving), and [Unstable](./InterfaceClassification.html#Unstable).
 * @Deprecated notes that the package, class, or member variable or method could potentially be removed in the future and should not be used.
+
+Annotations MAY be applied at the package, class, or method level. If a method
+has no privacy or stability annotation, it SHALL inherit its intended audience
+or stability level from the class to which it belongs. If a class has no
+privacy or stability annotation, it SHALL inherit its intended audience or
+stability level from the package to which it belongs. If a package has no
+privacy or stability annotation, it SHALL be assumed to be
+[Private](./InterfaceClassification.html#Private) and
+[Unstable](./InterfaceClassification.html#Unstable),
+respectively.
+
+In the event that an element's audience or stability annotation conflicts with
+the corresponding annotation of its parent (whether explicit or inherited), the
+element's audience or stability (respectively) SHALL be determined by the
+more restrictive annotation. For example, if a
+[Private](./InterfaceClassification.html#Private) method is contained
+in a [Public](./InterfaceClassification.html#Public) class, then the method
+SHALL be treated as [Private](./InterfaceClassification.html#Private). If a
+[Public](./InterfaceClassification.html#Public) method is contained in a
+[Private](./InterfaceClassification.html#Private) class, the method SHALL be
+treated as [Private](./InterfaceClassification.html#Private).
 
 #### Use Cases
 
@@ -172,7 +187,7 @@ existing documentation and tests and/or adding new documentation or tests.
 
 #### Java Binary compatibility for end-user applications i.e. Apache Hadoop ABI
 
-Apache Hadoop revisions SHOUD retain binary compatability such that end-user
+Apache Hadoop revisions SHOULD retain binary compatability such that end-user
 applications continue to work without any modifications. Minor Apache Hadoop
 revisions within the same major revision MUST retain compatibility such that
 existing MapReduce applications (e.g. end-user applications and projects such
@@ -205,10 +220,10 @@ dependencies is part of the Hadoop ABI.
 
 The minimum required versions of the native components on which Hadoop depends
 at compile time and/or runtime SHALL be considered
-[Evolving](./InterfaceClassification.html#Evolving). Changes to the minimum
+[Evolving](./InterfaceClassification.html#Evolving). The minimum
 required versions SHOULD NOT increase between minor releases within a major
 version, though updates because of security issues, license issues, or other
-reasons may occur. When the native components on which Hadoop depends must
+reasons MAY occur. When the native components on which Hadoop depends must
 be updated between minor releases within a major release, where possible the
 changes SHOULD only change the minor versions of the components without
 changing the major versions.
@@ -241,7 +256,11 @@ cross-version communications requires that the transports supported also be
 stable. The most likely source of transport changes stems from secure
 transports, such as SSL. Upgrading a service from SSLv2 to SSLv3 may break
 existing SSLv2 clients. The minimum supported major version of any transports
-MUST not increase across minor releases within a major version.
+SHOULD NOT increase between minor releases within a major version, though
+updates because of security issues, license issues, or other reasons MAY occur.
+When a transport must be updated between minor releases within a major release,
+where possible the changes SHOULD only change the minor versions of the
+components without changing the major versions.
 
 Service ports are considered as part of the transport mechanism. Default
 service port numbers must be kept consistent to prevent breaking clients.
@@ -295,15 +314,18 @@ according to the following:
 * Client-Server compatibility MUST be maintained so as to allow upgrading individual components without upgrading others. For example, upgrade HDFS from version 2.1.0 to 2.2.0 without upgrading MapReduce.
 * Server-Server compatibility MUST be maintained so as to allow mixed versions within an active cluster so the cluster may be upgraded without downtime in a rolling fashion.
 
-Existing transport mechanisms MUST continue to be supported across
-minor versions within a major version. Default service port numbers MUST remain
-consistent across minor version numbers within a major version.
+New transport mechanisms MUST only be introduced with minor or major version
+changes. Existing transport mechanisms MUST continue to be supported across
+minor versions within a major version. Default service port numbers SHALL be
+considered [Stable](./InterfaceClassification.html#Stable).
 
 ### REST APIs
 
-REST API compatibility applies to the REST endpoints (URLs) and response data
-format. Hadoop REST APIs are specifically meant for stable use by clients across
-releases, even major ones. The following is a non-exhaustive list of the
+REST API compatibility applies to the exposed REST endpoints (URLs) and response
+data format. Hadoop REST APIs are specifically meant for stable use by clients
+across releases, even major ones. For purposes of this document, an exposed
+PEST API is one that is documented in the public documentation.
+The following is a non-exhaustive list of the
 exposed REST APIs:
 
 * [WebHDFS](../hadoop-hdfs/WebHDFS.html)
@@ -319,10 +341,10 @@ increment the API version number.
 
 #### Policy
 
-The Hadoop REST APIs SHALL be considered
+The exposed Hadoop REST APIs SHALL be considered
 [Public](./InterfaceClassification.html#Public) and
 [Evolving](./InterfaceClassification.html#Evolving). With respect to API version
-numbers, the Hadoop REST APIs SHALL be considered
+numbers, the exposed Hadoop REST APIs SHALL be considered
 [Public](./InterfaceClassification.html#Public) and
 [Stable](./InterfaceClassification.html#Stable), i.e. no incompatible changes
 are allowed to within an API version number. A REST API version must be labeled
@@ -534,7 +556,9 @@ command return codes and output break compatibility and adversely affect users.
 
 All Hadoop CLI paths, usage, and output SHALL be considered
 [Public](./InterfaceClassification.html#Public) and
-[Stable](./InterfaceClassification.html#Stable).
+[Stable](./InterfaceClassification.html#Stable) unless documented as
+experimental and subject to change.
+
 Note that the CLI output SHALL be considered distinct from the log output
 generated by the Hadoop CLIs. The latter SHALL be governed by the policy on log
 output. Note also that for CLI output, all changes SHALL be considered

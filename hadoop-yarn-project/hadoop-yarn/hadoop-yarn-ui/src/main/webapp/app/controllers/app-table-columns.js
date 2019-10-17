@@ -20,6 +20,7 @@
 import Ember from 'ember';
 import ColumnDef from 'em-table/utils/column-definition';
 import TableDef from 'em-table/utils/table-definition';
+import Converter from 'yarn-ui/utils/converter';
 
 export default Ember.Controller.extend({
   tableDefinition: TableDef.create({
@@ -39,7 +40,7 @@ export default Ember.Controller.extend({
           getCellContent: function(row) {
             return {
               displayText: row.id,
-              href: `#/yarn-app/${row.id}/info`
+              href: `#/yarn-app/${row.id}/attempts`
             };
           }
       }, {
@@ -50,6 +51,7 @@ export default Ember.Controller.extend({
       }, {
           id: 'appName',
           headerTitle: 'Application Name',
+          cellComponentName: 'em-table-tooltip-text',
           contentPath: 'appName',
           facetType: null,
       }, {
@@ -66,6 +68,7 @@ export default Ember.Controller.extend({
       }, {
           id: 'queue',
           headerTitle: 'Queue',
+          cellComponentName: 'em-table-tooltip-text',
           contentPath: 'queue',
       }, {
           id: 'progress',
@@ -81,6 +84,9 @@ export default Ember.Controller.extend({
           headerTitle: 'Start Time',
           contentPath: 'startTime',
           facetType: null,
+          getCellContent: function(row) {
+            return row.get('formattedStartTime');
+          }
       }, {
           id: 'elTime',
           headerTitle: 'Elapsed Time',
@@ -94,7 +100,10 @@ export default Ember.Controller.extend({
           headerTitle: 'Finished Time',
           contentPath: 'validatedFinishedTs',
           facetType: null,
-          observePath: true
+          observePath: true,
+          getCellContent: function(row) {
+            return row.get('formattedFinishedTime');
+          }
       }, {
           id: 'priority',
           headerTitle: 'Priority',
@@ -120,7 +129,7 @@ export default Ember.Controller.extend({
       getCellContent: function(row) {
         return {
           displayText: row.get('appName'),
-          href: `#/yarn-app/${row.id}/info?service=${row.get('appName')}`
+          href: `#/yarn-app/${row.id}/components?service=${row.get('appName')}`
         };
       }
     }, {
@@ -128,6 +137,7 @@ export default Ember.Controller.extend({
       headerTitle: 'Application ID',
       contentPath: 'id',
       facetType: null,
+      cellComponentName: 'em-table-tooltip-text',
       minWidth: "250px"
     }, {
       id: 'state',
@@ -160,17 +170,24 @@ export default Ember.Controller.extend({
         id: 'queue',
         headerTitle: 'Queue',
         contentPath: 'queue',
+        cellComponentName: 'em-table-tooltip-text',
     }, {
       id: 'stTime',
       headerTitle: 'Started Time',
       contentPath: 'startTime',
       facetType: null,
+      getCellContent: function(row) {
+        return row.get('formattedStartTime');
+      }
     }, {
       id: 'finishTime',
       headerTitle: 'Finished Time',
       contentPath: 'validatedFinishedTs',
       facetType: null,
-      observePath: true
+      observePath: true,
+      getCellContent: function(row) {
+        return row.get('formattedFinishedTime');
+      }
     });
     return ColumnDef.make(colums);
   }.property(),

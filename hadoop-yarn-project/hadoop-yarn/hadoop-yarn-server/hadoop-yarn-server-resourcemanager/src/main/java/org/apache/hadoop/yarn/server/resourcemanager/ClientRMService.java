@@ -216,7 +216,7 @@ public class ClientRMService extends AbstractService implements
   private ReservationSystem reservationSystem;
   private ReservationInputValidator rValidator;
 
-  private boolean displayPerUserApps = false;
+  private boolean filterAppsByUser = false;
 
   private static final EnumSet<RMAppState> ACTIVE_APP_STATES = EnumSet.of(
       RMAppState.ACCEPTED, RMAppState.RUNNING);
@@ -265,6 +265,10 @@ public class ClientRMService extends AbstractService implements
             conf.getInt(YarnConfiguration.RM_CLIENT_THREAD_COUNT, 
                 YarnConfiguration.DEFAULT_RM_CLIENT_THREAD_COUNT));
     
+    this.server.addTerseExceptions(ApplicationNotFoundException.class,
+        ApplicationAttemptNotFoundException.class,
+        ContainerNotFoundException.class);
+
     // Enable service authorization?
     if (conf.getBoolean(
         CommonConfigurationKeysPublic.HADOOP_SECURITY_AUTHORIZATION, 
@@ -279,8 +283,8 @@ public class ClientRMService extends AbstractService implements
       refreshServiceAcls(conf, RMPolicyProvider.getInstance());
     }
 
-    this.displayPerUserApps  = conf.getBoolean(
-        YarnConfiguration.DISPLAY_APPS_FOR_LOGGED_IN_USER,
+    this.filterAppsByUser  = conf.getBoolean(
+        YarnConfiguration.FILTER_ENTITY_LIST_BY_USER,
         YarnConfiguration.DEFAULT_DISPLAY_APPS_FOR_LOGGED_IN_USER);
 
     this.server.start();
@@ -562,7 +566,8 @@ public class ClientRMService extends AbstractService implements
       LOG.warn("Unable to get the current user.", ie);
       RMAuditLogger.logFailure(user, AuditConstants.SUBMIT_APP_REQUEST,
           ie.getMessage(), "ClientRMService",
-          "Exception in submitting application", applicationId, callerContext);
+          "Exception in submitting application", applicationId, callerContext,
+          submissionContext.getQueue());
       throw RPCUtil.getRemoteException(ie);
     }
 
@@ -585,7 +590,8 @@ public class ClientRMService extends AbstractService implements
             ". Flow run should be a long integer", e);
         RMAuditLogger.logFailure(user, AuditConstants.SUBMIT_APP_REQUEST,
             e.getMessage(), "ClientRMService",
-            "Exception in submitting application", applicationId);
+            "Exception in submitting application", applicationId,
+            submissionContext.getQueue());
         throw RPCUtil.getRemoteException(e);
       }
     }
@@ -644,12 +650,14 @@ public class ClientRMService extends AbstractService implements
       LOG.info("Application with id " + applicationId.getId() + 
           " submitted by user " + user);
       RMAuditLogger.logSuccess(user, AuditConstants.SUBMIT_APP_REQUEST,
-          "ClientRMService", applicationId, callerContext);
+          "ClientRMService", applicationId, callerContext,
+          submissionContext.getQueue());
     } catch (YarnException e) {
       LOG.info("Exception in submitting " + applicationId, e);
       RMAuditLogger.logFailure(user, AuditConstants.SUBMIT_APP_REQUEST,
           e.getMessage(), "ClientRMService",
-          "Exception in submitting application", applicationId, callerContext);
+          "Exception in submitting application", applicationId, callerContext,
+          submissionContext.getQueue());
       throw e;
     }
 
@@ -918,7 +926,7 @@ public class ClientRMService extends AbstractService implements
 
       // Given RM is configured to display apps per user, skip apps to which
       // this caller doesn't have access to view.
-      if (displayPerUserApps && !allowAccess) {
+      if (filterAppsByUser && !allowAccess) {
         continue;
       }
 
@@ -1024,7 +1032,7 @@ public class ClientRMService extends AbstractService implements
     return response;
   }
 
-  private NodeReport createNodeReports(RMNode rmNode) {    
+  private NodeReport createNodeReports(RMNode rmNode) {
     SchedulerNodeReport schedulerNodeReport = 
         scheduler.getNodeReport(rmNode.getNodeID());
     Resource used = BuilderUtils.newResource(0, 0);
@@ -1040,7 +1048,8 @@ public class ClientRMService extends AbstractService implements
             rmNode.getTotalCapability(), numContainers,
             rmNode.getHealthReport(), rmNode.getLastHealthReportTime(),
             rmNode.getNodeLabels(), rmNode.getAggregatedContainersUtilization(),
-            rmNode.getNodeUtilization());
+            rmNode.getNodeUtilization(), rmNode.getDecommissioningTimeout(),
+            null);
 
     return report;
   }
@@ -1835,6 +1844,6 @@ public class ClientRMService extends AbstractService implements
 
   @VisibleForTesting
   public void setDisplayPerUserApps(boolean displayPerUserApps) {
-    this.displayPerUserApps = displayPerUserApps;
+    this.filterAppsByUser = displayPerUserApps;
   }
 }

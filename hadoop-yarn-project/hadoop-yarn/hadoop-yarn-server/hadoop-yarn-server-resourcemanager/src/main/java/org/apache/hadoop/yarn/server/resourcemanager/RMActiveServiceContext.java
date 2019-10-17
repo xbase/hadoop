@@ -36,12 +36,15 @@ import org.apache.hadoop.yarn.server.resourcemanager.placement.PlacementManager;
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.NullRMStateStore;
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.RMStateStore;
 import org.apache.hadoop.yarn.server.resourcemanager.reservation.ReservationSystem;
+import org.apache.hadoop.yarn.server.resourcemanager.resource.ResourceProfilesManager;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMApp;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.AMLivelinessMonitor;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.monitor.RMAppLifetimeMonitor;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.ContainerAllocationExpirer;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ResourceScheduler;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.constraint.AllocationTagsManager;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.constraint.PlacementConstraintManager;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.distributed.QueueLimitCalculator;
 import org.apache.hadoop.yarn.server.resourcemanager.security.AMRMTokenSecretManager;
 import org.apache.hadoop.yarn.server.resourcemanager.security.ClientToAMTokenSecretManagerInRM;
@@ -107,6 +110,9 @@ public class RMActiveServiceContext {
 
   private RMAppLifetimeMonitor rmAppLifetimeMonitor;
   private QueueLimitCalculator queueLimitCalculator;
+  private AllocationTagsManager allocationTagsManager;
+  private PlacementConstraintManager placementConstraintManager;
+  private ResourceProfilesManager resourceProfilesManager;
 
   public RMActiveServiceContext() {
     queuePlacementManager = new PlacementManager();
@@ -398,6 +404,32 @@ public class RMActiveServiceContext {
 
   @Private
   @Unstable
+  public AllocationTagsManager getAllocationTagsManager() {
+    return allocationTagsManager;
+  }
+
+  @Private
+  @Unstable
+  public void setAllocationTagsManager(
+      AllocationTagsManager allocationTagsManager) {
+    this.allocationTagsManager = allocationTagsManager;
+  }
+
+  @Private
+  @Unstable
+  public PlacementConstraintManager getPlacementConstraintManager() {
+    return placementConstraintManager;
+  }
+
+  @Private
+  @Unstable
+  public void setPlacementConstraintManager(
+      PlacementConstraintManager placementConstraintManager) {
+    this.placementConstraintManager = placementConstraintManager;
+  }
+
+  @Private
+  @Unstable
   public RMDelegatedNodeLabelsUpdater getRMDelegatedNodeLabelsUpdater() {
     return rmDelegatedNodeLabelsUpdater;
   }
@@ -482,5 +514,14 @@ public class RMActiveServiceContext {
   public void setContainerQueueLimitCalculator(
       QueueLimitCalculator limitCalculator) {
     this.queueLimitCalculator = limitCalculator;
+  }
+
+  public ResourceProfilesManager getResourceProfilesManager() {
+    return resourceProfilesManager;
+  }
+
+  public void setResourceProfilesManager(
+      ResourceProfilesManager resourceProfilesManager) {
+    this.resourceProfilesManager = resourceProfilesManager;
   }
 }

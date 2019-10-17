@@ -16,7 +16,8 @@
  * limitations under the License.
 }}
 
-<div class="row">
+<div>
+{{#if model.attempts}}
   {{timeline-view
     parent-id="attempt-timeline-div"
     my-id="timeline-view"
@@ -25,5 +26,19 @@
     label="shortAppAttemptId"
     attemptModel=true
     serviceName=model.serviceName
+    changeViewType="changeViewType"
+    viewType=viewType
   }}
+{{else}}
+  <div class="col-md-12">
+    <div class="panel panel-default">
+      <div class="panel-heading">
+         Application Attempts
+      </div>
+      <div class="panel-body">
+        <h4 class="text-center">No data available!</h4>
+      </div>
+    </div>
+  </div>
+{{/if}}
 </div>

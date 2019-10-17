@@ -18,7 +18,6 @@
 
 package org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.gpu;
 
-import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -153,7 +152,6 @@ public class GpuResourceHandlerImpl implements ResourceHandler {
     return null;
   }
 
-  @VisibleForTesting
   public GpuResourceAllocator getGpuAllocator() {
     return gpuAllocator;
   }

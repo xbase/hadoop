@@ -20,8 +20,10 @@ module.exports = { // YARN UI App configurations
     hosts: {
       localBaseAddress: "",
       timelineWebAddress: "localhost:8188",
+      timelineV1WebAddress: "localhost:8188",
       rmWebAddress: "localhost:8088",
-      protocolScheme: "http:"
+      protocolScheme: "http:",
+      isSecurityEnabled: ""
     },
     namespaces: {
       timeline: 'ws/v1/applicationhistory',
@@ -29,7 +31,7 @@ module.exports = { // YARN UI App configurations
       cluster: 'ws/v1/cluster',
       metrics: 'ws/v1/cluster/metrics',
       timelineV2: 'ws/v2/timeline',
-      dashService: 'ws/v1/services',
+      dashService: 'app/v1/services',
       node: '{nodeAddress}/ws/v1/node'
     },
 };

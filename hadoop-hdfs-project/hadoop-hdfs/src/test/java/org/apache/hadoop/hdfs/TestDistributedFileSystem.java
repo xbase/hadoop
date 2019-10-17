@@ -67,6 +67,7 @@ import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.MD5MD5CRC32FileChecksum;
 import org.apache.hadoop.fs.Options.ChecksumOpt;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PathIsNotEmptyDirectoryException;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.fs.StorageStatistics.LongStatistic;
 import org.apache.hadoop.fs.StorageType;
@@ -424,6 +425,7 @@ public class TestDistributedFileSystem {
     Configuration conf = getTestConfiguration();
     final long grace = 1000L;
     MiniDFSCluster cluster = null;
+    LeaseRenewer.setLeaseRenewerGraceDefault(grace);
 
     try {
       cluster = new MiniDFSCluster.Builder(conf).numDataNodes(2).build();
@@ -436,10 +438,6 @@ public class TestDistributedFileSystem {
 
       {
         final DistributedFileSystem dfs = cluster.getFileSystem();
-        Method setMethod = dfs.dfs.getLeaseRenewer().getClass()
-            .getDeclaredMethod("setGraceSleepPeriod", long.class);
-        setMethod.setAccessible(true);
-        setMethod.invoke(dfs.dfs.getLeaseRenewer(), grace);
         Method checkMethod = dfs.dfs.getLeaseRenewer().getClass()
             .getDeclaredMethod("isRunning");
         checkMethod.setAccessible(true);
@@ -574,6 +572,22 @@ public class TestDistributedFileSystem {
         in.close();
         fs.close();
       }
+
+      {
+        // Test PathIsNotEmptyDirectoryException while deleting non-empty dir
+        FileSystem fs = cluster.getFileSystem();
+        fs.mkdirs(new Path("/test/nonEmptyDir"));
+        fs.create(new Path("/tmp/nonEmptyDir/emptyFile")).close();
+        try {
+          fs.delete(new Path("/tmp/nonEmptyDir"), false);
+          Assert.fail("Expecting PathIsNotEmptyDirectoryException");
+        } catch (PathIsNotEmptyDirectoryException ex) {
+          // This is the proper exception to catch; move on.
+        }
+        Assert.assertTrue(fs.exists(new Path("/test/nonEmptyDir")));
+        fs.delete(new Path("/tmp/nonEmptyDir"), true);
+      }
+
     }
     finally {
       if (cluster != null) {cluster.shutdown();}
@@ -692,6 +706,7 @@ public class TestDistributedFileSystem {
       // Iterative ls test
       long mkdirOp = getOpStatistics(OpType.MKDIRS);
       long listStatusOp = getOpStatistics(OpType.LIST_STATUS);
+      long locatedListStatusOP = getOpStatistics(OpType.LIST_LOCATED_STATUS);
       for (int i = 0; i < 10; i++) {
         Path p = new Path(dir, Integer.toString(i));
         fs.mkdirs(p);
@@ -715,6 +730,12 @@ public class TestDistributedFileSystem {
         checkStatistics(fs, readOps, ++writeOps, largeReadOps);
         checkOpStatistics(OpType.MKDIRS, mkdirOp);
         checkOpStatistics(OpType.LIST_STATUS, listStatusOp);
+
+        fs.listLocatedStatus(dir);
+        locatedListStatusOP++;
+        readOps++;
+        checkStatistics(fs, readOps, writeOps, largeReadOps);
+        checkOpStatistics(OpType.LIST_LOCATED_STATUS, locatedListStatusOP);
       }
       
       opCount = getOpStatistics(OpType.GET_STATUS);
@@ -751,7 +772,68 @@ public class TestDistributedFileSystem {
     } finally {
       if (cluster != null) cluster.shutdown();
     }
-    
+  }
+
+  @Test
+  public void testECStatistics() throws IOException {
+    try (MiniDFSCluster cluster =
+        new MiniDFSCluster.Builder(getTestConfiguration()).build()) {
+      cluster.waitActive();
+      final DistributedFileSystem dfs = cluster.getFileSystem();
+      Path dir = new Path("/test");
+      dfs.mkdirs(dir);
+      int readOps = 0;
+      int writeOps = 0;
+      FileSystem.clearStatistics();
+
+      long opCount = getOpStatistics(OpType.ENABLE_EC_POLICY);
+      dfs.enableErasureCodingPolicy("RS-10-4-1024k");
+      checkStatistics(dfs, readOps, ++writeOps, 0);
+      checkOpStatistics(OpType.ENABLE_EC_POLICY, opCount + 1);
+
+      opCount = getOpStatistics(OpType.SET_EC_POLICY);
+      dfs.setErasureCodingPolicy(dir, "RS-10-4-1024k");
+      checkStatistics(dfs, readOps, ++writeOps, 0);
+      checkOpStatistics(OpType.SET_EC_POLICY, opCount + 1);
+
+      opCount = getOpStatistics(OpType.GET_EC_POLICY);
+      dfs.getErasureCodingPolicy(dir);
+      checkStatistics(dfs, ++readOps, writeOps, 0);
+      checkOpStatistics(OpType.GET_EC_POLICY, opCount + 1);
+
+      opCount = getOpStatistics(OpType.UNSET_EC_POLICY);
+      dfs.unsetErasureCodingPolicy(dir);
+      checkStatistics(dfs, readOps, ++writeOps, 0);
+      checkOpStatistics(OpType.UNSET_EC_POLICY, opCount + 1);
+
+      opCount = getOpStatistics(OpType.GET_EC_POLICIES);
+      dfs.getAllErasureCodingPolicies();
+      checkStatistics(dfs, ++readOps, writeOps, 0);
+      checkOpStatistics(OpType.GET_EC_POLICIES, opCount + 1);
+
+      opCount = getOpStatistics(OpType.GET_EC_CODECS);
+      dfs.getAllErasureCodingCodecs();
+      checkStatistics(dfs, ++readOps, writeOps, 0);
+      checkOpStatistics(OpType.GET_EC_CODECS, opCount + 1);
+
+      ErasureCodingPolicy newPolicy =
+          new ErasureCodingPolicy(new ECSchema("rs", 5, 3), 1024 * 1024);
+
+      opCount = getOpStatistics(OpType.ADD_EC_POLICY);
+      dfs.addErasureCodingPolicies(new ErasureCodingPolicy[] {newPolicy});
+      checkStatistics(dfs, readOps, ++writeOps, 0);
+      checkOpStatistics(OpType.ADD_EC_POLICY, opCount + 1);
+
+      opCount = getOpStatistics(OpType.REMOVE_EC_POLICY);
+      dfs.removeErasureCodingPolicy("RS-5-3-1024k");
+      checkStatistics(dfs, readOps, ++writeOps, 0);
+      checkOpStatistics(OpType.REMOVE_EC_POLICY, opCount + 1);
+
+      opCount = getOpStatistics(OpType.DISABLE_EC_POLICY);
+      dfs.disableErasureCodingPolicy("RS-10-4-1024k");
+      checkStatistics(dfs, readOps, ++writeOps, 0);
+      checkOpStatistics(OpType.DISABLE_EC_POLICY, opCount + 1);
+    }
   }
 
   @SuppressWarnings("ThrowableResultOfMethodCallIgnored")

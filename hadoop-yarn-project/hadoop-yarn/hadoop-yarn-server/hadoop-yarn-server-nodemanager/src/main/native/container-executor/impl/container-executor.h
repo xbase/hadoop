@@ -47,11 +47,14 @@ enum operations {
   RUN_AS_USER_DELETE = 9,
   RUN_AS_USER_LAUNCH_DOCKER_CONTAINER = 10,
   RUN_DOCKER = 11,
-  RUN_AS_USER_LIST = 12
+  RUN_AS_USER_LIST = 12,
+  REMOVE_DOCKER_CONTAINER = 13,
+  INSPECT_DOCKER_CONTAINER = 14
 };
 
 #define NM_GROUP_KEY "yarn.nodemanager.linux-container-executor.group"
 #define USER_DIR_PATTERN "%s/usercache/%s"
+#define USER_FILECACHE_DIR_PATTERN "%s/usercache/%s/filecache"
 #define NM_APP_DIR_PATTERN USER_DIR_PATTERN "/appcache/%s"
 #define CONTAINER_DIR_PATTERN NM_APP_DIR_PATTERN "/%s"
 #define CONTAINER_SCRIPT "launch_container.sh"
@@ -61,6 +64,7 @@ enum operations {
 #define ALLOWED_SYSTEM_USERS_KEY "allowed.system.users"
 #define DOCKER_SUPPORT_ENABLED_KEY "feature.docker.enabled"
 #define TC_SUPPORT_ENABLED_KEY "feature.tc.enabled"
+#define MOUNT_CGROUP_SUPPORT_ENABLED_KEY "feature.mount-cgroup.enabled"
 #define TMP_DIR "tmp"
 
 extern struct passwd *user_detail;
@@ -91,6 +95,7 @@ void free_executor_configurations();
 
 // initialize the application directory
 int initialize_app(const char *user, const char *app_id,
+                   const char *container_id,
                    const char *credentials, char* const* local_dirs,
                    char* const* log_dirs, char* const* args);
 
@@ -99,8 +104,7 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
                               const char *script_name, const char *cred_file,
                               const char *pid_file, char* const* local_dirs,
                               char* const* log_dirs,
-                              const char *command_file,const char *resources_key,
-                              char* const* resources_values);
+                              const char *command_file);
 
 /*
  * Function used to launch a container as the provided user. It does the following :
@@ -178,6 +182,11 @@ char *get_user_directory(const char *nm_root, const char *user);
 char *get_app_directory(const char * nm_root, const char *user,
                         const char *app_id);
 
+/**
+ * Check node manager local dir permission.
+ */
+int check_nm_local_dir(uid_t caller_uid, const char *nm_root);
+
 char *get_container_work_directory(const char *nm_root, const char *user,
 				 const char *app_id, const char *container_id);
 
@@ -190,6 +199,8 @@ char *get_container_credentials_file(const char* work_dir);
  */
 char* get_app_log_directory(const char* log_root, const char* appid);
 
+char* get_container_log_directory(const char *log_root, const char* app_id,
+                                  const char *container_id);
 /**
  * Ensure that the given path and all of the parent directories are created
  * with the desired permissions.
@@ -227,6 +238,9 @@ int is_feature_enabled(const char* feature_key, int default_value,
 /** Check if tc (traffic control) support is enabled in configuration. */
 int is_tc_support_enabled();
 
+/** Check if cgroup mount support is enabled in configuration. */
+int is_mount_cgroups_support_enabled();
+
 /**
  * Run a batch of tc commands that modify interface configuration
  */
@@ -254,6 +268,11 @@ int is_docker_support_enabled();
  */
 int run_docker(const char *command_file);
 
+/**
+ * Run a docker command without a command file
+ */
+int exec_docker_command(char *docker_command, char **argv, int argc);
+
 /*
  * Compile the regex_str and determine if the input string matches.
  * Return 0 on match, 1 of non-match.
@@ -267,3 +286,13 @@ int execute_regex_match(const char *regex_str, const char *input);
 int validate_docker_image_name(const char *image_name);
 
 struct configuration* get_cfg();
+
+/**
+ * Flatten docker launch command
+ */
+char* flatten(char **args);
+
+/**
+ * Remove docker container
+ */
+int remove_docker_container(char **argv, int argc);

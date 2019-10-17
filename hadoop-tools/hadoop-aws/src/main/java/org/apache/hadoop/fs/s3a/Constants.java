@@ -35,6 +35,11 @@ public final class Constants {
   private Constants() {
   }
 
+  /**
+   * default hadoop temp dir on local system: {@value}.
+   */
+  public static final String HADOOP_TMP_DIR = "hadoop.tmp.dir";
+
   /** The minimum multipart size which S3 supports. */
   public static final int MULTIPART_MIN_SIZE = 5 * 1024 * 1024;
 
@@ -58,6 +63,43 @@ public final class Constants {
 
   // session token for when using TemporaryAWSCredentialsProvider
   public static final String SESSION_TOKEN = "fs.s3a.session.token";
+
+  /**
+   * AWS Role to request.
+   */
+  public static final String ASSUMED_ROLE_ARN =
+      "fs.s3a.assumed.role.arn";
+
+  /**
+   * Session name for the assumed role, must be valid characters according
+   * to the AWS APIs.
+   * If not set, one is generated from the current Hadoop/Kerberos username.
+   */
+  public static final String ASSUMED_ROLE_SESSION_NAME =
+      "fs.s3a.assumed.role.session.name";
+
+  /**
+   * Duration of assumed roles before a refresh is attempted.
+   */
+  public static final String ASSUMED_ROLE_SESSION_DURATION =
+      "fs.s3a.assumed.role.session.duration";
+
+  /** Simple Token Service Endpoint. If unset, uses the default endpoint. */
+  public static final String ASSUMED_ROLE_STS_ENDPOINT =
+      "fs.s3a.assumed.role.sts.endpoint";
+
+  public static final String ASSUMED_ROLE_SESSION_DURATION_DEFAULT = "30m";
+
+  /** list of providers to authenticate for the assumed role. */
+  public static final String ASSUMED_ROLE_CREDENTIALS_PROVIDER =
+      "fs.s3a.assumed.role.credentials.provider";
+
+  /** JSON policy containing the policy to apply to the role. */
+  public static final String ASSUMED_ROLE_POLICY =
+      "fs.s3a.assumed.role.policy";
+
+  public static final String ASSUMED_ROLE_CREDENTIALS_DEFAULT =
+      SimpleAWSCredentialsProvider.NAME;
 
   // number of simultaneous connections to s3
   public static final String MAXIMUM_CONNECTIONS = "fs.s3a.connection.maximum";
@@ -328,14 +370,6 @@ public final class Constants {
   @InterfaceAudience.Private
   public static final int MAX_MULTIPART_COUNT = 10000;
 
-  /**
-   * Classname of the S3A-specific output committer factory. This
-   * is what must be declared when attempting to use
-   */
-  @InterfaceStability.Unstable
-  public static final String S3A_OUTPUT_COMMITTER_FACTORY =
-      "org.apache.hadoop.fs.s3a.commit.S3AOutputCommitterFactory";
-
   /* Constants. */
   public static final String S3_METADATA_STORE_IMPL =
       "fs.s3a.metadatastore.impl";
@@ -411,13 +445,6 @@ public final class Constants {
   public static final int S3GUARD_DDB_BACKGROUND_SLEEP_MSEC_DEFAULT = 25;
 
   /**
-   * V1 committer.
-   */
-  @InterfaceStability.Unstable
-  public static final String S3A_OUTPUT_COMMITTER_MRV1 =
-      "org.apache.hadoop.fs.s3a.commit.S3OutputCommitterMRv1";
-
-  /**
    * The default "Null" metadata store: {@value}.
    */
   @InterfaceStability.Unstable
@@ -462,5 +489,68 @@ public final class Constants {
 
   @InterfaceStability.Unstable
   public static final int DEFAULT_LIST_VERSION = 2;
+
+  @InterfaceStability.Unstable
+  public static final String FAIL_INJECT_THROTTLE_PROBABILITY =
+      "fs.s3a.failinject.throttle.probability";
+
+  @InterfaceStability.Unstable
+  public static final String FAIL_INJECT_CLIENT_FACTORY =
+      "org.apache.hadoop.fs.s3a.InconsistentS3ClientFactory";
+
+  /**
+   * Number of times to retry any repeatable S3 client request on failure,
+   * excluding throttling requests: {@value}.
+   */
+  public static final String RETRY_LIMIT = "fs.s3a.retry.limit";
+
+  /**
+   * Default retry limit: {@value}.
+   */
+  public static final int RETRY_LIMIT_DEFAULT = DEFAULT_MAX_ERROR_RETRIES;
+
+  /**
+   * Interval between retry attempts.: {@value}.
+   */
+  public static final String RETRY_INTERVAL = "fs.s3a.retry.interval";
+
+  /**
+   * Default retry interval: {@value}.
+   */
+  public static final String RETRY_INTERVAL_DEFAULT = "500ms";
+
+  /**
+   * Number of times to retry any throttled request: {@value}.
+   */
+  public static final String RETRY_THROTTLE_LIMIT =
+      "fs.s3a.retry.throttle.limit";
+
+  /**
+   * Default throttled retry limit: {@value}.
+   */
+  public static final int RETRY_THROTTLE_LIMIT_DEFAULT =
+      DEFAULT_MAX_ERROR_RETRIES;
+
+  /**
+   * Interval between retry attempts on throttled requests: {@value}.
+   */
+  public static final String RETRY_THROTTLE_INTERVAL =
+      "fs.s3a.retry.throttle.interval";
+
+  /**
+   * Default throttled retry interval: {@value}.
+   */
+  public static final String RETRY_THROTTLE_INTERVAL_DEFAULT = "500ms";
+
+  /**
+   * Should etags be exposed as checksums?
+   */
+  public static final String ETAG_CHECKSUM_ENABLED =
+      "fs.s3a.etag.checksum.enabled";
+
+  /**
+   * Default value: false.
+   */
+  public static final boolean ETAG_CHECKSUM_ENABLED_DEFAULT = false;
 
 }

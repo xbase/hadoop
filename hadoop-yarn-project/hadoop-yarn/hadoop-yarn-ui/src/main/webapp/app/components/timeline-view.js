@@ -19,8 +19,23 @@
 import Ember from 'ember';
 import Converter from 'yarn-ui/utils/converter';
 import ColumnDef from 'em-table/utils/column-definition';
+import TableDefinition from 'em-table/utils/table-definition';
 
 export default Ember.Component.extend({
+  tableDefinition: TableDefinition.create({
+    searchType: 'manual',
+  }),
+  graphDrawn: false,
+
+  actions: {
+    changeViewType(param) {
+      this.sendAction("changeViewType", param);
+      if (this.get('attemptModel')) {
+        this.setAttemptsGridColumnsAndRows();
+      }
+    }
+  },
+
   canvas: {
     svg: undefined,
     h: 0,
@@ -30,6 +45,7 @@ export default Ember.Component.extend({
 
   clusterMetrics: undefined,
   modelArr: [],
+  containerIdArr: [],
   colors: d3.scale.category10().range(),
   _selected: undefined,
   gridColumns: [],
@@ -229,37 +245,51 @@ export default Ember.Component.extend({
   },
 
   didInsertElement: function() {
-    // init tooltip
-    this.initTooltip();
-    this.modelArr = [];
-
     // init model
+    this.modelArr = [];
+    this.containerIdArr = [];
+
     if (this.get("rmModel")) {
       this.get("rmModel").forEach(function(o) {
         if(!this.modelArr.contains(o)) {
           this.modelArr.push(o);
+          this.containerIdArr.push(o.id);
         }
       }.bind(this));
     }
 
     if (this.get("tsModel")) {
       this.get("tsModel").forEach(function(o) {
-        if(!this.modelArr.contains(o)) {
+        if(!this.containerIdArr.contains(o.id)) {
           this.modelArr.push(o);
         }
       }.bind(this));
     }
 
-    if(this.modelArr.length === 0) {
+    if (this.modelArr.length === 0) {
       return;
     }
 
     this.modelArr.sort(function(a, b) {
       var tsA = a.get("startTs");
       var tsB = b.get("startTs");
-
       return tsA - tsB;
     });
+
+    if (this.get('attemptModel')) {
+      this.setAttemptsGridColumnsAndRows();
+    } else {
+      this.setContainersGridColumnsAndRows();
+    }
+  },
+
+  didUpdate: function() {
+    if (this.get("viewType") === "grid" || this.graphDrawn) {
+      return;
+    }
+
+    this.initTooltip();
+
     var begin = 0;
     if (this.modelArr.length > 0) {
       begin = this.modelArr[0].get("startTs");
@@ -281,11 +311,7 @@ export default Ember.Component.extend({
       this.setSelected(this.modelArr[0]);
     }
 
-    if (this.get('attemptModel')) {
-      this.setAttemptsGridColumnsAndRows();
-    } else {
-      this.setContainersGridColumnsAndRows();
-    }
+    this.graphDrawn = true;
   },
 
   setAttemptsGridColumnsAndRows: function() {
@@ -301,10 +327,13 @@ export default Ember.Component.extend({
       minWidth: '300px',
       getCellContent: function(row) {
         var attemptId = row.get('id');
-        var query = serviceName? '?service='+serviceName : '';
+        var query = 'viewType=' + self.get("viewType");
+        if (serviceName) {
+          query += '&service=' + serviceName;
+        }
         return {
           displayText: attemptId,
-          href: `#/yarn-app-attempt/${attemptId}${query}`
+          href: `#/yarn-app-attempt/${attemptId}?${query}`
         };
       }
     }, {
@@ -353,8 +382,9 @@ export default Ember.Component.extend({
       cellComponentName: 'em-table-html-cell',
       getCellContent: function(row) {
         var address = self.checkHttpProtocol(row.get('nodeHttpAddress'));
+        var link = row.get('masterNodeURL');
         if (address) {
-          return `<a href="${address}" target="_blank">${address}</a>`;
+          return `<a href="${link}">${address}</a>`;
         } else {
           return 'N/A';
         }
@@ -454,8 +484,9 @@ export default Ember.Component.extend({
       cellComponentName: 'em-table-html-cell',
       getCellContent: function(row) {
         var address = self.checkHttpProtocol(row.get('nodeHttpAddress'));
+        var link = row.get('masterNodeURL');
         if (address) {
-          return `<a href="${address}" target="_blank">${address}</a>`;
+          return `<a href="${link}">${address}</a>`;
         } else {
           return 'N/A';
         }
@@ -472,9 +503,5 @@ export default Ember.Component.extend({
       prop = 'http://' + prop;
     }
     return prop;
-  },
-
-  isDataEmpty: Ember.computed(function() {
-    return this.modelArr.length === 0;
-  })
+  }
 });

@@ -20,27 +20,37 @@ package org.apache.hadoop.fs;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
+import java.nio.charset.Charset;
 import java.nio.file.AccessDeniedException;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.jar.Attributes;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
 
 import org.apache.commons.collections.map.CaseInsensitiveMap;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
@@ -73,6 +83,11 @@ public class FileUtil {
    * "src\winutils\common.h"
    * */
   public static final int SYMLINK_NO_PRIVILEGE = 2;
+
+  /**
+   * Buffer size for copy the content of compressed file to new file.
+   */
+  private static final int BUFFER_SIZE = 8_192;
 
   /**
    * convert an array of FileStatus to an array of Path
@@ -183,6 +198,12 @@ public class FileUtil {
      * use getCanonicalPath in File to get the target of the symlink but that
      * does not indicate if the given path refers to a symlink.
      */
+
+    if (f == null) {
+      LOG.warn("Can not read a null symLink");
+      return "";
+    }
+
     try {
       return Shell.execCommand(
           Shell.getReadlinkCommand(f.toString())).trim();
@@ -526,6 +547,22 @@ public class FileUtil {
   }
 
   /**
+   * Convert a os-native filename to a path that works for the shell
+   * and avoids script injection attacks.
+   * @param file The filename to convert
+   * @return The unix pathname
+   * @throws IOException on windows, there can be problems with the subprocess
+   */
+  public static String makeSecureShellPath(File file) throws IOException {
+    if (Shell.WINDOWS) {
+      // Currently it is never called, but it might be helpful in the future.
+      throw new UnsupportedOperationException("Not implemented for Windows");
+    } else {
+      return makeShellPath(file, false).replace("'", "'\\''");
+    }
+  }
+
+  /**
    * Convert a os-native filename to a path that works for the shell.
    * @param file The filename to convert
    * @param makeCanonicalPath
@@ -576,11 +613,53 @@ public class FileUtil {
   }
 
   /**
-   * Given a File input it will unzip the file in a the unzip directory
+   * Given a stream input it will unzip the it in the unzip directory.
+   * passed as the second parameter
+   * @param inputStream The zip file as input
+   * @param toDir The unzip directory where to unzip the zip file.
+   * @throws IOException an exception occurred
+   */
+  public static void unZip(InputStream inputStream, File toDir)
+      throws IOException {
+    try (ZipInputStream zip = new ZipInputStream(inputStream)) {
+      int numOfFailedLastModifiedSet = 0;
+      String targetDirPath = toDir.getCanonicalPath() + File.separator;
+      for(ZipEntry entry = zip.getNextEntry();
+          entry != null;
+          entry = zip.getNextEntry()) {
+        if (!entry.isDirectory()) {
+          File file = new File(toDir, entry.getName());
+          if (!file.getCanonicalPath().startsWith(targetDirPath)) {
+            throw new IOException("expanding " + entry.getName()
+                + " would create file outside of " + toDir);
+          }
+          File parent = file.getParentFile();
+          if (!parent.mkdirs() &&
+              !parent.isDirectory()) {
+            throw new IOException("Mkdirs failed to create " +
+                parent.getAbsolutePath());
+          }
+          try (OutputStream out = new FileOutputStream(file)) {
+            IOUtils.copyBytes(zip, out, BUFFER_SIZE);
+          }
+          if (!file.setLastModified(entry.getTime())) {
+            numOfFailedLastModifiedSet++;
+          }
+        }
+      }
+      if (numOfFailedLastModifiedSet > 0) {
+        LOG.warn("Could not set last modfied time for {} file(s)",
+            numOfFailedLastModifiedSet);
+      }
+    }
+  }
+
+  /**
+   * Given a File input it will unzip it in the unzip directory.
    * passed as the second parameter
    * @param inFile The zip file as input
    * @param unzipDir The unzip directory where to unzip the zip file.
-   * @throws IOException
+   * @throws IOException An I/O exception has occurred
    */
   public static void unZip(File inFile, File unzipDir) throws IOException {
     Enumeration<? extends ZipEntry> entries;
@@ -588,12 +667,17 @@ public class FileUtil {
 
     try {
       entries = zipFile.entries();
+      String targetDirPath = unzipDir.getCanonicalPath() + File.separator;
       while (entries.hasMoreElements()) {
         ZipEntry entry = entries.nextElement();
         if (!entry.isDirectory()) {
           InputStream in = zipFile.getInputStream(entry);
           try {
             File file = new File(unzipDir, entry.getName());
+            if (!file.getCanonicalPath().startsWith(targetDirPath)) {
+              throw new IOException("expanding " + entry.getName()
+                  + " would create file outside of " + unzipDir);
+            }
             if (!file.getParentFile().mkdirs()) {
               if (!file.getParentFile().isDirectory()) {
                 throw new IOException("Mkdirs failed to create " +
@@ -617,6 +701,138 @@ public class FileUtil {
       }
     } finally {
       zipFile.close();
+    }
+  }
+
+  /**
+   * Run a command and send the contents of an input stream to it.
+   * @param inputStream Input stream to forward to the shell command
+   * @param command shell command to run
+   * @throws IOException read or write failed
+   * @throws InterruptedException command interrupted
+   * @throws ExecutionException task submit failed
+   */
+  private static void runCommandOnStream(
+      InputStream inputStream, String command)
+      throws IOException, InterruptedException, ExecutionException {
+    ExecutorService executor = null;
+    ProcessBuilder builder = new ProcessBuilder();
+    builder.command(
+        Shell.WINDOWS ? "cmd" : "bash",
+        Shell.WINDOWS ? "/c" : "-c",
+        command);
+    Process process = builder.start();
+    int exitCode;
+    try {
+      // Consume stdout and stderr, to avoid blocking the command
+      executor = Executors.newFixedThreadPool(2);
+      Future output = executor.submit(() -> {
+        try {
+          // Read until the output stream receives an EOF and closed.
+          if (LOG.isDebugEnabled()) {
+            // Log directly to avoid out of memory errors
+            try (BufferedReader reader =
+                     new BufferedReader(
+                         new InputStreamReader(process.getInputStream(),
+                             Charset.forName("UTF-8")))) {
+              String line;
+              while((line = reader.readLine()) != null) {
+                LOG.debug(line);
+              }
+            }
+          } else {
+            org.apache.commons.io.IOUtils.copy(
+                process.getInputStream(),
+                new IOUtils.NullOutputStream());
+          }
+        } catch (IOException e) {
+          LOG.debug(e.getMessage());
+        }
+      });
+      Future error = executor.submit(() -> {
+        try {
+          // Read until the error stream receives an EOF and closed.
+          if (LOG.isDebugEnabled()) {
+            // Log directly to avoid out of memory errors
+            try (BufferedReader reader =
+                     new BufferedReader(
+                         new InputStreamReader(process.getErrorStream(),
+                             Charset.forName("UTF-8")))) {
+              String line;
+              while((line = reader.readLine()) != null) {
+                LOG.debug(line);
+              }
+            }
+          } else {
+            org.apache.commons.io.IOUtils.copy(
+                process.getErrorStream(),
+                new IOUtils.NullOutputStream());
+          }
+        } catch (IOException e) {
+          LOG.debug(e.getMessage());
+        }
+      });
+
+      // Pass the input stream to the command to process
+      try {
+        org.apache.commons.io.IOUtils.copy(
+            inputStream, process.getOutputStream());
+      } finally {
+        process.getOutputStream().close();
+      }
+
+      // Wait for both stdout and stderr futures to finish
+      error.get();
+      output.get();
+    } finally {
+      // Clean up the threads
+      if (executor != null) {
+        executor.shutdown();
+      }
+      // Wait to avoid leaking the child process
+      exitCode = process.waitFor();
+    }
+
+    if (exitCode != 0) {
+      throw new IOException(
+          String.format(
+              "Error executing command. %s " +
+                  "Process exited with exit code %d.",
+              command, exitCode));
+    }
+  }
+
+  /**
+   * Given a Tar File as input it will untar the file in a the untar directory
+   * passed as the second parameter
+   *
+   * This utility will untar ".tar" files and ".tar.gz","tgz" files.
+   *
+   * @param inputStream The tar file as input.
+   * @param untarDir The untar directory where to untar the tar file.
+   * @param gzipped The input stream is gzipped
+   *                TODO Use magic number and PusbackInputStream to identify
+   * @throws IOException an exception occurred
+   * @throws InterruptedException command interrupted
+   * @throws ExecutionException task submit failed
+   */
+  public static void unTar(InputStream inputStream, File untarDir,
+                           boolean gzipped)
+      throws IOException, InterruptedException, ExecutionException {
+    if (!untarDir.mkdirs()) {
+      if (!untarDir.isDirectory()) {
+        throw new IOException("Mkdirs failed to create " + untarDir);
+      }
+    }
+
+    if(Shell.WINDOWS) {
+      // Tar is not native to Windows. Use simple Java based implementation for
+      // tests and simple tar archives
+      unTarUsingJava(inputStream, untarDir, gzipped);
+    } else {
+      // spawn tar utility to untar archive for full fledged unix behavior such
+      // as resolving symlinks in tar archives
+      unTarUsingTar(inputStream, untarDir, gzipped);
     }
   }
 
@@ -650,23 +866,41 @@ public class FileUtil {
     }
   }
 
+  private static void unTarUsingTar(InputStream inputStream, File untarDir,
+                                    boolean gzipped)
+      throws IOException, InterruptedException, ExecutionException {
+    StringBuilder untarCommand = new StringBuilder();
+    if (gzipped) {
+      untarCommand.append("gzip -dc | (");
+    }
+    untarCommand.append("cd '");
+    untarCommand.append(FileUtil.makeSecureShellPath(untarDir));
+    untarCommand.append("' && ");
+    untarCommand.append("tar -x ");
+
+    if (gzipped) {
+      untarCommand.append(")");
+    }
+    runCommandOnStream(inputStream, untarCommand.toString());
+  }
+
   private static void unTarUsingTar(File inFile, File untarDir,
       boolean gzipped) throws IOException {
     StringBuffer untarCommand = new StringBuffer();
     if (gzipped) {
       untarCommand.append(" gzip -dc '");
-      untarCommand.append(FileUtil.makeShellPath(inFile));
+      untarCommand.append(FileUtil.makeSecureShellPath(inFile));
       untarCommand.append("' | (");
     }
     untarCommand.append("cd '");
-    untarCommand.append(FileUtil.makeShellPath(untarDir));
-    untarCommand.append("' ; ");
+    untarCommand.append(FileUtil.makeSecureShellPath(untarDir));
+    untarCommand.append("' && ");
     untarCommand.append("tar -xf ");
 
     if (gzipped) {
       untarCommand.append(" -)");
     } else {
-      untarCommand.append(FileUtil.makeShellPath(inFile));
+      untarCommand.append(FileUtil.makeSecureShellPath(inFile));
     }
     String[] shellCmd = { "bash", "-c", untarCommand.toString() };
     ShellCommandExecutor shexec = new ShellCommandExecutor(shellCmd);
@@ -678,7 +912,7 @@ public class FileUtil {
     }
   }
 
-  private static void unTarUsingJava(File inFile, File untarDir,
+  static void unTarUsingJava(File inFile, File untarDir,
       boolean gzipped) throws IOException {
     InputStream inputStream = null;
     TarArchiveInputStream tis = null;
@@ -701,8 +935,38 @@ public class FileUtil {
     }
   }
 
+  private static void unTarUsingJava(InputStream inputStream, File untarDir,
+                                     boolean gzipped) throws IOException {
+    TarArchiveInputStream tis = null;
+    try {
+      if (gzipped) {
+        inputStream = new BufferedInputStream(new GZIPInputStream(
+            inputStream));
+      } else {
+        inputStream =
+            new BufferedInputStream(inputStream);
+      }
+
+      tis = new TarArchiveInputStream(inputStream);
+
+      for (TarArchiveEntry entry = tis.getNextTarEntry(); entry != null;) {
+        unpackEntries(tis, entry, untarDir);
+        entry = tis.getNextTarEntry();
+      }
+    } finally {
+      IOUtils.cleanupWithLogger(LOG, tis, inputStream);
+    }
+  }
+
   private static void unpackEntries(TarArchiveInputStream tis,
       TarArchiveEntry entry, File outputDir) throws IOException {
+    String targetDirPath = outputDir.getCanonicalPath() + File.separator;
+    File outputFile = new File(outputDir, entry.getName());
+    if (!outputFile.getCanonicalPath().startsWith(targetDirPath)) {
+      throw new IOException("expanding " + entry.getName()
+          + " would create entry outside of " + outputDir);
+    }
+
     if (entry.isDirectory()) {
       File subDir = new File(outputDir, entry.getName());
       if (!subDir.mkdirs() && !subDir.isDirectory()) {
@@ -717,7 +981,14 @@ public class FileUtil {
       return;
     }
 
-    File outputFile = new File(outputDir, entry.getName());
+    if (entry.isSymbolicLink()) {
+      // Create symbolic link relative to tar parent dir
+      Files.createSymbolicLink(FileSystems.getDefault()
+              .getPath(outputDir.getPath(), entry.getName()),
+          FileSystems.getDefault().getPath(entry.getLinkName()));
+      return;
+    }
+
     if (!outputFile.getParentFile().exists()) {
       if (!outputFile.getParentFile().mkdirs()) {
         throw new IOException("Mkdirs failed to create tar internal dir "
@@ -1279,15 +1550,10 @@ public class FileUtil {
 
     // Write the manifest to output JAR file
     File classPathJar = File.createTempFile("classpath-", ".jar", workingDir);
-    FileOutputStream fos = null;
-    BufferedOutputStream bos = null;
-    JarOutputStream jos = null;
-    try {
-      fos = new FileOutputStream(classPathJar);
-      bos = new BufferedOutputStream(fos);
-      jos = new JarOutputStream(bos, jarManifest);
-    } finally {
-      IOUtils.cleanupWithLogger(LOG, jos, bos, fos);
+    try (FileOutputStream fos = new FileOutputStream(classPathJar);
+         BufferedOutputStream bos = new BufferedOutputStream(fos)) {
+      JarOutputStream jos = new JarOutputStream(bos, jarManifest);
+      jos.close();
     }
     String[] jarCp = {classPathJar.getCanonicalPath(),
                         unexpandedWildcardClasspath.toString()};

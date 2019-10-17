@@ -82,6 +82,8 @@ public class WebApps {
       public Class<? extends HttpServlet> clazz;
       public String name;
       public String spec;
+      public Map<String, String> params;
+      public boolean loadExistingFilters = true;
     }
     
     final String name;
@@ -147,7 +149,20 @@ public class WebApps {
       servlets.add(struct);
       return this;
     }
-    
+
+    public Builder<T> withServlet(String name, String pathSpec,
+        Class<? extends HttpServlet> servlet,
+        Map<String, String> params,boolean loadExistingFilters) {
+      ServletStruct struct = new ServletStruct();
+      struct.clazz = servlet;
+      struct.name = name;
+      struct.spec = pathSpec;
+      struct.params = params;
+      struct.loadExistingFilters = loadExistingFilters;
+      servlets.add(struct);
+      return this;
+    }
+
     public Builder<T> with(Configuration conf) {
       this.conf = conf;
       return this;
@@ -243,6 +258,17 @@ public class WebApps {
           pathList.add("/" + wsName + "/*");
         }
       }
+
+      for (ServletStruct s : servlets) {
+        if (!pathList.contains(s.spec)) {
+          // The servlet told us to not load-existing filters, but we still want
+          // to add the default authentication filter always, so add it to the
+          // pathList
+          if (!s.loadExistingFilters) {
+            pathList.add(s.spec);
+          }
+        }
+      }
       if (conf == null) {
         conf = new Configuration();
       }
@@ -315,7 +341,12 @@ public class WebApps {
         HttpServer2 server = builder.build();
 
         for(ServletStruct struct: servlets) {
-          server.addServlet(struct.name, struct.spec, struct.clazz);
+          if (!struct.loadExistingFilters) {
+            server.addInternalServlet(struct.name, struct.spec,
+                struct.clazz, struct.params);
+          } else {
+            server.addServlet(struct.name, struct.spec, struct.clazz);
+          }
         }
         for(Map.Entry<String, Object> entry : attributes.entrySet()) {
           server.setAttribute(entry.getKey(), entry.getValue());

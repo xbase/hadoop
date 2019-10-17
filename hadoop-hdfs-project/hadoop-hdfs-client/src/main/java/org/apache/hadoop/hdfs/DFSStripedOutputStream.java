@@ -24,6 +24,7 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.fs.CreateFlag;
 import org.apache.hadoop.fs.StreamCapabilities;
 import org.apache.hadoop.hdfs.client.HdfsClientConfigKeys;
+import org.apache.hadoop.hdfs.client.HdfsDataOutputStream.SyncFlag;
 import org.apache.hadoop.hdfs.protocol.ClientProtocol;
 import org.apache.hadoop.hdfs.protocol.DatanodeID;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
@@ -956,11 +957,22 @@ public class DFSStripedOutputStream extends DFSOutputStream
   @Override
   public void hflush() {
     // not supported yet
+    LOG.debug("DFSStripedOutputStream does not support hflush. "
+        + "Caller should check StreamCapabilities before calling.");
   }
 
   @Override
   public void hsync() {
     // not supported yet
+    LOG.debug("DFSStripedOutputStream does not support hsync. "
+        + "Caller should check StreamCapabilities before calling.");
+  }
+
+  @Override
+  public void hsync(EnumSet<SyncFlag> syncFlags) {
+    // not supported yet
+    LOG.debug("DFSStripedOutputStream does not support hsync {}. "
+        + "Caller should check StreamCapabilities before calling.", syncFlags);
   }
 
   @Override
@@ -1288,8 +1300,8 @@ public class DFSStripedOutputStream extends DFSOutputStream
       int bgIndex = entry.getKey();
       int corruptBlockCount = entry.getValue();
       StringBuilder sb = new StringBuilder();
-      sb.append("Block group <").append(bgIndex).append("> has ")
-          .append(corruptBlockCount).append(" corrupt blocks.");
+      sb.append("Block group <").append(bgIndex).append("> failed to write ")
+          .append(corruptBlockCount).append(" blocks.");
       if (corruptBlockCount == numAllBlocks - numDataBlocks) {
         sb.append(" It's at high risk of losing data.");
       }

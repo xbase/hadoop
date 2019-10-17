@@ -22,7 +22,6 @@ import java.net.InetSocketAddress;
 import java.security.PrivilegedAction;
 import java.security.PrivilegedExceptionAction;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -64,7 +63,7 @@ public abstract class ZKFailoverController {
   
   public static final String ZK_QUORUM_KEY = "ha.zookeeper.quorum";
   private static final String ZK_SESSION_TIMEOUT_KEY = "ha.zookeeper.session-timeout.ms";
-  private static final int ZK_SESSION_TIMEOUT_DEFAULT = 5*1000;
+  private static final int ZK_SESSION_TIMEOUT_DEFAULT = 10*1000;
   private static final String ZK_PARENT_ZNODE_KEY = "ha.zookeeper.parent-znode";
   public static final String ZK_ACL_KEY = "ha.zookeeper.acl";
   private static final String ZK_ACL_DEFAULT = "world:anyone:rwcda";
@@ -270,7 +269,7 @@ public abstract class ZKFailoverController {
   }
 
   private int formatZK(boolean force, boolean interactive)
-      throws IOException, InterruptedException {
+      throws IOException, InterruptedException, KeeperException {
     if (elector.parentZNodeExists()) {
       if (!force && (!interactive || !confirmFormat())) {
         return ERR_CODE_FORMAT_DENIED;
@@ -341,14 +340,7 @@ public abstract class ZKFailoverController {
     }
     
     // Parse authentication from configuration.
-    String zkAuthConf = conf.get(ZK_AUTH_KEY);
-    zkAuthConf = ZKUtil.resolveConfIndirection(zkAuthConf);
-    List<ZKAuthInfo> zkAuths;
-    if (zkAuthConf != null) {
-      zkAuths = ZKUtil.parseAuth(zkAuthConf);
-    } else {
-      zkAuths = Collections.emptyList();
-    }
+    List<ZKAuthInfo> zkAuths = SecurityUtil.getZKAuthInfos(conf, ZK_AUTH_KEY);
 
     // Sanity check configuration.
     Preconditions.checkArgument(zkQuorum != null,

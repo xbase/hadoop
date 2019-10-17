@@ -31,6 +31,7 @@ import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterRespo
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
+import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.Priority;
@@ -46,6 +47,7 @@ import org.apache.hadoop.yarn.server.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.server.nodemanager.ContainerExecutor;
 import org.apache.hadoop.yarn.server.nodemanager.ContainerStateTransitionListener;
 import org.apache.hadoop.yarn.server.nodemanager.Context;
+import org.apache.hadoop.yarn.server.nodemanager.DeletionService;
 import org.apache.hadoop.yarn.server.nodemanager.LocalDirsHandlerService;
 import org.apache.hadoop.yarn.server.nodemanager.NodeManager.NMContext;
 import org.apache.hadoop.yarn.server.nodemanager.NodeResourceMonitor;
@@ -54,12 +56,15 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.ContainerManag
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.Application;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.resourceplugin.ResourcePluginManager;
+import org.apache.hadoop.yarn.server.nodemanager.logaggregation.tracker.NMLogAggregationStatusTracker;
+import org.apache.hadoop.yarn.server.nodemanager.metrics.NodeManagerMetrics;
 import org.apache.hadoop.yarn.server.nodemanager.recovery.NMMemoryStateStoreService;
 import org.apache.hadoop.yarn.server.nodemanager.recovery.NMStateStoreService;
+import org.apache.hadoop.yarn.server.nodemanager.recovery.NMStateStoreService.RecoveredAMRMProxyState;
+import org.apache.hadoop.yarn.server.scheduler.OpportunisticContainerAllocator;
 import org.apache.hadoop.yarn.server.nodemanager.security.NMContainerTokenSecretManager;
 import org.apache.hadoop.yarn.server.nodemanager.security.NMTokenSecretManagerInNM;
 import org.apache.hadoop.yarn.server.nodemanager.timelineservice.NMTimelinePublisher;
-import org.apache.hadoop.yarn.server.scheduler.OpportunisticContainerAllocator;
 import org.apache.hadoop.yarn.server.security.ApplicationACLsManager;
 import org.apache.hadoop.yarn.util.Records;
 import org.junit.After;
@@ -105,6 +110,11 @@ public abstract class BaseAMRMProxyTest {
   protected MockAMRMProxyService getAMRMProxyService() {
     Assert.assertNotNull(this.amrmProxyService);
     return this.amrmProxyService;
+  }
+
+  protected Context getNMContext() {
+    Assert.assertNotNull(this.nmContext);
+    return this.nmContext;
   }
 
   @Before
@@ -177,6 +187,29 @@ public abstract class BaseAMRMProxyTest {
     stateStore.init(this.conf);
     stateStore.start();
     return new NMContext(null, null, null, null, stateStore, false, this.conf);
+  }
+
+  // A utility method for intercepter recover unit test
+  protected Map<String, byte[]> recoverDataMapForAppAttempt(
+      NMStateStoreService nmStateStore, ApplicationAttemptId attemptId)
+      throws IOException {
+    RecoveredAMRMProxyState state = nmStateStore.loadAMRMProxyState();
+    for (Map.Entry<ApplicationAttemptId, Map<String, byte[]>> entry : state
+        .getAppContexts().entrySet()) {
+      if (entry.getKey().equals(attemptId)) {
+        return entry.getValue();
+      }
+    }
+    return null;
+  }
+
+  protected List<ContainerId> getCompletedContainerIds(
+      List<ContainerStatus> containerStatus) {
+    List<ContainerId> ret = new ArrayList<>();
+    for (ContainerStatus status : containerStatus) {
+      ret.add(status.getContainerId());
+    }
+    return ret;
   }
 
   /**
@@ -623,7 +656,7 @@ public abstract class BaseAMRMProxyTest {
      */
     public void initApp(ApplicationAttemptId applicationId, String user) {
       super.initializePipeline(applicationId, user,
-          new Token<AMRMTokenIdentifier>(), null, null, false);
+          new Token<AMRMTokenIdentifier>(), null, null, false, null);
     }
 
     public void stopApp(ApplicationId applicationId) {
@@ -775,6 +808,21 @@ public abstract class BaseAMRMProxyTest {
     }
 
     public ResourcePluginManager getResourcePluginManager() {
+      return null;
+    }
+
+    @Override
+    public NodeManagerMetrics getNodeManagerMetrics() {
+      return null;
+    }
+
+    @Override
+    public DeletionService getDeletionService() {
+      return null;
+    }
+
+    @Override
+    public NMLogAggregationStatusTracker getNMLogAggregationStatusTracker() {
       return null;
     }
   }

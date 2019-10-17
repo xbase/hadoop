@@ -18,6 +18,7 @@
 package org.apache.hadoop.yarn.client.cli;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
@@ -99,6 +100,16 @@ public class ApplicationCLI extends YarnCLI {
   public static final String FLEX_CMD = "flex";
   public static final String COMPONENT = "component";
   public static final String ENABLE_FAST_LAUNCH = "enableFastLaunch";
+  public static final String UPGRADE_CMD = "upgrade";
+  public static final String UPGRADE_EXPRESS = "express";
+  public static final String UPGRADE_CANCEL = "cancel";
+  public static final String UPGRADE_INITIATE = "initiate";
+  public static final String UPGRADE_AUTO_FINALIZE = "autoFinalize";
+  public static final String UPGRADE_FINALIZE = "finalize";
+  public static final String COMPONENT_INSTS = "instances";
+  public static final String COMPONENTS = "components";
+  public static final String VERSION = "version";
+  public static final String STATES = "states";
 
   private static String firstArg = null;
 
@@ -138,7 +149,12 @@ public class ApplicationCLI extends YarnCLI {
         .equalsIgnoreCase(APP))) {
       title = APPLICATION;
       opts.addOption(STATUS_CMD, true,
-          "Prints the status of the application.");
+          "Prints the status of the application. If app ID is"
+              + " provided, it prints the generic YARN application status."
+              + " If name is provided, it prints the application specific"
+              + " status based on app's own implementation, and -appTypes"
+              + " option must be specified unless it is the default"
+              + " yarn-service type.");
       opts.addOption(LIST_CMD, false, "List applications. "
           + "Supports optional use of -appTypes to filter applications "
           + "based on application type, -appStates to filter applications "
@@ -190,7 +206,7 @@ public class ApplicationCLI extends YarnCLI {
       opts.addOption(killOpt);
       opts.getOption(MOVE_TO_QUEUE_CMD).setArgName("Application ID");
       opts.getOption(QUEUE_CMD).setArgName("Queue Name");
-      opts.getOption(STATUS_CMD).setArgName("Application ID");
+      opts.getOption(STATUS_CMD).setArgName("Application Name or ID");
       opts.getOption(APP_ID).setArgName("Application ID");
       opts.getOption(UPDATE_PRIORITY).setArgName("Priority");
       opts.getOption(UPDATE_LIFETIME).setArgName("Timeout");
@@ -227,9 +243,31 @@ public class ApplicationCLI extends YarnCLI {
           "the number of components/containers running for an application / " +
           "long-running service. Supports absolute or relative changes, such " +
           "as +1, 2, or -3.");
-      opts.addOption(ENABLE_FAST_LAUNCH, false, "Uploads AM dependencies " +
-          "to HDFS to make future launches faster.  Supports -appTypes option" +
-          " to specify which client implementation to use.");
+      opts.addOption(ENABLE_FAST_LAUNCH, true, "Uploads AM dependencies " +
+          "to HDFS to make future launches faster. Supports -appTypes option " +
+          "to specify which client implementation to use. Optionally a " +
+          "destination folder for the tarball can be specified.");
+      opts.addOption(UPGRADE_CMD, true, "Upgrades an application/long-" +
+          "running service. It requires either -initiate, -instances, or " +
+          "-finalize options.");
+      opts.addOption(UPGRADE_EXPRESS, true, "Works with -upgrade option to " +
+          "perform express upgrade.  It requires the upgraded application " +
+          "specification file.");
+      opts.addOption(UPGRADE_INITIATE, true, "Works with -upgrade option to " +
+          "initiate the application upgrade. It requires the upgraded " +
+          "application specification file.");
+      opts.addOption(COMPONENT_INSTS, true, "Works with -upgrade option to " +
+          "trigger the upgrade of specified component instances of the " +
+          "application.");
+      opts.addOption(COMPONENTS, true, "Works with -upgrade option to " +
+          "trigger the upgrade of specified components of the application.");
+      opts.addOption(UPGRADE_FINALIZE, false, "Works with -upgrade option to " +
+          "finalize the upgrade.");
+      opts.addOption(UPGRADE_AUTO_FINALIZE, false, "Works with -upgrade and " +
+          "-initiate options to initiate the upgrade of the application with " +
+          "the ability to finalize the upgrade automatically.");
+      opts.addOption(UPGRADE_CANCEL, false, "Works with -upgrade option to " +
+          "cancel current upgrade.");
       opts.getOption(LAUNCH_CMD).setArgName("Application Name> <File Name");
       opts.getOption(LAUNCH_CMD).setArgs(2);
       opts.getOption(START_CMD).setArgName("Application Name");
@@ -240,6 +278,18 @@ public class ApplicationCLI extends YarnCLI {
       opts.getOption(FLEX_CMD).setArgName("Application Name or ID");
       opts.getOption(COMPONENT).setArgName("Component Name> <Count");
       opts.getOption(COMPONENT).setArgs(2);
+      opts.getOption(ENABLE_FAST_LAUNCH).setOptionalArg(true);
+      opts.getOption(ENABLE_FAST_LAUNCH).setArgName("Destination Folder");
+      opts.getOption(UPGRADE_CMD).setArgName("Application Name");
+      opts.getOption(UPGRADE_CMD).setArgs(1);
+      opts.getOption(UPGRADE_INITIATE).setArgName("File Name");
+      opts.getOption(UPGRADE_INITIATE).setArgs(1);
+      opts.getOption(COMPONENT_INSTS).setArgName("Component Instances");
+      opts.getOption(COMPONENT_INSTS).setValueSeparator(',');
+      opts.getOption(COMPONENT_INSTS).setArgs(Option.UNLIMITED_VALUES);
+      opts.getOption(COMPONENTS).setArgName("Components");
+      opts.getOption(COMPONENTS).setValueSeparator(',');
+      opts.getOption(COMPONENTS).setArgs(Option.UNLIMITED_VALUES);
     } else if (title != null && title.equalsIgnoreCase(APPLICATION_ATTEMPT)) {
       opts.addOption(STATUS_CMD, true,
           "Prints the status of the application attempt.");
@@ -254,10 +304,39 @@ public class ApplicationCLI extends YarnCLI {
       opts.addOption(STATUS_CMD, true,
           "Prints the status of the container.");
       opts.addOption(LIST_CMD, true,
-          "List containers for application attempt.");
+          "List containers for application attempt when application " +
+          "attempt ID is provided. When application name is provided, " +
+          "then it finds the instances of the application based on app's " +
+          "own implementation, and -appTypes option must be specified " +
+          "unless it is the default yarn-service type. With app name, it " +
+          "supports optional use of -version to filter instances based on " +
+          "app version, -components to filter instances based on component " +
+          "names, -states to filter instances based on instance state.");
       opts.addOption(HELP_CMD, false, "Displays help for all commands.");
       opts.getOption(STATUS_CMD).setArgName("Container ID");
-      opts.getOption(LIST_CMD).setArgName("Application Attempt ID");
+      opts.getOption(LIST_CMD).setArgName("Application Name or Attempt ID");
+      opts.addOption(APP_TYPE_CMD, true, "Works with -list to " +
+          "specify the app type when application name is provided.");
+      opts.getOption(APP_TYPE_CMD).setValueSeparator(',');
+      opts.getOption(APP_TYPE_CMD).setArgs(Option.UNLIMITED_VALUES);
+      opts.getOption(APP_TYPE_CMD).setArgName("Types");
+
+      opts.addOption(VERSION, true, "Works with -list "
+          + "to filter instances based on input application version.");
+      opts.getOption(VERSION).setArgs(1);
+
+      opts.addOption(COMPONENTS, true, "Works with -list to " +
+          "filter instances based on input comma-separated list of " +
+          "component names.");
+      opts.getOption(COMPONENTS).setValueSeparator(',');
+      opts.getOption(COMPONENTS).setArgs(Option.UNLIMITED_VALUES);
+
+      opts.addOption(STATES, true, "Works with -list to " +
+          "filter instances based on input comma-separated list of " +
+          "instance states.");
+      opts.getOption(STATES).setValueSeparator(',');
+      opts.getOption(STATES).setArgs(Option.UNLIMITED_VALUES);
+
       opts.addOption(SIGNAL_CMD, true,
           "Signal the container. The available signal commands are " +
           java.util.Arrays.asList(SignalContainerCommand.values()) +
@@ -289,27 +368,34 @@ public class ApplicationCLI extends YarnCLI {
     }
 
     if (cliParser.hasOption(STATUS_CMD)) {
-      if (hasAnyOtherCLIOptions(cliParser, opts, STATUS_CMD)) {
+      if (hasAnyOtherCLIOptions(cliParser, opts, STATUS_CMD, APP_TYPE_CMD)) {
         printUsage(title, opts);
         return exitCode;
       }
       if (title.equalsIgnoreCase(APPLICATION) ||
           title.equalsIgnoreCase(APP)) {
-        ApplicationReport report = printApplicationReport(cliParser
-            .getOptionValue(STATUS_CMD));
-        if (report == null) {
-          exitCode = -1;
-        } else {
-          exitCode = 0;
-          String appType = report.getApplicationType();
+        String appIdOrName = cliParser.getOptionValue(STATUS_CMD);
+        try {
+          // try parsing appIdOrName, if it succeeds, it means it's appId
+          ApplicationId.fromString(appIdOrName);
+          exitCode = printApplicationReport(appIdOrName);
+        } catch (IllegalArgumentException e) {
+          // not appId format, it could be appName.
+          // Print app specific report, if app-type is not provided,
+          // assume it is yarn-service type.
+          AppAdminClient client = AppAdminClient
+              .createAppAdminClient(getSingleAppTypeFromCLI(cliParser),
+                  getConf());
           try {
-            AppAdminClient client = AppAdminClient.createAppAdminClient(appType,
-                getConf());
-            sysout.println("Detailed Application Status :");
-            sysout.println(client.getStatusString(cliParser.getOptionValue(
-                STATUS_CMD)));
-          } catch (IllegalArgumentException e) {
-            // app type does not have app admin client implementation
+            sysout.println(client.getStatusString(appIdOrName));
+            exitCode = 0;
+          } catch (ApplicationNotFoundException exception) {
+            System.err.println("Application with name '" + appIdOrName
+                + "' doesn't exist in RM or Timeline Server.");
+            return -1;
+          } catch (Exception ie) {
+            System.err.println(ie.getMessage());
+            return -1;
           }
         }
       } else if (title.equalsIgnoreCase(APPLICATION_ATTEMPT)) {
@@ -379,11 +465,40 @@ public class ApplicationCLI extends YarnCLI {
         }
         listApplicationAttempts(cliParser.getOptionValue(LIST_CMD));
       } else if (title.equalsIgnoreCase(CONTAINER)) {
-        if (hasAnyOtherCLIOptions(cliParser, opts, LIST_CMD)) {
+        if (hasAnyOtherCLIOptions(cliParser, opts, LIST_CMD, APP_TYPE_CMD,
+            VERSION, COMPONENTS, STATES)) {
           printUsage(title, opts);
           return exitCode;
         }
-        listContainers(cliParser.getOptionValue(LIST_CMD));
+        String appAttemptIdOrName = cliParser.getOptionValue(LIST_CMD);
+        try {
+          // try parsing attempt id, if it succeeds, it means it's appId
+          ApplicationAttemptId.fromString(appAttemptIdOrName);
+          listContainers(appAttemptIdOrName);
+        } catch (IllegalArgumentException e) {
+          // not appAttemptId format, it could be appName. If app-type is not
+          // provided, assume it is yarn-service type.
+          AppAdminClient client = AppAdminClient
+              .createAppAdminClient(getSingleAppTypeFromCLI(cliParser),
+                  getConf());
+          String version = cliParser.getOptionValue(VERSION);
+          String[] components = cliParser.getOptionValues(COMPONENTS);
+          String[] instanceStates = cliParser.getOptionValues(STATES);
+          try {
+            sysout.println(client.getInstances(appAttemptIdOrName,
+                components == null ? null : Arrays.asList(components),
+                version, instanceStates == null ? null :
+                    Arrays.asList(instanceStates)));
+            return 0;
+          } catch (ApplicationNotFoundException exception) {
+            System.err.println("Application with name '" + appAttemptIdOrName
+                + "' doesn't exist in RM or Timeline Server.");
+            return -1;
+          } catch (Exception ex) {
+            System.err.println(ex.getMessage());
+            return -1;
+          }
+        }
       }
     } else if (cliParser.hasOption(KILL_CMD)) {
       if (hasAnyOtherCLIOptions(cliParser, opts, KILL_CMD)) {
@@ -504,13 +619,15 @@ public class ApplicationCLI extends YarnCLI {
           .actionFlex(appNameAndType[0], counts);
     } else if (cliParser.hasOption(ENABLE_FAST_LAUNCH)) {
       String appType = getSingleAppTypeFromCLI(cliParser);
+      String uploadDestinationFolder = cliParser
+          .getOptionValue(ENABLE_FAST_LAUNCH);
       if (hasAnyOtherCLIOptions(cliParser, opts, ENABLE_FAST_LAUNCH,
           APP_TYPE_CMD)) {
         printUsage(title, opts);
         return exitCode;
       }
       return AppAdminClient.createAppAdminClient(appType, getConf())
-          .enableFastLaunch();
+          .enableFastLaunch(uploadDestinationFolder);
     } else if (cliParser.hasOption(UPDATE_LIFETIME)) {
       if (!cliParser.hasOption(APP_ID)) {
         printUsage(title, opts);
@@ -529,6 +646,68 @@ public class ApplicationCLI extends YarnCLI {
       }
       moveApplicationAcrossQueues(cliParser.getOptionValue(APP_ID),
           cliParser.getOptionValue(CHANGE_APPLICATION_QUEUE));
+    } else if (cliParser.hasOption(UPGRADE_CMD)) {
+      if (hasAnyOtherCLIOptions(cliParser, opts, UPGRADE_CMD, UPGRADE_EXPRESS,
+          UPGRADE_INITIATE, UPGRADE_AUTO_FINALIZE, UPGRADE_FINALIZE,
+          UPGRADE_CANCEL, COMPONENT_INSTS, COMPONENTS, APP_TYPE_CMD)) {
+        printUsage(title, opts);
+        return exitCode;
+      }
+      String appType = getSingleAppTypeFromCLI(cliParser);
+      AppAdminClient client =  AppAdminClient.createAppAdminClient(appType,
+          getConf());
+      String appName = cliParser.getOptionValue(UPGRADE_CMD);
+      if (cliParser.hasOption(UPGRADE_EXPRESS)) {
+        File file = new File(cliParser.getOptionValue(UPGRADE_EXPRESS));
+        if (!file.exists()) {
+          System.err.println(file.getAbsolutePath() + " does not exist.");
+          return exitCode;
+        }
+        return client.actionUpgradeExpress(appName, file);
+      } else if (cliParser.hasOption(UPGRADE_INITIATE)) {
+        if (hasAnyOtherCLIOptions(cliParser, opts, UPGRADE_CMD,
+            UPGRADE_INITIATE, UPGRADE_AUTO_FINALIZE, APP_TYPE_CMD)) {
+          printUsage(title, opts);
+          return exitCode;
+        }
+        String fileName = cliParser.getOptionValue(UPGRADE_INITIATE);
+        if (cliParser.hasOption(UPGRADE_AUTO_FINALIZE)) {
+          return client.initiateUpgrade(appName, fileName, true);
+        } else {
+          return client.initiateUpgrade(appName, fileName, false);
+        }
+      } else if (cliParser.hasOption(COMPONENT_INSTS)) {
+        if (hasAnyOtherCLIOptions(cliParser, opts, UPGRADE_CMD,
+            COMPONENT_INSTS, APP_TYPE_CMD)) {
+          printUsage(title, opts);
+          return exitCode;
+        }
+        String[] instances = cliParser.getOptionValues(COMPONENT_INSTS);
+        return client.actionUpgradeInstances(appName, Arrays.asList(instances));
+      } else if (cliParser.hasOption(COMPONENTS)) {
+        if (hasAnyOtherCLIOptions(cliParser, opts, UPGRADE_CMD,
+            COMPONENTS, APP_TYPE_CMD)) {
+          printUsage(title, opts);
+          return exitCode;
+        }
+        String[] components = cliParser.getOptionValues(COMPONENTS);
+        return client.actionUpgradeComponents(appName,
+            Arrays.asList(components));
+      } else if (cliParser.hasOption(UPGRADE_FINALIZE)) {
+        if (hasAnyOtherCLIOptions(cliParser, opts, UPGRADE_CMD,
+            UPGRADE_FINALIZE, APP_TYPE_CMD)) {
+          printUsage(title, opts);
+          return exitCode;
+        }
+        return client.actionStart(appName);
+      } else if (cliParser.hasOption(UPGRADE_CANCEL)) {
+        if (hasAnyOtherCLIOptions(cliParser, opts, UPGRADE_CMD,
+            UPGRADE_CANCEL, APP_TYPE_CMD)) {
+          printUsage(title, opts);
+          return exitCode;
+        }
+        return client.actionCancelUpgrade(appName);
+      }
     } else {
       syserr.println("Invalid Command Usage : ");
       printUsage(title, opts);
@@ -724,6 +903,8 @@ public class ApplicationCLI extends YarnCLI {
       containerReportStr.println(containerReport.getFinishTime());
       containerReportStr.print("\tState : ");
       containerReportStr.println(containerReport.getContainerState());
+      containerReportStr.print("\tExecution-Type : ");
+      containerReportStr.println(containerReport.getExecutionType());
       containerReportStr.print("\tLOG-URL : ");
       containerReportStr.println(containerReport.getLogUrl());
       containerReportStr.print("\tHost : ");
@@ -891,7 +1072,7 @@ public class ApplicationCLI extends YarnCLI {
    * @return ApplicationReport
    * @throws YarnException
    */
-  private ApplicationReport printApplicationReport(String applicationId)
+  private int printApplicationReport(String applicationId)
       throws YarnException, IOException {
     ApplicationReport appReport = null;
     try {
@@ -900,7 +1081,7 @@ public class ApplicationCLI extends YarnCLI {
     } catch (ApplicationNotFoundException e) {
       sysout.println("Application with id '" + applicationId
           + "' doesn't exist in RM or Timeline Server.");
-      return null;
+      return -1;
     }
     // Use PrintWriter.println, which uses correct platform line ending.
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -964,11 +1145,11 @@ public class ApplicationCLI extends YarnCLI {
           + "' doesn't exist in RM.");
       appReportStr.close();
       sysout.println(baos.toString("UTF-8"));
-      return null;
+      return -1;
     }
     appReportStr.close();
     sysout.println(baos.toString("UTF-8"));
-    return appReport;
+    return 0;
   }
 
   private void printResourceUsage(PrintWriter appReportStr,

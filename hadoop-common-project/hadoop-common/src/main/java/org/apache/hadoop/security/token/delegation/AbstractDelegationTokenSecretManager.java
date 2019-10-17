@@ -22,6 +22,7 @@ import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -299,7 +300,8 @@ extends AbstractDelegationTokenIdentifier>
 
   /**
    * This method is intended to be used for recovering persisted delegation
-   * tokens
+   * tokens. Tokens that have an unknown <code>DelegationKey</code> are
+   * marked as expired and automatically cleaned up.
    * This method must be called before this secret manager is activated (before
    * startThreads() is called)
    * @param identifier identifier read from persistent storage
@@ -315,12 +317,15 @@ extends AbstractDelegationTokenIdentifier>
     }
     int keyId = identifier.getMasterKeyId();
     DelegationKey dKey = allKeys.get(keyId);
+    byte[] password = null;
     if (dKey == null) {
-      LOG.warn("No KEY found for persisted identifier "
+      LOG.warn("No KEY found for persisted identifier, expiring stored token "
           + formatTokenId(identifier));
-      return;
+      // make sure the token is expired
+      renewDate = 0L;
+    } else {
+      password = createPassword(identifier.getBytes(), dKey.getKey());
     }
-    byte[] password = createPassword(identifier.getBytes(), dKey.getKey());
     if (identifier.getSequenceNumber() > getDelegationTokenSeqNum()) {
       setDelegationTokenSeqNum(identifier.getSequenceNumber());
     }
@@ -627,6 +632,11 @@ extends AbstractDelegationTokenIdentifier>
       }
     }
     // don't hold lock on 'this' to avoid edit log updates blocking token ops
+    logExpireTokens(expiredTokens);
+  }
+
+  protected void logExpireTokens(
+      Collection<TokenIdent> expiredTokens) throws IOException {
     for (TokenIdent ident : expiredTokens) {
       logExpireToken(ident);
       LOG.info("Removing expired token " + formatTokenId(ident));

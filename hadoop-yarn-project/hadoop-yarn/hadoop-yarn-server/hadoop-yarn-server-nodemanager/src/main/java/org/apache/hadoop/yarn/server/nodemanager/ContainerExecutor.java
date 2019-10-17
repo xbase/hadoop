@@ -26,13 +26,16 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +57,7 @@ import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerPrepareContex
 import org.apache.hadoop.yarn.server.nodemanager.util.NodeManagerHardwareUtils;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerLivenessContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerReacquisitionContext;
+import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerReapContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerSignalContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerStartContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.DeletionAsUserContext;
@@ -180,6 +184,17 @@ public abstract class ContainerExecutor implements Configurable {
       IOException, ConfigurationException;
 
   /**
+   * Relaunch the container on the node. This is a blocking call and returns
+   * only when the container exits.
+   * @param ctx Encapsulates information necessary for relaunching containers.
+   * @return the return status of the relaunch
+   * @throws IOException if the container relaunch fails
+   * @throws ConfigurationException if config error was found
+   */
+  public abstract int relaunchContainer(ContainerStartContext ctx) throws
+      IOException, ConfigurationException;
+
+  /**
    * Signal container with the specified signal.
    *
    * @param ctx Encapsulates information necessary for signaling containers.
@@ -187,6 +202,16 @@ public abstract class ContainerExecutor implements Configurable {
    * @throws IOException if signaling the container fails
    */
   public abstract boolean signalContainer(ContainerSignalContext ctx)
+      throws IOException;
+
+  /**
+   * Perform the steps necessary to reap the container.
+   *
+   * @param ctx Encapsulates information necessary for reaping containers.
+   * @return returns true if the operation succeeded.
+   * @throws IOException if reaping the container fails.
+   */
+  public abstract boolean reapContainer(ContainerReapContext ctx)
       throws IOException;
 
   /**
@@ -305,14 +330,15 @@ public abstract class ContainerExecutor implements Configurable {
    * @param command the command that will be run
    * @param logDir the log dir to which to copy debugging information
    * @param user the username of the job owner
+   * @param nmVars the set of environment vars that are explicitly set by NM
    * @throws IOException if any errors happened writing to the OutputStream,
    * while creating symlinks
    */
   public void writeLaunchEnv(OutputStream out, Map<String, String> environment,
       Map<Path, List<String>> resources, List<String> command, Path logDir,
-      String user) throws IOException {
+      String user, LinkedHashSet<String> nmVars) throws IOException {
     this.writeLaunchEnv(out, environment, resources, command, logDir, user,
-        ContainerLaunch.CONTAINER_SCRIPT);
+        ContainerLaunch.CONTAINER_SCRIPT, nmVars);
   }
 
   /**
@@ -328,14 +354,15 @@ public abstract class ContainerExecutor implements Configurable {
    * @param logDir the log dir to which to copy debugging information
    * @param user the username of the job owner
    * @param outFilename the path to which to write the launch environment
+   * @param nmVars the set of environment vars that are explicitly set by NM
    * @throws IOException if any errors happened writing to the OutputStream,
    * while creating symlinks
    */
   @VisibleForTesting
   public void writeLaunchEnv(OutputStream out, Map<String, String> environment,
       Map<Path, List<String>> resources, List<String> command, Path logDir,
-      String user, String outFilename) throws IOException {
-    updateEnvForWhitelistVars(environment);
+      String user, String outFilename, LinkedHashSet<String> nmVars)
+      throws IOException {
 
     ContainerLaunch.ShellScriptBuilder sb =
         ContainerLaunch.ShellScriptBuilder.create();
@@ -350,27 +377,49 @@ public abstract class ContainerExecutor implements Configurable {
 
     if (environment != null) {
       sb.echo("Setting up env variables");
-      for (Map.Entry<String, String> env : environment.entrySet()) {
-        sb.env(env.getKey(), env.getValue());
+      // Whitelist environment variables are treated specially.
+      // Only add them if they are not already defined in the environment.
+      // Add them using special syntax to prevent them from eclipsing
+      // variables that may be set explicitly in the container image (e.g,
+      // in a docker image).  Put these before the others to ensure the
+      // correct expansion is used.
+      for(String var : whitelistVars) {
+        if (!environment.containsKey(var)) {
+          String val = getNMEnvVar(var);
+          if (val != null) {
+            sb.whitelistedEnv(var, val);
+          }
+        }
+      }
+      // Now write vars that were set explicitly by nodemanager, preserving
+      // the order they were written in.
+      for (String nmEnvVar : nmVars) {
+        sb.env(nmEnvVar, environment.get(nmEnvVar));
+      }
+      // Now write the remaining environment variables.
+      for (Map.Entry<String, String> env :
+           sb.orderEnvByDependencies(environment).entrySet()) {
+        if (!nmVars.contains(env.getKey())) {
+          sb.env(env.getKey(), env.getValue());
+        }
+      }
+      // Add the whitelist vars to the environment.  Do this after writing
+      // environment variables so they are not written twice.
+      for(String var : whitelistVars) {
+        if (!environment.containsKey(var)) {
+          String val = getNMEnvVar(var);
+          if (val != null) {
+            environment.put(var, val);
+          }
+        }
       }
     }
 
     if (resources != null) {
       sb.echo("Setting up job resources");
-      for (Map.Entry<Path, List<String>> resourceEntry :
-          resources.entrySet()) {
-        for (String linkName : resourceEntry.getValue()) {
-          if (new Path(linkName).getName().equals(WILDCARD)) {
-            // If this is a wildcarded path, link to everything in the
-            // directory from the working directory
-            for (File wildLink : readDirAsUser(user, resourceEntry.getKey())) {
-              sb.symlink(new Path(wildLink.toString()),
-                  new Path(wildLink.getName()));
-            }
-          } else {
-            sb.symlink(resourceEntry.getKey(), new Path(linkName));
-          }
-        }
+      Map<Path, Path> symLinks = resolveSymLinks(resources, user);
+      for (Map.Entry<Path, Path> symLink : symLinks.entrySet()) {
+        sb.symlink(symLink.getKey(), symLink.getValue());
       }
     }
 
@@ -652,23 +701,6 @@ public abstract class ContainerExecutor implements Configurable {
     }
   }
 
-  /**
-   * Propagate variables from the nodemanager's environment into the
-   * container's environment if unspecified by the container.
-   * @param env the environment to update
-   * @see org.apache.hadoop.yarn.conf.YarnConfiguration#NM_ENV_WHITELIST
-   */
-  protected void updateEnvForWhitelistVars(Map<String, String> env) {
-    for(String var : whitelistVars) {
-      if (!env.containsKey(var)) {
-        String val = getNMEnvVar(var);
-        if (val != null) {
-          env.put(var, val);
-        }
-      }
-    }
-  }
-
   @VisibleForTesting
   protected String getNMEnvVar(String varname) {
     return System.getenv(varname);
@@ -749,6 +781,28 @@ public abstract class ContainerExecutor implements Configurable {
   }
 
   /**
+   * Perform any cleanup before the next launch of the container.
+   * @param container         container
+   */
+  public void cleanupBeforeRelaunch(Container container)
+      throws IOException, InterruptedException {
+    if (container.getLocalizedResources() != null) {
+
+      Map<Path, Path> symLinks = resolveSymLinks(
+          container.getLocalizedResources(), container.getUser());
+
+      for (Map.Entry<Path, Path> symLink : symLinks.entrySet()) {
+        LOG.debug("{} deleting {}", container.getContainerId(),
+            symLink.getValue());
+        deleteAsUser(new DeletionAsUserContext.Builder()
+            .setUser(container.getUser())
+            .setSubDir(symLink.getValue())
+            .build());
+      }
+    }
+  }
+
+  /**
    * Get the process-identifier for the container.
    *
    * @param containerID the container ID
@@ -826,5 +880,26 @@ public abstract class ContainerExecutor implements Configurable {
             container.getContainerId(), message));
       }
     }
+  }
+
+  private Map<Path, Path> resolveSymLinks(Map<Path,
+      List<String>> resources, String user) {
+    Map<Path, Path> symLinks = new HashMap<>();
+    for (Map.Entry<Path, List<String>> resourceEntry :
+        resources.entrySet()) {
+      for (String linkName : resourceEntry.getValue()) {
+        if (new Path(linkName).getName().equals(WILDCARD)) {
+          // If this is a wildcarded path, link to everything in the
+          // directory from the working directory
+          for (File wildLink : readDirAsUser(user, resourceEntry.getKey())) {
+            symLinks.put(new Path(wildLink.toString()),
+                new Path(wildLink.getName()));
+          }
+        } else {
+          symLinks.put(resourceEntry.getKey(), new Path(linkName));
+        }
+      }
+    }
+    return symLinks;
   }
 }

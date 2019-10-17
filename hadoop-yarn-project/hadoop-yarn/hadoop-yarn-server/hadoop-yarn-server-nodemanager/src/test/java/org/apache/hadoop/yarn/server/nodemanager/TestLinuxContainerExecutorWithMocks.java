@@ -150,6 +150,7 @@ public class TestLinuxContainerExecutorWithMocks {
     LinuxContainerRuntime linuxContainerRuntime;
     LinuxContainerRuntime mockLinuxContainerRuntime;
 
+    conf.set(YarnConfiguration.NM_LOG_DIRS, "src/test/resources");
     setupMockExecutor(MOCK_EXECUTOR, conf);
     linuxContainerRuntime = new DefaultLinuxContainerRuntime(
         PrivilegedOperationExecutor.getInstance(conf));
@@ -209,6 +210,8 @@ public class TestLinuxContainerExecutorWithMocks {
         .setUserLocalDirs(new ArrayList<>())
         .setContainerLocalDirs(new ArrayList<>())
         .setContainerLogDirs(new ArrayList<>())
+        .setUserFilecacheDirs(new ArrayList<>())
+        .setApplicationLocalDirs(new ArrayList<>())
         .build());
     assertEquals(0, ret);
     assertEquals(Arrays.asList(YarnConfiguration.DEFAULT_NM_NONSECURE_MODE_LOCAL_USER,
@@ -253,8 +256,6 @@ public class TestLinuxContainerExecutorWithMocks {
   
   @Test (timeout = 5000)
   public void testStartLocalizer() throws IOException {
-
-  
     InetSocketAddress address = InetSocketAddress.createUnresolved("localhost", 8040);
     Path nmPrivateCTokensPath= new Path("file:///bin/nmPrivateCTokensPath");
  
@@ -269,20 +270,32 @@ public class TestLinuxContainerExecutorWithMocks {
           .build());
 
       List<String> result=readMockParams();
-      Assert.assertEquals(result.size(), 19);
+      Assert.assertEquals(result.size(), 25);
       Assert.assertEquals(result.get(0), YarnConfiguration.DEFAULT_NM_NONSECURE_MODE_LOCAL_USER);
       Assert.assertEquals(result.get(1), "test");
       Assert.assertEquals(result.get(2), "0" );
-      Assert.assertEquals(result.get(3),"application_0" );
-      Assert.assertEquals(result.get(4), "/bin/nmPrivateCTokensPath");
-      Assert.assertEquals(result.get(8), "-classpath" );
-      Assert.assertEquals(result.get(11), "-Xmx256m" );
-      Assert.assertEquals(result.get(12),"org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.ContainerLocalizer" );
-      Assert.assertEquals(result.get(13), "test");
-      Assert.assertEquals(result.get(14), "application_0");
-      Assert.assertEquals(result.get(15),"12345" );
-      Assert.assertEquals(result.get(16),"localhost" );
-      Assert.assertEquals(result.get(17),"8040" );
+      Assert.assertEquals(result.get(3), "application_0");
+      Assert.assertEquals(result.get(4), "12345");
+      Assert.assertEquals(result.get(5), "/bin/nmPrivateCTokensPath");
+      Assert.assertEquals(result.get(9), "-classpath" );
+      Assert.assertEquals(result.get(12), "-Xmx256m" );
+      Assert.assertEquals(result.get(13),
+          "-Dlog4j.configuration=container-log4j.properties" );
+      Assert.assertEquals(result.get(14),
+          String.format("-Dyarn.app.container.log.dir=%s/application_0/12345",
+          mockExec.getConf().get(YarnConfiguration.NM_LOG_DIRS)));
+      Assert.assertEquals(result.get(15),
+          "-Dyarn.app.container.log.filesize=0");
+      Assert.assertEquals(result.get(16), "-Dhadoop.root.logger=INFO,CLA");
+      Assert.assertEquals(result.get(17),
+          "-Dhadoop.root.logfile=container-localizer-syslog");
+      Assert.assertEquals(result.get(18),
+          "org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.ContainerLocalizer");
+      Assert.assertEquals(result.get(19), "test");
+      Assert.assertEquals(result.get(20), "application_0");
+      Assert.assertEquals(result.get(21), "12345");
+      Assert.assertEquals(result.get(22), "localhost");
+      Assert.assertEquals(result.get(23), "8040");
 
     } catch (InterruptedException e) {
       LOG.error("Error:"+e.getMessage(),e);
@@ -389,6 +402,8 @@ public class TestLinuxContainerExecutorWithMocks {
             .setUserLocalDirs(new ArrayList<>())
             .setContainerLocalDirs(new ArrayList<>())
             .setContainerLogDirs(new ArrayList<>())
+            .setUserFilecacheDirs(new ArrayList<>())
+            .setApplicationLocalDirs(new ArrayList<>())
             .build());
 
         Assert.assertNotSame(0, ret);
@@ -602,6 +617,8 @@ public class TestLinuxContainerExecutorWithMocks {
         .setUserLocalDirs(new ArrayList<>())
         .setContainerLocalDirs(new ArrayList<>())
         .setContainerLogDirs(new ArrayList<>())
+        .setUserFilecacheDirs(new ArrayList<>())
+        .setApplicationLocalDirs(new ArrayList<>())
         .build());
     lce.deleteAsUser(new DeletionAsUserContext.Builder()
         .setUser(appSubmitter)
@@ -656,6 +673,8 @@ public class TestLinuxContainerExecutorWithMocks {
         .setUserLocalDirs(new ArrayList<>())
         .setContainerLocalDirs(new ArrayList<>())
         .setContainerLogDirs(new ArrayList<>())
+        .setUserFilecacheDirs(new ArrayList<>())
+        .setApplicationLocalDirs(new ArrayList<>())
         .build());
     ArgumentCaptor<PrivilegedOperation> opCaptor = ArgumentCaptor.forClass(
         PrivilegedOperation.class);

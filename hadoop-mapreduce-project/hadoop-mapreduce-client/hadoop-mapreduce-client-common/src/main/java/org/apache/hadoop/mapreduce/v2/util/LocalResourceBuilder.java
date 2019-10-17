@@ -22,20 +22,19 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.Map;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapred.InvalidJobConfException;
 import org.apache.hadoop.mapreduce.MRJobConfig;
 import org.apache.hadoop.mapreduce.filecache.DistributedCache;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceType;
 import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
 import org.apache.hadoop.yarn.api.records.URL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Helper class for MR applications that parses distributed cache artifacts and
@@ -45,7 +44,8 @@ import org.apache.hadoop.yarn.api.records.URL;
 @Private
 @Unstable
 class LocalResourceBuilder {
-  public static final Log LOG = LogFactory.getLog(LocalResourceBuilder.class);
+  public static final Logger LOG =
+      LoggerFactory.getLogger(LocalResourceBuilder.class);
 
   private Configuration conf;
   private LocalResourceType type;
@@ -143,10 +143,9 @@ class LocalResourceBuilder {
 
         LocalResource orig = localResources.get(linkName);
         if(orig != null && !orig.getResource().equals(URL.fromURI(p.toUri()))) {
-          throw new InvalidJobConfException(
-              getResourceDescription(orig.getType()) + orig.getResource()
-                  +
-              " conflicts with " + getResourceDescription(type) + u);
+          LOG.warn(getResourceDescription(orig.getType()) + orig.getResource()
+              + " conflicts with " + getResourceDescription(type) + u);
+          continue;
         }
         Boolean sharedCachePolicy = sharedCacheUploadPolicies.get(u.toString());
         sharedCachePolicy =

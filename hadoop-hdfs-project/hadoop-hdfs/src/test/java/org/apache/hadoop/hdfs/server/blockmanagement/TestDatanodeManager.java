@@ -41,6 +41,8 @@ import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
+import org.apache.hadoop.hdfs.HdfsConfiguration;
+import org.apache.hadoop.hdfs.net.DFSNetworkTopology;
 import org.apache.hadoop.hdfs.protocol.DatanodeID;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
 import org.apache.hadoop.hdfs.protocol.ExtendedBlock;
@@ -61,11 +63,13 @@ import org.apache.hadoop.hdfs.server.protocol.SlowDiskReports;
 import org.apache.hadoop.hdfs.server.protocol.SlowPeerReports;
 import org.apache.hadoop.hdfs.server.protocol.StorageReport;
 import org.apache.hadoop.net.DNSToSwitchMapping;
+import org.apache.hadoop.net.NetworkTopology;
 import org.apache.hadoop.util.Shell;
 import org.junit.Assert;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.internal.util.reflection.Whitebox;
+
 import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.*;
 
@@ -300,7 +304,7 @@ public class TestDatanodeManager {
    */
   @Test
   public void testSortLocatedBlocks() throws IOException, URISyntaxException {
-    HelperFunction(null);
+    HelperFunction(null, 0);
   }
 
   /**
@@ -312,7 +316,7 @@ public class TestDatanodeManager {
    */
   @Test
   public void testgoodScript() throws IOException, URISyntaxException {
-    HelperFunction("/" + Shell.appendScriptExtension("topology-script"));
+    HelperFunction("/" + Shell.appendScriptExtension("topology-script"), 0);
   }
 
 
@@ -325,7 +329,22 @@ public class TestDatanodeManager {
    */
   @Test
   public void testBadScript() throws IOException, URISyntaxException {
-    HelperFunction("/"+ Shell.appendScriptExtension("topology-broken-script"));
+    HelperFunction("/" + Shell.appendScriptExtension("topology-broken-script"),
+        0);
+  }
+
+  /**
+   * Test with different sorting functions but include datanodes.
+   * with provided storage
+   * @throws IOException
+   * @throws URISyntaxException
+   */
+  @Test
+  public void testWithProvidedTypes() throws IOException, URISyntaxException {
+    HelperFunction(null, 1);
+    HelperFunction(null, 3);
+    HelperFunction("/" + Shell.appendScriptExtension("topology-script"), 1);
+    HelperFunction("/" + Shell.appendScriptExtension("topology-script"), 2);
   }
 
   /**
@@ -333,11 +352,12 @@ public class TestDatanodeManager {
    * we invoke this function with and without topology scripts
    *
    * @param scriptFileName - Script Name or null
+   * @param providedStorages - number of provided storages to add
    *
    * @throws URISyntaxException
    * @throws IOException
    */
-  public void HelperFunction(String scriptFileName)
+  public void HelperFunction(String scriptFileName, int providedStorages)
     throws URISyntaxException, IOException {
     // create the DatanodeManager which will be tested
     Configuration conf = new Configuration();
@@ -352,17 +372,25 @@ public class TestDatanodeManager {
     }
     DatanodeManager dm = mockDatanodeManager(fsn, conf);
 
+    int totalDNs = 5 + providedStorages;
+
     // register 5 datanodes, each with different storage ID and type
-    DatanodeInfo[] locs = new DatanodeInfo[5];
-    String[] storageIDs = new String[5];
-    StorageType[] storageTypes = new StorageType[]{
-      StorageType.ARCHIVE,
-      StorageType.DEFAULT,
-      StorageType.DISK,
-      StorageType.RAM_DISK,
-      StorageType.SSD
-    };
-    for (int i = 0; i < 5; i++) {
+    DatanodeInfo[] locs = new DatanodeInfo[totalDNs];
+    String[] storageIDs = new String[totalDNs];
+    List<StorageType> storageTypesList = new ArrayList<>(
+        Arrays.asList(StorageType.ARCHIVE,
+            StorageType.DEFAULT,
+            StorageType.DISK,
+            StorageType.RAM_DISK,
+            StorageType.SSD));
+
+    for (int i = 0; i < providedStorages; i++) {
+      storageTypesList.add(StorageType.PROVIDED);
+    }
+
+    StorageType[] storageTypes= storageTypesList.toArray(new StorageType[0]);
+
+    for (int i = 0; i < totalDNs; i++) {
       // register new datanode
       String uuid = "UUID-" + i;
       String ip = "IP-" + i;
@@ -398,9 +426,9 @@ public class TestDatanodeManager {
     DatanodeInfo[] sortedLocs = block.getLocations();
     storageIDs = block.getStorageIDs();
     storageTypes = block.getStorageTypes();
-    assertThat(sortedLocs.length, is(5));
-    assertThat(storageIDs.length, is(5));
-    assertThat(storageTypes.length, is(5));
+    assertThat(sortedLocs.length, is(totalDNs));
+    assertThat(storageIDs.length, is(totalDNs));
+    assertThat(storageTypes.length, is(totalDNs));
     for (int i = 0; i < sortedLocs.length; i++) {
       assertThat(((DatanodeInfoWithStorage) sortedLocs[i]).getStorageID(),
         is(storageIDs[i]));
@@ -414,6 +442,14 @@ public class TestDatanodeManager {
       is(DatanodeInfo.AdminStates.DECOMMISSIONED));
     assertThat(sortedLocs[sortedLocs.length - 2].getAdminState(),
       is(DatanodeInfo.AdminStates.DECOMMISSIONED));
+    // check that the StorageType of datanoodes immediately
+    // preceding the decommissioned datanodes is PROVIDED
+    for (int i = 0; i < providedStorages; i++) {
+      assertThat(
+          ((DatanodeInfoWithStorage)
+              sortedLocs[sortedLocs.length - 3 - i]).getStorageType(),
+          is(StorageType.PROVIDED));
+    }
   }
 
   /**
@@ -589,5 +625,53 @@ public class TestDatanodeManager {
 
     // Approximately load tasks if the ratio between queue length is large.
     verifyPendingRecoveryTasks(400, 1, 20, 20, 1);
+  }
+
+  @Test
+  public void testNetworkTopologyInstantiation() throws Exception {
+    // case 1, dfs.use.dfs.network.topology=true, use the default
+    // DFSNetworkTopology impl.
+    Configuration conf1 = new HdfsConfiguration();
+    FSNamesystem fsn = Mockito.mock(FSNamesystem.class);
+    DatanodeManager dm1 = mockDatanodeManager(fsn, conf1);
+    assertEquals(DFSNetworkTopology.class, dm1.getNetworkTopology().getClass());
+
+    // case 2, dfs.use.dfs.network.topology=false, use the default
+    // NetworkTopology impl.
+    Configuration conf2 = new HdfsConfiguration();
+    conf2.setBoolean(DFSConfigKeys.DFS_USE_DFS_NETWORK_TOPOLOGY_KEY, false);
+    DatanodeManager dm2 = mockDatanodeManager(fsn, conf2);
+    assertEquals(NetworkTopology.class, dm2.getNetworkTopology()
+        .getClass());
+
+    // case 3, dfs.use.dfs.network.topology=false, and specify the
+    // net.topology.impl property.
+    Configuration conf3 = new HdfsConfiguration();
+    conf3.setClass(CommonConfigurationKeysPublic.NET_TOPOLOGY_IMPL_KEY,
+        MockDfsNetworkTopology.class, NetworkTopology.class);
+    conf3.setBoolean(DFSConfigKeys.DFS_USE_DFS_NETWORK_TOPOLOGY_KEY, false);
+    DatanodeManager dm3 = mockDatanodeManager(fsn, conf3);
+    assertEquals(MockDfsNetworkTopology.class, dm3.getNetworkTopology()
+        .getClass());
+
+    // case 4, dfs.use.dfs.network.topology=true, and specify the
+    // dfs.net.topology.impl property.
+    Configuration conf4 = new HdfsConfiguration();
+    conf4.setClass(DFSConfigKeys.DFS_NET_TOPOLOGY_IMPL_KEY,
+            MockDfsNetworkTopology.class, NetworkTopology.class);
+    conf4.setBoolean(DFSConfigKeys.DFS_USE_DFS_NETWORK_TOPOLOGY_KEY, true);
+    DatanodeManager dm4 = mockDatanodeManager(fsn, conf4);
+    assertEquals(MockDfsNetworkTopology.class, dm4.getNetworkTopology()
+        .getClass());
+  }
+
+  /**
+   * A NetworkTopology implementation for test.
+   *
+   */
+  public static class MockDfsNetworkTopology extends DFSNetworkTopology {
+    public MockDfsNetworkTopology(){
+      super();
+    }
   }
 }

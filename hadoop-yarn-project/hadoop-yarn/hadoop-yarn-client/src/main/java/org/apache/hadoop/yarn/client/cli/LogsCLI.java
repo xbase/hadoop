@@ -18,13 +18,25 @@
 
 package org.apache.hadoop.yarn.client.cli;
 
+import com.google.common.annotations.VisibleForTesting;
+import com.sun.jersey.api.client.Client;
+import com.sun.jersey.api.client.ClientHandlerException;
+import com.sun.jersey.api.client.ClientRequest;
+import com.sun.jersey.api.client.ClientResponse;
+import com.sun.jersey.api.client.UniformInterfaceException;
+import com.sun.jersey.api.client.WebResource;
+import com.sun.jersey.api.client.filter.ClientFilter;
+import com.sun.jersey.client.urlconnection.HttpURLConnectionFactory;
+import com.sun.jersey.client.urlconnection.URLConnectionClientHandler;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.net.ConnectException;
+import java.net.HttpURLConnection;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -38,9 +50,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
-
 import javax.ws.rs.core.MediaType;
-
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.GnuParser;
@@ -57,6 +67,8 @@ import org.apache.hadoop.classification.InterfaceStability.Evolving;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.authentication.client.AuthenticatedURL;
+import org.apache.hadoop.security.authentication.client.AuthenticationException;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptReport;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
@@ -78,21 +90,13 @@ import org.codehaus.jettison.json.JSONArray;
 import org.codehaus.jettison.json.JSONException;
 import org.codehaus.jettison.json.JSONObject;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.sun.jersey.api.client.Client;
-import com.sun.jersey.api.client.ClientHandlerException;
-import com.sun.jersey.api.client.ClientRequest;
-import com.sun.jersey.api.client.ClientResponse;
-import com.sun.jersey.api.client.UniformInterfaceException;
-import com.sun.jersey.api.client.WebResource;
-import com.sun.jersey.api.client.filter.ClientFilter;
-
 @Public
 @Evolving
 public class LogsCLI extends Configured implements Tool {
 
   private static final String CONTAINER_ID_OPTION = "containerId";
   private static final String APPLICATION_ID_OPTION = "applicationId";
+  private static final String CLUSTER_ID_OPTION = "clusterId";
   private static final String NODE_ADDRESS_OPTION = "nodeAddress";
   private static final String APP_OWNER_OPTION = "appOwner";
   private static final String AM_CONTAINER_OPTION = "am";
@@ -131,8 +135,21 @@ public class LogsCLI extends Configured implements Tool {
   @Override
   public int run(String[] args) throws Exception {
     try {
-      yarnClient = createYarnClient();
-      webServiceClient = Client.create();
+      webServiceClient = new Client(new URLConnectionClientHandler(
+          new HttpURLConnectionFactory() {
+          @Override
+          public HttpURLConnection getHttpURLConnection(URL url)
+              throws IOException {
+            AuthenticatedURL.Token token = new AuthenticatedURL.Token();
+            HttpURLConnection conn = null;
+            try {
+              conn = new AuthenticatedURL().openConnection(url, token);
+            } catch (AuthenticationException e) {
+              throw new IOException(e);
+            }
+            return conn;
+          }
+        }));
       return runCommand(args);
     } finally {
       if (yarnClient != null) {
@@ -154,6 +171,7 @@ public class LogsCLI extends Configured implements Tool {
     }
     CommandLineParser parser = new GnuParser();
     String appIdStr = null;
+    String clusterIdStr = null;
     String containerIdStr = null;
     String nodeAddress = null;
     String appOwner = null;
@@ -189,6 +207,10 @@ public class LogsCLI extends Configured implements Tool {
           System.err.println(ex.getMessage());
           return -1;
         }
+      }
+      if (commandLine.hasOption(CLUSTER_ID_OPTION)) {
+        clusterIdStr = commandLine.getOptionValue(CLUSTER_ID_OPTION);
+        getConf().set(YarnConfiguration.RM_CLUSTER_ID, clusterIdStr);
       }
       if (commandLine.hasOption(PER_CONTAINER_LOG_FILES_OPTION)) {
         logFiles = commandLine.getOptionValues(PER_CONTAINER_LOG_FILES_OPTION);
@@ -285,6 +307,8 @@ public class LogsCLI extends Configured implements Tool {
 
     LogCLIHelpers logCliHelper = new LogCLIHelpers();
     logCliHelper.setConf(getConf());
+
+    yarnClient = createYarnClient();
 
     YarnApplicationState appState = YarnApplicationState.NEW;
     ApplicationReport appReport = null;
@@ -807,6 +831,8 @@ public class LogsCLI extends Configured implements Tool {
         + "By default, it will print all available logs."
         + " Work with -log_files to get only specific logs. If specified, the"
         + " applicationId can be omitted");
+    opts.addOption(CLUSTER_ID_OPTION, true, "ClusterId. "
+        + "By default, it will take default cluster id from the RM");
     opts.addOption(NODE_ADDRESS_OPTION, true, "NodeAddress in the format "
         + "nodename:port");
     opts.addOption(APP_OWNER_OPTION, true,
@@ -875,6 +901,7 @@ public class LogsCLI extends Configured implements Tool {
         + "and fetch all logs.");
     opts.getOption(APPLICATION_ID_OPTION).setArgName("Application ID");
     opts.getOption(CONTAINER_ID_OPTION).setArgName("Container ID");
+    opts.getOption(CLUSTER_ID_OPTION).setArgName("Cluster ID");
     opts.getOption(NODE_ADDRESS_OPTION).setArgName("Node Address");
     opts.getOption(APP_OWNER_OPTION).setArgName("Application Owner");
     opts.getOption(AM_CONTAINER_OPTION).setArgName("AM Containers");
@@ -896,6 +923,7 @@ public class LogsCLI extends Configured implements Tool {
     Options printOpts = new Options();
     printOpts.addOption(commandOpts.getOption(HELP_CMD));
     printOpts.addOption(commandOpts.getOption(CONTAINER_ID_OPTION));
+    printOpts.addOption(commandOpts.getOption(CLUSTER_ID_OPTION));
     printOpts.addOption(commandOpts.getOption(NODE_ADDRESS_OPTION));
     printOpts.addOption(commandOpts.getOption(APP_OWNER_OPTION));
     printOpts.addOption(commandOpts.getOption(AM_CONTAINER_OPTION));

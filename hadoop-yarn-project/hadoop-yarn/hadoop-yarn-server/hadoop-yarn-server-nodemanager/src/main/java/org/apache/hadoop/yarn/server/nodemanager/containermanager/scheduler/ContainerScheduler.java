@@ -41,6 +41,9 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.monitor.Contai
 
 
 import org.apache.hadoop.yarn.server.nodemanager.metrics.NodeManagerMetrics;
+import org.apache.hadoop.yarn.server.nodemanager.recovery.NMStateStoreService;
+import org.apache.hadoop.yarn.server.nodemanager.recovery.NMStateStoreService
+        .RecoveredContainerState;
 import org.apache.hadoop.yarn.server.nodemanager.recovery.NMStateStoreService.RecoveredContainerStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +71,7 @@ public class ContainerScheduler extends AbstractService implements
       LoggerFactory.getLogger(ContainerScheduler.class);
 
   private final Context context;
+  // Capacity of the queue for opportunistic Containers.
   private final int maxOppQueueLength;
 
   // Queue of Guaranteed Containers waiting for resources to run
@@ -228,11 +232,11 @@ public class ContainerScheduler extends AbstractService implements
    * @param rcs Recovered Container status
    */
   public void recoverActiveContainer(Container container,
-      RecoveredContainerStatus rcs) {
+      RecoveredContainerState rcs) {
     ExecutionType execType =
         container.getContainerTokenIdentifier().getExecutionType();
-    if (rcs == RecoveredContainerStatus.QUEUED
-        || rcs == RecoveredContainerStatus.PAUSED) {
+    if (rcs.getStatus() == RecoveredContainerStatus.QUEUED
+        || rcs.getStatus() == RecoveredContainerStatus.PAUSED) {
       if (execType == ExecutionType.GUARANTEED) {
         queuedGuaranteedContainers.put(container.getContainerId(), container);
       } else if (execType == ExecutionType.OPPORTUNISTIC) {
@@ -243,9 +247,14 @@ public class ContainerScheduler extends AbstractService implements
             "UnKnown execution type received " + container.getContainerId()
                 + ", execType " + execType);
       }
-    } else if (rcs == RecoveredContainerStatus.LAUNCHED) {
+    } else if (rcs.getStatus() == RecoveredContainerStatus.LAUNCHED) {
       runningContainers.put(container.getContainerId(), container);
       utilizationTracker.addContainerResources(container);
+    }
+    if (rcs.getStatus() != RecoveredContainerStatus.COMPLETED
+            && rcs.getCapability() != null) {
+      metrics.launchedContainer();
+      metrics.allocateContainer(rcs.getCapability());
     }
   }
 
@@ -256,6 +265,15 @@ public class ContainerScheduler extends AbstractService implements
   public int getNumQueuedContainers() {
     return this.queuedGuaranteedContainers.size()
         + this.queuedOpportunisticContainers.size();
+  }
+
+  /**
+   * Return the capacity of the queue for opportunistic containers
+   * on this node.
+   * @return queue capacity.
+   */
+  public int getOpportunisticQueueCapacity() {
+    return this.maxOppQueueLength;
   }
 
   @VisibleForTesting
@@ -290,6 +308,8 @@ public class ContainerScheduler extends AbstractService implements
         metrics.getAllocatedOpportunisticVCores());
     this.opportunisticContainersStatus.setRunningOpportContainers(
         metrics.getRunningOpportunisticContainers());
+    this.opportunisticContainersStatus.setOpportQueueCapacity(
+        getOpportunisticQueueCapacity());
     return this.opportunisticContainersStatus;
   }
 
@@ -489,8 +509,11 @@ public class ContainerScheduler extends AbstractService implements
 
   private void startContainer(Container container) {
     LOG.info("Starting container [" + container.getContainerId()+ "]");
-    runningContainers.put(container.getContainerId(), container);
-    this.utilizationTracker.addContainerResources(container);
+    // Skip to put into runningContainers and addUtilization when recover
+    if (!runningContainers.containsKey(container.getContainerId())) {
+      runningContainers.put(container.getContainerId(), container);
+      this.utilizationTracker.addContainerResources(container);
+    }
     if (container.getContainerTokenIdentifier().getExecutionType() ==
         ExecutionType.OPPORTUNISTIC) {
       this.metrics.startOpportunisticContainer(container.getResource());

@@ -117,9 +117,10 @@ public class QueuePriorityContainerCandidateSelector
     return list;
   }
 
-  private void intializePriorityDigraph() {
-    LOG.info("Initializing priority preemption directed graph:");
-
+  private void initializePriorityDigraph() {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Initializing priority preemption directed graph:");
+    }
     // Make sure we iterate all leaf queue combinations
     for (String q1 : preemptionContext.getLeafQueueNames()) {
       for (String q2 : preemptionContext.getLeafQueueNames()) {
@@ -148,12 +149,12 @@ public class QueuePriorityContainerCandidateSelector
           if (p1 < p2) {
             priorityDigraph.put(q2, q1, true);
             if (LOG.isDebugEnabled()) {
-              LOG.info("- Added priority ordering edge: " + q2 + " >> " + q1);
+              LOG.debug("- Added priority ordering edge: " + q2 + " >> " + q1);
             }
           } else if (p2 < p1) {
             priorityDigraph.put(q1, q2, true);
             if (LOG.isDebugEnabled()) {
-              LOG.info("- Added priority ordering edge: " + q1 + " >> " + q2);
+              LOG.debug("- Added priority ordering edge: " + q1 + " >> " + q2);
             }
           }
         }
@@ -379,15 +380,16 @@ public class QueuePriorityContainerCandidateSelector
       Map<ApplicationAttemptId, Set<RMContainer>> selectedCandidates,
       Resource clusterResource,
       Resource totalPreemptedResourceAllowed) {
+    Map<ApplicationAttemptId, Set<RMContainer>> curCandidates = new HashMap<>();
     // Initialize digraph from queues
     // TODO (wangda): only do this when queue refreshed.
     priorityDigraph.clear();
-    intializePriorityDigraph();
+    initializePriorityDigraph();
 
     // When all queues are set to same priority, or priority is not respected,
     // direct return.
     if (priorityDigraph.isEmpty()) {
-      return selectedCandidates;
+      return curCandidates;
     }
 
     // Save parameters to be shared by other methods
@@ -477,13 +479,9 @@ public class QueuePriorityContainerCandidateSelector
                 .getReservedResource());
           }
 
-          Set<RMContainer> containers = selectedCandidates.get(
-              c.getApplicationAttemptId());
-          if (null == containers) {
-            containers = new HashSet<>();
-            selectedCandidates.put(c.getApplicationAttemptId(), containers);
-          }
-          containers.add(c);
+          // Add to preemptMap
+          CapacitySchedulerPreemptionUtils.addToPreemptMap(selectedCandidates,
+              curCandidates, c.getApplicationAttemptId(), c);
 
           // Update totalPreemptionResourceAllowed
           Resources.subtractFrom(totalPreemptedResourceAllowed,
@@ -503,7 +501,6 @@ public class QueuePriorityContainerCandidateSelector
         }
       }
     }
-
-    return selectedCandidates;
+    return curCandidates;
   }
 }

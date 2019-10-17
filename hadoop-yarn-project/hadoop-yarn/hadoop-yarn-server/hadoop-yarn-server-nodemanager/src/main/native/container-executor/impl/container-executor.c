@@ -19,6 +19,8 @@
 #include "configuration.h"
 #include "container-executor.h"
 #include "utils/docker-util.h"
+#include "utils/path-utils.h"
+#include "utils/string-utils.h"
 #include "util.h"
 #include "config.h"
 
@@ -38,11 +40,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <limits.h>
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <sys/wait.h>
 #include <getopt.h>
+#include <sys/param.h>
 
 #ifndef HAVE_FCHMODAT
 #include "compat/fchmodat.h"
@@ -70,6 +74,9 @@ static const char* DEFAULT_BANNED_USERS[] = {"yarn", "mapred", "hdfs", "bin", 0}
 
 static const int DEFAULT_DOCKER_SUPPORT_ENABLED = 0;
 static const int DEFAULT_TC_SUPPORT_ENABLED = 0;
+static const int DEFAULT_MOUNT_CGROUP_SUPPORT_ENABLED = 0;
+
+static const char* PROC_PATH = "/proc";
 
 //location of traffic control binary
 static const char* TC_BIN = "/sbin/tc";
@@ -88,6 +95,8 @@ static gid_t nm_gid = -1;
 
 struct configuration CFG = {.size=0, .sections=NULL};
 struct section executor_cfg = {.size=0, .kv_pairs=NULL};
+
+static char *chosen_container_log_dir = NULL;
 
 char *concatenate(char *concat_pattern, char *return_path_name,
    int numArgs, ...);
@@ -205,10 +214,12 @@ static int change_effective_user(uid_t user, gid_t group) {
  * cgroup_file: Path to cgroup file where pid needs to be written to.
  */
 static int write_pid_to_cgroup_as_root(const char* cgroup_file, pid_t pid) {
+  int rc = 0;
   uid_t user = geteuid();
   gid_t group = getegid();
   if (change_effective_user(0, 0) != 0) {
-    return -1;
+    rc =  -1;
+    goto cleanup;
   }
 
   // open
@@ -216,7 +227,8 @@ static int write_pid_to_cgroup_as_root(const char* cgroup_file, pid_t pid) {
   if (cgroup_fd == -1) {
     fprintf(LOGFILE, "Can't open file %s as node manager - %s\n", cgroup_file,
            strerror(errno));
-    return -1;
+    rc = -1;
+    goto cleanup;
   }
 
   // write pid
@@ -227,15 +239,17 @@ static int write_pid_to_cgroup_as_root(const char* cgroup_file, pid_t pid) {
   if (written == -1) {
     fprintf(LOGFILE, "Failed to write pid to file %s - %s\n",
        cgroup_file, strerror(errno));
-    return -1;
+    rc = -1;
+    goto cleanup;
   }
 
+cleanup:
   // Revert back to the calling user.
   if (change_effective_user(user, group)) {
-    return -1;
+    rc = -1;
   }
 
-  return 0;
+  return rc;
 }
 #endif
 
@@ -244,15 +258,18 @@ static int write_pid_to_cgroup_as_root(const char* cgroup_file, pid_t pid) {
  * pid_file: Path to pid file where pid needs to be written to
  */
 static int write_pid_to_file_as_nm(const char* pid_file, pid_t pid) {
+  int rc = 0;
+  char *temp_pid_file = NULL;
   uid_t user = geteuid();
   gid_t group = getegid();
   if (change_effective_user(nm_uid, nm_gid) != 0) {
     fprintf(ERRORFILE, "Could not change to effective users %d, %d\n", nm_uid, nm_gid);
     fflush(ERRORFILE);
-    return -1;
+    rc = -1;
+    goto cleanup;
   }
 
-  char *temp_pid_file = concatenate("%s.tmp", "pid_file_path", 1, pid_file);
+  temp_pid_file = concatenate("%s.tmp", "pid_file_path", 1, pid_file);
   fprintf(LOGFILE, "Writing to tmp file %s\n", temp_pid_file);
   fflush(LOGFILE);
   // create with 700
@@ -261,8 +278,8 @@ static int write_pid_to_file_as_nm(const char* pid_file, pid_t pid) {
     fprintf(LOGFILE, "Can't open file %s as node manager - %s\n", temp_pid_file,
            strerror(errno));
     fflush(LOGFILE);
-    free(temp_pid_file);
-    return -1;
+    rc = -1;
+    goto cleanup;
   }
 
   // write pid to temp file
@@ -274,8 +291,8 @@ static int write_pid_to_file_as_nm(const char* pid_file, pid_t pid) {
     fprintf(LOGFILE, "Failed to write pid to file %s as node manager - %s\n",
        temp_pid_file, strerror(errno));
     fflush(LOGFILE);
-    free(temp_pid_file);
-    return -1;
+    rc = -1;
+    goto cleanup;
   }
 
   // rename temp file to actual pid file
@@ -285,36 +302,41 @@ static int write_pid_to_file_as_nm(const char* pid_file, pid_t pid) {
         temp_pid_file, pid_file, strerror(errno));
     fflush(LOGFILE);
     unlink(temp_pid_file);
-    free(temp_pid_file);
-    return -1;
+    rc = -1;
+    goto cleanup;
   }
 
+cleanup:
   // Revert back to the calling user.
   if (change_effective_user(user, group)) {
-	free(temp_pid_file);
-    return -1;
+    rc = -1;
   }
 
   free(temp_pid_file);
-  return 0;
+  return rc;
 }
 
 /**
  * Write the exit code of the container into the exit code file
  * exit_code_file: Path to exit code file where exit code needs to be written
  */
-static int write_exit_code_file_as_nm(const char* exit_code_file, int exit_code) {
+static int write_exit_code_file_as_nm(const char* exit_code_file,
+    int exit_code) {
+  char *tmp_ecode_file = NULL;
+  int rc = 0;
   uid_t user = geteuid();
   gid_t group = getegid();
   if (change_effective_user(nm_uid, nm_gid) != 0) {
     fprintf(ERRORFILE, "Could not change to effective users %d, %d\n", nm_uid, nm_gid);
     fflush(ERRORFILE);
-    return -1;
+    rc = -1;
+    goto cleanup;
   }
-  char *tmp_ecode_file = concatenate("%s.tmp", "exit_code_path", 1,
+  tmp_ecode_file = concatenate("%s.tmp", "exit_code_path", 1,
       exit_code_file);
   if (tmp_ecode_file == NULL) {
-    return -1;
+    rc = -1;
+    goto cleanup;
   }
 
   // create with 700
@@ -322,8 +344,8 @@ static int write_exit_code_file_as_nm(const char* exit_code_file, int exit_code)
   if (ecode_fd == -1) {
     fprintf(LOGFILE, "Can't open file %s - %s\n", tmp_ecode_file,
            strerror(errno));
-    free(tmp_ecode_file);
-    return -1;
+    rc = -1;
+    goto cleanup;
   }
 
   char ecode_buf[21];
@@ -333,8 +355,8 @@ static int write_exit_code_file_as_nm(const char* exit_code_file, int exit_code)
   if (written == -1) {
     fprintf(LOGFILE, "Failed to write exit code to file %s - %s\n",
        tmp_ecode_file, strerror(errno));
-    free(tmp_ecode_file);
-    return -1;
+    rc = -1;
+    goto cleanup;
   }
 
   // rename temp file to actual exit code file
@@ -343,19 +365,21 @@ static int write_exit_code_file_as_nm(const char* exit_code_file, int exit_code)
     fprintf(LOGFILE, "Can't move exit code file from %s to %s - %s\n",
         tmp_ecode_file, exit_code_file, strerror(errno));
     unlink(tmp_ecode_file);
-    free(tmp_ecode_file);
-    return -1;
+    rc = -1;
+    goto cleanup;
   }
 
+cleanup:
   // always change back
   if (change_effective_user(user, group) != 0) {
     fprintf(ERRORFILE,
        "Could not change to effective users %d, %d\n", user, group);
     fflush(ERRORFILE);
-    return -1;
+    rc = -1;
   }
+
   free(tmp_ecode_file);
-  return 0;
+  return rc;
 }
 
 static int wait_and_get_exit_code(pid_t pid) {
@@ -438,19 +462,25 @@ int is_feature_enabled(const char* feature_key, int default_value,
     int enabled = default_value;
 
     if (enabled_str != NULL) {
-        char *end_ptr = NULL;
-        enabled = strtol(enabled_str, &end_ptr, 10);
+        if (strcasecmp(enabled_str, "true") == 0) {
+            enabled = 1;
+        } else if (strcasecmp(enabled_str, "false") == 0) {
+            enabled = 0;
+        } else {
+            char *end_ptr = NULL;
+            enabled = strtol(enabled_str, &end_ptr, 10);
 
-        if ((enabled_str == end_ptr || *end_ptr != '\0') ||
-            (enabled < 0 || enabled > 1)) {
-              fprintf(LOGFILE, "Illegal value '%s' for '%s' in configuration. "
-              "Using default value: %d.\n", enabled_str, feature_key,
-              default_value);
-              fflush(LOGFILE);
-              free(enabled_str);
-              return default_value;
+            if ((enabled_str == end_ptr || *end_ptr != '\0') ||
+                (enabled < 0 || enabled > 1)) {
+                  fprintf(LOGFILE, "Illegal value '%s' for '%s' in configuration. "
+                  "Using default value: %d.\n", enabled_str, feature_key,
+                  default_value);
+                  fflush(LOGFILE);
+                  free(enabled_str);
+                  return default_value;
+            }
+
         }
-
         free(enabled_str);
         return enabled;
     } else {
@@ -467,6 +497,12 @@ int is_docker_support_enabled() {
 int is_tc_support_enabled() {
     return is_feature_enabled(TC_SUPPORT_ENABLED_KEY,
     DEFAULT_TC_SUPPORT_ENABLED, &executor_cfg);
+}
+
+int is_mount_cgroups_support_enabled() {
+    return is_feature_enabled(MOUNT_CGROUP_SUPPORT_ENABLED_KEY,
+                              DEFAULT_MOUNT_CGROUP_SUPPORT_ENABLED,
+                              &executor_cfg);
 }
 
 /**
@@ -517,7 +553,41 @@ char *get_app_directory(const char * nm_root, const char *user,
  * Get the user directory of a particular user
  */
 char *get_user_directory(const char *nm_root, const char *user) {
+  int result = check_nm_local_dir(nm_uid, nm_root);
+  if (result != 0) {
+    return NULL;
+  }
   return concatenate(USER_DIR_PATTERN, "user_dir_path", 2, nm_root, user);
+}
+
+/**
+ * Get the user private filecache directory of a particular user
+ */
+char *get_user_filecache_directory(const char *nm_root, const char *user) {
+  int result = check_nm_local_dir(nm_uid, nm_root);
+  if (result != 0) {
+    return NULL;
+  }
+  return concatenate(USER_FILECACHE_DIR_PATTERN, "user_filecache_dir_path", 2,
+      nm_root, user);
+}
+
+/**
+ * Check node manager local dir permission.
+ */
+int check_nm_local_dir(uid_t caller_uid, const char *nm_root) {
+  struct stat info;
+  errno = 0;
+  int err = stat(nm_root, &info);
+  if (err < 0) {
+    fprintf(LOGFILE, "Error checking file stats for %s %d %s.\n", nm_root, err, strerror(errno));
+    return 1;
+  }
+  if (caller_uid != info.st_uid) {
+    fprintf(LOGFILE, "Permission mismatch for %s for caller uid: %d, owner uid: %d.\n", nm_root, caller_uid, info.st_uid);
+    return 1;
+  }
+  return 0;
 }
 
 /**
@@ -666,6 +736,11 @@ static int create_container_directories(const char* user, const char *app_id,
   for(local_dir_ptr = local_dir; *local_dir_ptr != NULL; ++local_dir_ptr) {
     char *container_dir = get_container_work_directory(*local_dir_ptr, user, app_id,
                                                 container_id);
+    int check = check_nm_local_dir(nm_uid, *local_dir_ptr);
+    if (check != 0) {
+      free(container_dir);
+      continue;
+    }
     if (container_dir == NULL) {
       return OUT_OF_MEMORY;
     }
@@ -688,18 +763,26 @@ static int create_container_directories(const char* user, const char *app_id,
     result = OUT_OF_MEMORY;
   } else {
     sprintf(combined_name, "%s/%s", app_id, container_id);
-
     char* const* log_dir_ptr;
     for(log_dir_ptr = log_dir; *log_dir_ptr != NULL; ++log_dir_ptr) {
       char *container_log_dir = get_app_log_directory(*log_dir_ptr, combined_name);
+      int check = check_nm_local_dir(nm_uid, *log_dir_ptr);
+      if (check != 0) {
+        container_log_dir = NULL;
+      }
+      if (strstr(container_log_dir, "..") != 0) {
+        fprintf(LOGFILE, "Unsupported container log directory path detected.\n");
+        container_log_dir = NULL;
+      }
       if (container_log_dir == NULL) {
         free(combined_name);
         return OUT_OF_MEMORY;
       } else if (mkdirs(container_log_dir, perms) != 0) {
-    	free(container_log_dir);
+        free(container_log_dir);
       } else {
-    	result = 0;
-    	free(container_log_dir);
+        result = 0;
+        chosen_container_log_dir = strdup(container_log_dir);
+        free(container_log_dir);
       }
     }
     free(combined_name);
@@ -742,7 +825,7 @@ static struct passwd* get_user_info(const char* user) {
         string_size, &result) != 0) {
     free(buffer);
     fprintf(LOGFILE, "Can't get user information %s - %s\n", user,
-	    strerror(errno));
+           strerror(errno));
     return NULL;
   }
   return result;
@@ -963,13 +1046,20 @@ static int open_file_as_nm(const char* filename) {
 static int copy_file(int input, const char* in_filename,
 		     const char* out_filename, mode_t perm) {
   const int buffer_size = 128*1024;
-  char buffer[buffer_size];
+  char* buffer = malloc(buffer_size);
+  if (buffer == NULL) {
+    fprintf(LOGFILE, "Failed to allocate buffer while copying file: %s -> %s",
+      in_filename, out_filename);
+    fflush(LOGFILE);
+    return -1;
+  }
 
   int out_fd = open(out_filename, O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW, perm);
   if (out_fd == -1) {
     fprintf(LOGFILE, "Can't open %s for output - %s\n", out_filename,
             strerror(errno));
     fflush(LOGFILE);
+    free(buffer);
     return -1;
   }
 
@@ -979,15 +1069,18 @@ static int copy_file(int input, const char* in_filename,
     while (pos < len) {
       ssize_t write_result = write(out_fd, buffer + pos, len - pos);
       if (write_result <= 0) {
-	fprintf(LOGFILE, "Error writing to %s - %s\n", out_filename,
-		strerror(errno));
-	close(out_fd);
-	return -1;
+        fprintf(LOGFILE, "Error writing to %s - %s\n", out_filename,
+          strerror(errno));
+        close(out_fd);
+        free(buffer);
+        return -1;
       }
       pos += write_result;
     }
     len = read(input, buffer, buffer_size);
   }
+  free(buffer);
+
   if (len < 0) {
     fprintf(LOGFILE, "Failed to read file %s - %s\n", in_filename,
 	    strerror(errno));
@@ -1027,11 +1120,15 @@ int initialize_user(const char *user, char* const* local_dirs) {
 }
 
 int create_log_dirs(const char *app_id, char * const * log_dirs) {
-
   char* const* log_root;
   char *any_one_app_log_dir = NULL;
   for(log_root=log_dirs; *log_root != NULL; ++log_root) {
     char *app_log_dir = get_app_log_directory(*log_root, app_id);
+    int result = check_nm_local_dir(nm_uid, *log_root);
+    if (result != 0 && app_log_dir != NULL) {
+      free(app_log_dir);
+      app_log_dir = NULL;
+    }
     if (app_log_dir == NULL) {
       // try the next one
     } else if (create_directory_for_user(app_log_dir) != 0) {
@@ -1052,11 +1149,90 @@ int create_log_dirs(const char *app_id, char * const * log_dirs) {
   return 0;
 }
 
+char* get_container_log_directory(const char *log_root, const char* app_id,
+                                  const char *container_id) {
+  return concatenate("%s/%s/%s", "container log dir", 3, log_root, app_id,
+                     container_id);
+}
+
+char *init_log_path(const char *container_log_dir, const char *logfile) {
+  char *tmp_buffer = NULL;
+  tmp_buffer = make_string("%s/%s", container_log_dir, logfile);
+
+  mode_t permissions = S_IRUSR | S_IWUSR | S_IRGRP;
+  int fd = open(tmp_buffer, O_CREAT | O_WRONLY, permissions);
+  if (fd >= 0) {
+    close(fd);
+    if (change_owner(tmp_buffer, user_detail->pw_uid, nm_gid) != 0) {
+      fprintf(ERRORFILE, "Failed to chown %s to %d:%d: %s\n", tmp_buffer, user_detail->pw_uid, nm_gid,
+          strerror(errno));
+      free(tmp_buffer);
+      tmp_buffer = NULL;
+    } else if (chmod(tmp_buffer, permissions) != 0) {
+      fprintf(ERRORFILE, "Can't chmod %s - %s\n",
+              tmp_buffer, strerror(errno));
+      free(tmp_buffer);
+      tmp_buffer = NULL;
+    }
+  } else {
+    fprintf(ERRORFILE, "Failed to create file %s - %s\n", tmp_buffer,
+            strerror(errno));
+    free(tmp_buffer);
+    tmp_buffer = NULL;
+  }
+  return tmp_buffer;
+}
+
+int create_container_log_dirs(const char *container_id, const char *app_id,
+                              char * const * log_dirs) {
+  char* const* log_root;
+  int created_any_dir = 0;
+  for(log_root=log_dirs; *log_root != NULL; ++log_root) {
+    char *container_log_dir = get_container_log_directory(*log_root, app_id,
+                        container_id);
+
+    if (container_log_dir == NULL) {
+      fprintf(LOGFILE,
+              "Failed to get container log directory name! Log root directory: %s, App id: %s, Container id: %s\n",
+              *log_root, app_id, container_id);
+      continue;
+    }
+
+    int result = check_nm_local_dir(nm_uid, *log_root);
+    if (result != 0 && container_log_dir != NULL) {
+      fprintf(LOGFILE, "Unsupported container log directory path (%s) detected.\n",
+              container_log_dir);
+      free(container_log_dir);
+      container_log_dir = NULL;
+      continue;
+    }
+
+    if (create_directory_for_user(container_log_dir) != 0) {
+      fprintf(LOGFILE, "Failed to create container log directory (%s)!\n",
+              container_log_dir);
+      free(container_log_dir);
+      return -1;
+    }
+
+    if (!created_any_dir) {
+      created_any_dir = 1;
+    }
+
+    free(container_log_dir);
+  }
+
+  if (!created_any_dir) {
+    fprintf(LOGFILE, "Did not create any container log directory.\n");
+    return -1;
+  }
+  return 0;
+}
 
 /**
  * Function to prepare the application directories for the container.
  */
 int initialize_app(const char *user, const char *app_id,
+                   const char *container_id,
                    const char* nmPrivate_credentials_file,
                    char* const* local_dirs, char* const* log_roots,
                    char* const* args) {
@@ -1075,6 +1251,13 @@ int initialize_app(const char *user, const char *app_id,
   int log_create_result = create_log_dirs(app_id, log_roots);
   if (log_create_result != 0) {
     return log_create_result;
+  }
+
+  // create the log directories for the container on all disks
+  int container_log_create_result = create_container_log_dirs(container_id,
+                                    app_id, log_roots);
+  if (container_log_create_result != 0) {
+    return container_log_create_result;
   }
 
   // open up the credentials file
@@ -1145,45 +1328,78 @@ int initialize_app(const char *user, const char *app_id,
   return -1;
 }
 
-char *construct_docker_command(const char *command_file) {
+char **construct_docker_command(const char *command_file) {
   int ret = 0;
-  size_t command_size = MIN(sysconf(_SC_ARG_MAX), 128*1024);
-  char *buffer = alloc_and_clear_memory(command_size, sizeof(char));
-  ret = get_docker_command(command_file, &CFG, buffer, command_size);
+  struct args buffer = ARGS_INITIAL_VALUE;
+  uid_t user = geteuid();
+  gid_t group = getegid();
+  if (change_effective_user(nm_uid, nm_gid) != 0) {
+    fprintf(ERRORFILE, "Cannot change effective user to nm");
+    fflush(ERRORFILE);
+    exit(SETUID_OPER_FAILED);
+  }
+  ret = get_docker_command(command_file, &CFG, &buffer);
   if (ret != 0) {
     fprintf(ERRORFILE, "Error constructing docker command, docker error code=%d, error message='%s'\n", ret,
             get_docker_error_message(ret));
     fflush(ERRORFILE);
     exit(DOCKER_RUN_FAILED);
   }
-  return buffer;
+
+  if (change_effective_user(user, group)) {
+    fprintf(ERRORFILE, "Cannot change effective user from nm back to original");
+    fflush(ERRORFILE);
+    exit(SETUID_OPER_FAILED);
+  }
+
+  char** copy = extract_execv_args(&buffer);
+  return copy;
 }
 
 int run_docker(const char *command_file) {
-  char* docker_command = construct_docker_command(command_file);
+  char **args = construct_docker_command(command_file);
   char* docker_binary = get_docker_binary(&CFG);
-  size_t command_size = MIN(sysconf(_SC_ARG_MAX), 128*1024);
-
-  char* docker_command_with_binary = alloc_and_clear_memory(command_size, sizeof(char));
-  snprintf(docker_command_with_binary, command_size, "%s %s", docker_binary, docker_command);
-  fprintf(LOGFILE, "Invoking '%s'\n", docker_command_with_binary);
-  char **args = split_delimiter(docker_command_with_binary, " ");
-
   int exit_code = -1;
   if (execvp(docker_binary, args) != 0) {
     fprintf(ERRORFILE, "Couldn't execute the container launch with args %s - %s",
               docker_binary, strerror(errno));
-      fflush(LOGFILE);
-      fflush(ERRORFILE);
-      free(docker_binary);
-      free(args);
-      free(docker_command_with_binary);
-      free(docker_command);
-      exit_code = DOCKER_RUN_FAILED;
+    fflush(LOGFILE);
+    fflush(ERRORFILE);
+    free(docker_binary);
+    free_values(args);
+    exit_code = DOCKER_RUN_FAILED;
   } else {
+    free_values(args);
     exit_code = 0;
   }
   return exit_code;
+}
+
+int exec_docker_command(char *docker_command, char **argv, int argc) {
+  int i;
+  char* docker_binary = get_docker_binary(&CFG);
+  size_t command_size = argc + 2;
+
+  char **args = alloc_and_clear_memory(command_size + 1, sizeof(char *));
+  args[0] = docker_binary;
+  args[1] = docker_command;
+  for(i = 2; i < command_size; i++) {
+    args[i] = (char *) argv[i - 2];
+  }
+  args[i] = NULL;
+
+  execvp(docker_binary, args);
+
+  // will only get here if execvp fails
+  fprintf(ERRORFILE, "Couldn't execute the container launch with args %s - %s\n",
+      docker_binary, strerror(errno));
+  fflush(LOGFILE);
+  fflush(ERRORFILE);
+
+  free(docker_binary);
+  free(args);
+
+  return DOCKER_RUN_FAILED;
 }
 
 int create_script_paths(const char *work_dir,
@@ -1278,7 +1494,7 @@ int create_local_dirs(const char * user, const char *app_id,
 
   // Copy script file with permissions 700
   if (copy_file(container_file_source, script_name, script_file_dest,S_IRWXU) != 0) {
-    fprintf(ERRORFILE, "Could not create copy file %d %s\n", container_file_source, script_file_dest);
+    fprintf(ERRORFILE, "Could not create copy file %s %s (%d)\n", script_name, script_file_dest, container_file_source);
     fflush(ERRORFILE);
     exit_code = COULD_NOT_CREATE_SCRIPT_COPY;
     goto cleanup;
@@ -1304,39 +1520,49 @@ int create_local_dirs(const char * user, const char *app_id,
   return exit_code;
 }
 
+// create the user file directory on all disks
+int create_user_filecache_dirs(const char * user, char* const* local_dirs) {
+  int rc = 0;
+  const mode_t permissions = S_IRWXU | S_IXGRP;
+  for(char* const* ldir_p = local_dirs; *ldir_p != 0; ++ldir_p) {
+    char* filecache_dir = get_user_filecache_directory(*ldir_p, user);
+    if (filecache_dir == NULL) {
+      fprintf(LOGFILE, "Couldn't get user filecache directory for %s.\n", user);
+      rc = INITIALIZE_USER_FAILED;
+      break;
+    }
+    if (0 != mkdir(filecache_dir, permissions) && EEXIST != errno) {
+      fprintf(LOGFILE, "Failed to create directory %s - %s\n", filecache_dir,
+              strerror(errno));
+      free(filecache_dir);
+      rc = INITIALIZE_USER_FAILED;
+      break;
+    }
+    free(filecache_dir);
+  }
+  return rc;
+}
+
 int launch_docker_container_as_user(const char * user, const char *app_id,
                               const char *container_id, const char *work_dir,
                               const char *script_name, const char *cred_file,
                               const char *pid_file, char* const* local_dirs,
-                              char* const* log_dirs, const char *command_file,
-                              const char *resources_key,
-                              char* const* resources_values) {
+                              char* const* log_dirs, const char *command_file) {
   int exit_code = -1;
   char *script_file_dest = NULL;
   char *cred_file_dest = NULL;
   char *exit_code_file = NULL;
   char *docker_command_with_binary = NULL;
-  char *docker_wait_command = NULL;
-  char *docker_logs_command = NULL;
   char *docker_inspect_command = NULL;
-  char *docker_rm_command = NULL;
+  char *docker_inspect_exitcode_command = NULL;
   int container_file_source =-1;
   int cred_file_source = -1;
-  int BUFFER_SIZE = 4096;
-  char buffer[BUFFER_SIZE];
-
-  size_t command_size = MIN(sysconf(_SC_ARG_MAX), 128*1024);
-
-  docker_command_with_binary = (char *) alloc_and_clear_memory(command_size, sizeof(char));
-  docker_wait_command = (char *) alloc_and_clear_memory(command_size, sizeof(char));
-  docker_logs_command = (char *) alloc_and_clear_memory(command_size, sizeof(char));
-  docker_inspect_command = (char *) alloc_and_clear_memory(command_size, sizeof(char));
-  docker_rm_command = (char *) alloc_and_clear_memory(command_size, sizeof(char));
+  int use_entry_point = 0;
 
   gid_t user_gid = getegid();
   uid_t prev_uid = geteuid();
 
-  char *docker_command = NULL;
+  char **docker_command = NULL;
   char *docker_binary = NULL;
 
   fprintf(LOGFILE, "Creating script paths...\n");
@@ -1360,6 +1586,13 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
     goto cleanup;
   }
 
+  exit_code = create_user_filecache_dirs(user, local_dirs);
+  if (exit_code != 0) {
+    fprintf(ERRORFILE, "Could not create user filecache directory");
+    fflush(ERRORFILE);
+    goto cleanup;
+  }
+
   docker_command = construct_docker_command(command_file);
   docker_binary = get_docker_binary(&CFG);
 
@@ -1379,27 +1612,114 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
     goto cleanup;
   }
 
-  snprintf(docker_command_with_binary, command_size, "%s %s", docker_binary, docker_command);
+  use_entry_point = get_use_entry_point_flag();
+  char *so = init_log_path(chosen_container_log_dir, "stdout.txt");
+  if (so == NULL) {
+    exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+    goto cleanup;
+  }
+  char *se = init_log_path(chosen_container_log_dir, "stderr.txt");
+  if (se == NULL) {
+    exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+    goto cleanup;
+  }
 
-  fprintf(LOGFILE, "Launching docker container...\n");
-  FILE* start_docker = popen(docker_command_with_binary, "r");
-  if (pclose (start_docker) != 0)
-  {
+  docker_command_with_binary = flatten(docker_command);
+
+  // Launch container
+  pid_t child_pid = fork();
+  if (child_pid == -1) {
     fprintf (ERRORFILE,
-     "Could not invoke docker %s.\n", docker_command_with_binary);
+      "Could not invoke docker %s.\n", docker_command_with_binary);
     fflush(ERRORFILE);
     exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
     goto cleanup;
   }
 
-  snprintf(docker_inspect_command, command_size,
+  if (child_pid == 0) {
+    FILE* so_fd = fopen(so, "a+");
+    if (so_fd == NULL) {
+      fprintf(ERRORFILE, "Could not append to %s\n", so);
+      exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+      goto cleanup;
+    }
+    FILE* se_fd = fopen(se, "a+");
+    if (se_fd == NULL) {
+      fprintf(ERRORFILE, "Could not append to %s\n", se);
+      exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+      fclose(so_fd);
+      goto cleanup;
+    }
+    // if entry point is enabled, clone docker command output
+    // to stdout.txt and stderr.txt for yarn.
+    if (use_entry_point) {
+      fprintf(so_fd, "Launching docker container...\n");
+      fprintf(so_fd, "Docker run command: %s\n", docker_command_with_binary);
+      if (dup2(fileno(so_fd), fileno(stdout)) == -1) {
+        fprintf(ERRORFILE, "Could not append to stdout.txt\n");
+        fclose(so_fd);
+        return UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+      }
+      if (dup2(fileno(se_fd), fileno(stderr)) == -1) {
+        fprintf(ERRORFILE, "Could not append to stderr.txt\n");
+        fclose(se_fd);
+        return UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+      }
+    }
+    fclose(so_fd);
+    fclose(se_fd);
+    execvp(docker_binary, docker_command);
+    fprintf(ERRORFILE, "failed to execute docker command! error: %s\n", strerror(errno));
+    return UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+  } else {
+    if (use_entry_point) {
+      int pid = 0;
+      int res = 0;
+      int count = 0;
+      int max_retries = get_max_retries(&CFG);
+      docker_inspect_command = make_string(
+          "%s inspect --format {{.State.Pid}} %s",
+          docker_binary, container_id);
+      // check for docker container pid
+      while (count < max_retries) {
+        fprintf(LOGFILE, "Inspecting docker container...\n");
+        fprintf(LOGFILE, "Docker inspect command: %s\n", docker_inspect_command);
+        fflush(LOGFILE);
+        FILE* inspect_docker = popen(docker_inspect_command, "r");
+        res = fscanf (inspect_docker, "%d", &pid);
+        fprintf(LOGFILE, "pid from docker inspect: %d\n", pid);
+        if (pclose (inspect_docker) != 0 || res <= 0) {
+          fprintf (ERRORFILE,
+              "Could not inspect docker to get pid %s.\n", docker_inspect_command);
+          fflush(ERRORFILE);
+          exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+        } else {
+          if (pid != 0) {
+            break;
+          }
+        }
+        sleep(3);
+        count++;
+      }
+    } else {
+      exit_code = wait_and_get_exit_code(child_pid);
+      if (exit_code != 0) {
+        exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+        goto cleanup;
+      }
+    }
+  }
+
+  docker_inspect_command = make_string(
     "%s inspect --format {{.State.Pid}} %s",
     docker_binary, container_id);
 
   fprintf(LOGFILE, "Inspecting docker container...\n");
+  fprintf(LOGFILE, "Docker inspect command: %s\n", docker_inspect_command);
   FILE* inspect_docker = popen(docker_inspect_command, "r");
   int pid = 0;
   int res = fscanf (inspect_docker, "%d", &pid);
+  fprintf(LOGFILE, "pid from docker inspect: %d\n", pid);
   if (pclose (inspect_docker) != 0 || res <= 0)
   {
     fprintf (ERRORFILE,
@@ -1410,23 +1730,6 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
   }
 
   if (pid != 0) {
-#ifdef __linux
-    fprintf(LOGFILE, "Writing to cgroup task files...\n");
-    // cgroups-based resource enforcement
-    if (resources_key != NULL && ! strcmp(resources_key, "cgroups")) {
-      // write pid to cgroups
-      char* const* cgroup_ptr;
-      for (cgroup_ptr = resources_values; cgroup_ptr != NULL &&
-          *cgroup_ptr != NULL; ++cgroup_ptr) {
-        if (strcmp(*cgroup_ptr, "none") != 0 &&
-             write_pid_to_cgroup_as_root(*cgroup_ptr, pid) != 0) {
-          exit_code = WRITE_CGROUP_FAILED;
-          goto cleanup;
-        }
-      }
-    }
-#endif
-
     // write pid to pidfile
     fprintf(LOGFILE, "Writing pid file...\n");
     if (pid_file == NULL
@@ -1437,61 +1740,47 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
       goto cleanup;
     }
 
-    snprintf(docker_wait_command, command_size,
-      "%s wait %s", docker_binary, container_id);
+    fprintf(LOGFILE, "Waiting for docker container to finish.\n");
 
-    fprintf(LOGFILE, "Waiting for docker container to finish...\n");
-    FILE* wait_docker = popen(docker_wait_command, "r");
-    res = fscanf (wait_docker, "%d", &exit_code);
-    if (pclose (wait_docker) != 0 || res <= 0) {
-      fprintf (ERRORFILE,
-       "Could not attach to docker; is container dead? %s.\n", docker_wait_command);
+    // wait for pid to finish
+#ifdef __linux
+    char* proc_pid_path = make_string("%s/%d", PROC_PATH, pid);
+    while (dir_exists(proc_pid_path) == 0) {
+      sleep(1);
+    }
+    if (dir_exists(proc_pid_path) == -1) {
+      fprintf(ERRORFILE, "Error occurred checking %s\n", proc_pid_path);
       fflush(ERRORFILE);
     }
-    if(exit_code != 0) {
-      fprintf(ERRORFILE, "Docker container exit code was not zero: %d\n",
-      exit_code);
-      snprintf(docker_logs_command, command_size, "%s logs --tail=250 %s",
-        docker_binary, container_id);
-      FILE* logs = popen(docker_logs_command, "r");
-      if(logs != NULL) {
-        clearerr(logs);
-        res = fread(buffer, BUFFER_SIZE, 1, logs);
-        if(res < 1) {
-          fprintf(ERRORFILE, "%s %d %d\n",
-            "Unable to read from docker logs(ferror, feof):", ferror(logs), feof(logs));
-          fflush(ERRORFILE);
-        }
-        else {
-          fprintf(ERRORFILE, "%s\n", buffer);
-          fflush(ERRORFILE);
-        }
-      }
-      else {
-        fprintf(ERRORFILE, "%s\n", "Failed to get output of docker logs");
-        fprintf(ERRORFILE, "Command was '%s'\n", docker_logs_command);
-        fprintf(ERRORFILE, "%s\n", strerror(errno));
-        fflush(ERRORFILE);
-      }
-      if(pclose(logs) != 0) {
-        fprintf(ERRORFILE, "%s\n", "Failed to fetch docker logs");
-        fflush(ERRORFILE);
-      }
+#else
+    while (kill(pid,0) == 0) {
+      sleep(1);
     }
+#endif
   }
 
-  fprintf(LOGFILE, "Removing docker container post-exit...\n");
-  snprintf(docker_rm_command, command_size,
-    "%s rm %s", docker_binary, container_id);
-  FILE* rm_docker = popen(docker_rm_command, "w");
-  if (pclose (rm_docker) != 0)
-  {
-    fprintf (ERRORFILE,
-     "Could not remove container %s.\n", docker_rm_command);
+  // discover container exit code
+  docker_inspect_exitcode_command = make_string(
+    "%s inspect --format {{.State.ExitCode}} %s",
+  docker_binary, container_id);
+  fprintf(LOGFILE, "Obtaining the exit code...\n");
+  fprintf(LOGFILE, "Docker inspect command: %s\n", docker_inspect_exitcode_command);
+  FILE* inspect_exitcode_docker = popen(docker_inspect_exitcode_command, "r");
+  if(inspect_exitcode_docker == NULL) {
+    fprintf(ERRORFILE, "Done with inspect_exitcode, inspect_exitcode_docker is null\n");
     fflush(ERRORFILE);
-    exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+    exit_code = -1;
     goto cleanup;
   }
+  res = fscanf (inspect_exitcode_docker, "%d", &exit_code);
+  if (pclose (inspect_exitcode_docker) != 0 || res <= 0) {
+  fprintf (ERRORFILE,
+   "Could not inspect docker to get exitcode:  %s.\n", docker_inspect_exitcode_command);
+    fflush(ERRORFILE);
+    exit_code = -1;
+    goto cleanup;
+  }
+  fprintf(LOGFILE, "Exit code from docker inspect: %d\n", exit_code);
 
 cleanup:
 
@@ -1500,6 +1789,7 @@ cleanup:
       "Could not write exit code to file %s.\n", exit_code_file);
     fflush(ERRORFILE);
   }
+  fprintf(LOGFILE, "Wrote the exit code %d to %s\n", exit_code, exit_code_file);
 
   // Drop root privileges
   if (change_effective_user(prev_uid, user_gid) != 0) {
@@ -1522,10 +1812,8 @@ cleanup:
   free(script_file_dest);
   free(cred_file_dest);
   free(docker_command_with_binary);
-  free(docker_wait_command);
-  free(docker_logs_command);
   free(docker_inspect_command);
-  free(docker_rm_command);
+  free_values(docker_command);
   return exit_code;
 }
 
@@ -2061,25 +2349,52 @@ void chown_dir_contents(const char *dir_path, uid_t uid, gid_t gid) {
   DIR *dp;
   struct dirent *ep;
 
-  char *path_tmp = malloc(strlen(dir_path) + NAME_MAX + 2);
+  size_t len = strlen(dir_path) + NAME_MAX + 2;
+  char *path_tmp = malloc(len);
   if (path_tmp == NULL) {
     return;
   }
 
-  char *buf = stpncpy(path_tmp, dir_path, strlen(dir_path));
-  *buf++ = '/';
-
   dp = opendir(dir_path);
   if (dp != NULL) {
     while ((ep = readdir(dp)) != NULL) {
-      stpncpy(buf, ep->d_name, strlen(ep->d_name));
-      buf[strlen(ep->d_name)] = '\0';
-      change_owner(path_tmp, uid, gid);
+      if (strcmp(ep->d_name, ".") != 0 &&
+          strcmp(ep->d_name, "..") != 0 &&
+          strstr(ep->d_name, "..") == NULL) {
+        int result = snprintf(path_tmp, len, "%s/%s", dir_path, ep->d_name);
+        if (result > 0 && result < len) {
+          change_owner(path_tmp, uid, gid);
+        } else {
+          fprintf(LOGFILE, "Ignored %s/%s due to length", dir_path, ep->d_name);
+        }
+      }
     }
     closedir(dp);
   }
 
   free(path_tmp);
+}
+
+int is_empty(char *target_dir) {
+  DIR *dir = NULL;
+  struct dirent *entry = NULL;
+  dir = opendir(target_dir);
+  if (!dir) {
+    fprintf(LOGFILE, "Could not open directory %s - %s\n", target_dir,
+            strerror(errno));
+    return 0;
+  }
+  while ((entry = readdir(dir)) != NULL) {
+    if (strcmp(entry->d_name, ".") == 0) {
+      continue;
+    }
+    if (strcmp(entry->d_name, "..") == 0) {
+      continue;
+    }
+    fprintf(LOGFILE, "Directory is not empty %s\n", target_dir);
+    return 0;
+  }
+  return 1;
 }
 
 /**
@@ -2098,11 +2413,16 @@ int mount_cgroup(const char *pair, const char *hierarchy) {
   char *mount_path = malloc(len);
   char hier_path[EXECUTOR_PATH_MAX];
   int result = 0;
-  struct stat sb;
 
   if (controller == NULL || mount_path == NULL) {
     fprintf(LOGFILE, "Failed to mount cgroup controller; not enough memory\n");
     result = OUT_OF_MEMORY;
+    goto cleanup;
+  }
+  if (hierarchy == NULL || strstr(hierarchy, "..") != NULL) {
+    fprintf(LOGFILE, "Unsupported cgroup hierarhy path detected.\n");
+    result = INVALID_COMMAND_PROVIDED;
+    goto cleanup;
   }
   if (get_kv_key(pair, controller, len) < 0 ||
       get_kv_value(pair, mount_path, len) < 0) {
@@ -2110,13 +2430,16 @@ int mount_cgroup(const char *pair, const char *hierarchy) {
               pair);
     result = -1;
   } else {
-    if (stat(mount_path, &sb) != 0) {
-      // Create mount point, if it does not exist
-      const mode_t mount_perms = S_IRWXU | S_IRGRP | S_IXGRP;
-      if (mkdirs(mount_path, mount_perms) == 0) {
-        fprintf(LOGFILE, "Failed to create cgroup mount point %s at %s\n",
-          controller, mount_path);
-      }
+    if (strstr(mount_path, "..") != NULL) {
+      fprintf(LOGFILE, "Unsupported cgroup mount path detected. %s\n",
+          mount_path);
+      result = INVALID_COMMAND_PROVIDED;
+      goto cleanup;
+    }
+    if (!is_empty(mount_path)) {
+      fprintf(LOGFILE, "cgroup mount path is not empty. %s\n", mount_path);
+      result = INVALID_COMMAND_PROVIDED;
+      goto cleanup;
     }
     if (mount("none", mount_path, "cgroup", 0, controller) == 0) {
       char *buf = stpncpy(hier_path, mount_path, strlen(mount_path));
@@ -2125,13 +2448,20 @@ int mount_cgroup(const char *pair, const char *hierarchy) {
 
       // create hierarchy as 0750 and chown to Hadoop NM user
       const mode_t perms = S_IRWXU | S_IRGRP | S_IXGRP;
+      struct stat sb;
+      if (stat(hier_path, &sb) == 0 &&
+          (sb.st_uid != nm_uid || sb.st_gid != nm_gid)) {
+        fprintf(LOGFILE, "cgroup hierarchy %s already owned by another user %d\n", hier_path, sb.st_uid);
+        result = INVALID_COMMAND_PROVIDED;
+        goto cleanup;
+      }
       if (mkdirs(hier_path, perms) == 0) {
         change_owner(hier_path, nm_uid, nm_gid);
         chown_dir_contents(hier_path, nm_uid, nm_gid);
       }
     } else {
       fprintf(LOGFILE, "Failed to mount cgroup controller %s at %s - %s\n",
-                controller, mount_path, strerror(errno));
+              controller, mount_path, strerror(errno));
       // if controller is already mounted, don't stop trying to mount others
       if (errno != EBUSY) {
         result = -1;
@@ -2139,6 +2469,7 @@ int mount_cgroup(const char *pair, const char *hierarchy) {
     }
   }
 
+cleanup:
   free(controller);
   free(mount_path);
 
@@ -2213,4 +2544,168 @@ int traffic_control_read_stats(char *command_file) {
  */
 struct configuration* get_cfg() {
   return &CFG;
+}
+
+/**
+ * Flatten docker launch command
+ */
+char* flatten(char **args) {
+  size_t total = 1;
+  for (int i = 0; args[i] != NULL; i++) {
+    total = total + strlen(args[i]) + 1;
+  }
+  char *buffer = (char *) malloc(total * sizeof(char));
+  char *to = NULL;
+  to = buffer;
+  for (int i = 0; args[i] != NULL; i++) {
+    to = stpcpy(to, args[i]);
+    to = stpcpy(to, " ");
+  }
+  *to = '\0';
+  return buffer;
+}
+
+int clean_docker_cgroups_internal(const char *mount_table,
+                                  const char *yarn_hierarchy,
+                                  const char* container_id) {
+#ifndef __linux
+  fprintf(LOGFILE, "Failed to clean cgroups, not supported\n");
+  return -1;
+#else
+  const char * cgroup_mount_type = "cgroup";
+  char *mnt_type = NULL;
+  char *mnt_dir = NULL;
+  char *full_path = NULL;
+  char *lineptr = NULL;
+  FILE *fp = NULL;
+  int rc = 0;
+  size_t buf_size = 0;
+
+  if (!mount_table || mount_table[0] == 0) {
+    fprintf(ERRORFILE, "clean_docker_cgroups: Invalid mount table\n");
+    rc = -1;
+    goto cleanup;
+  }
+  if (!yarn_hierarchy || yarn_hierarchy[0] == 0) {
+    fprintf(ERRORFILE, "clean_docker_cgroups: Invalid yarn_hierarchy\n");
+    rc = -1;
+    goto cleanup;
+  }
+  if (!validate_container_id(container_id)) {
+    fprintf(ERRORFILE, "clean_docker_cgroups: Invalid container_id: %s\n",
+            (container_id == NULL) ? "null" : container_id);
+    rc = -1;
+    goto cleanup;
+  }
+  fp = fopen(mount_table, "r");
+  if (fp == NULL) {
+    fprintf(ERRORFILE, "clean_docker_cgroups: failed to open %s, error %d: %s\n",
+            mount_table, errno, strerror(errno));
+    rc = -1;
+    goto cleanup;
+  }
+
+  // Walk /proc/mounts and find cgroup mounts
+  while (getline(&lineptr, &buf_size, fp) != -1) {
+    // Free these from the last iteration, if set
+    free(mnt_type);
+    free(mnt_dir);
+    int ret = 0;
+    ret = sscanf(lineptr, " %ms %ms %*s %*s %*s %*s", &mnt_type, &mnt_dir);
+    if (ret != 2) {
+      fprintf(ERRORFILE, "clean_docker_cgroups: Failed to parse line: %s\n", lineptr);
+      rc = -1;
+      break;
+    }
+    if ((mnt_type == NULL) || (strcmp(mnt_type, cgroup_mount_type) != 0)) {
+      continue;
+    }
+    if ((mnt_dir == NULL) || (mnt_dir[0] == 0)) {
+      fprintf(ERRORFILE, "clean_docker_cgroups: skipping mount entry with invalid mnt_dir\n");
+      continue;
+    }
+
+    free(full_path); // from previous iteration
+    full_path = make_string("%s/%s/%s", mnt_dir, yarn_hierarchy, container_id);
+    if (full_path == NULL) {
+      fprintf(ERRORFILE, "clean_docker_cgroups: Failed to allocate cgroup path.\n");
+      rc = -1;
+      break;
+    }
+
+    // Make sure path is clean
+    if (!verify_path_safety(full_path)) {
+      fprintf(ERRORFILE,
+        "clean_docker_cgroups: skipping invalid path: %s\n", full_path);
+        continue;
+    }
+
+    ret = rmdir(full_path);
+    if ((ret == -1) && (errno != ENOENT)) {
+      fprintf(ERRORFILE, "clean_docker_cgroups: Failed to rmdir cgroup, %s (error=%s)\n",
+        full_path, strerror(errno));
+      rc = -1;
+      continue;
+    }
+  }
+  if (ferror(fp)) {
+    fprintf(ERRORFILE, "clean_docker_cgroups: Error reading %s, error=%d (%s) \n",
+            mount_table, errno, strerror(errno));
+    rc = -1;
+  }
+
+cleanup:
+  free(lineptr);
+  free(mnt_type);
+  free(mnt_dir);
+  free(full_path);
+  if (fp != NULL) {
+    fclose(fp);
+  }
+  return rc;
+#endif
+}
+
+int clean_docker_cgroups(const char *yarn_hierarchy, const char* container_id) {
+  const char *proc_mount_path = "/proc/mounts";
+  return clean_docker_cgroups_internal(proc_mount_path, yarn_hierarchy, container_id);
+}
+
+int remove_docker_container(char**argv, int argc) {
+  int exit_code = 0;
+  const char *yarn_hierarchy = NULL;
+  const char *container_id = NULL;
+
+  int start_index = 0;
+  if (argc == 2) {
+    yarn_hierarchy = argv[0];
+    container_id = argv[1];
+    // Skip the yarn_hierarchy argument for exec_docker_command
+    start_index = 1;
+  }
+
+  pid_t child_pid = fork();
+  if (child_pid == -1) {
+    fprintf (ERRORFILE,
+      "Failed to fork for docker remove command\n");
+    fflush(ERRORFILE);
+    return DOCKER_RUN_FAILED;
+  }
+
+  if (child_pid == 0) { // child
+    int rc = exec_docker_command("rm", argv + start_index, argc - start_index);
+    return rc; // Only get here if exec fails
+
+  } else { // parent
+    exit_code = wait_and_get_exit_code(child_pid);
+    if (exit_code != 0) {
+      exit_code = DOCKER_RUN_FAILED;
+    }
+  }
+
+  // Clean up cgroups if necessary
+  if (yarn_hierarchy != NULL) {
+    exit_code = clean_docker_cgroups(yarn_hierarchy, container_id);
+  }
+  return exit_code;
 }

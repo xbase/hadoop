@@ -367,7 +367,7 @@ public class TestGetConf {
   public void testGetJournalNodes() throws Exception {
 
     final int nsCount = 3;
-    final String journalsBaseUri = "qjournal://jn0:9820;jn1:9820;jn2:9820";
+    final String journalsBaseUri = "qjournal://jn0:8020;jn1:8020;jn2:8020";
     setupStaticHostResolution(nsCount, "jn");
 
     // With out Name service Id
@@ -388,7 +388,7 @@ public class TestGetConf {
       }
       buffer.append(val);
     }
-    buffer.append("\n");
+    buffer.append(System.lineSeparator());
     expected1 = buffer.toString();
 
     Set<String> actual = DFSUtil.getJournalNodeAddresses(conf);
@@ -462,7 +462,7 @@ public class TestGetConf {
     actual = DFSUtil.getJournalNodeAddresses(conf);
     assertEquals(expected.toString(), actual.toString());
 
-    actual1 = "\n";
+    actual1 = System.lineSeparator();
     expected1 = getAddressListFromTool(TestType.JOURNALNODE,
         conf, true);
     assertEquals(expected1, actual1);
@@ -479,7 +479,7 @@ public class TestGetConf {
 
     expected1 = getAddressListFromTool(TestType.JOURNALNODE,
         conf, true);
-    actual1 = "\n";
+    actual1 = System.lineSeparator();
     assertEquals(expected1, actual1);
     conf.clear();
   }
@@ -490,7 +490,7 @@ public class TestGetConf {
   @Test(expected = UnknownHostException.class, timeout = 10000)
   public void testUnknownJournalNodeHost()
       throws URISyntaxException, IOException {
-    String journalsBaseUri = "qjournal://jn1:9820;jn2:9820;jn3:9820";
+    String journalsBaseUri = "qjournal://jn1:8020;jn2:8020;jn3:8020";
     HdfsConfiguration conf = new HdfsConfiguration(false);
     conf.set(DFS_NAMENODE_SHARED_EDITS_DIR_KEY,
         journalsBaseUri + "/jndata");
@@ -504,7 +504,7 @@ public class TestGetConf {
   public void testJournalNodeUriError()
       throws URISyntaxException, IOException {
     final int nsCount = 3;
-    String journalsBaseUri = "qjournal://jn0 :9820;jn1:9820;jn2:9820";
+    String journalsBaseUri = "qjournal://jn0 :8020;jn1:8020;jn2:8020";
     setupStaticHostResolution(nsCount, "jn");
     HdfsConfiguration conf = new HdfsConfiguration(false);
     conf.set(DFS_NAMENODE_SHARED_EDITS_DIR_KEY,

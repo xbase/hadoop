@@ -17,22 +17,35 @@
  */
 package org.apache.hadoop.util;
 
+import static org.apache.hadoop.util.RunJar.MATCH_ANY;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Random;
+import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
+import org.apache.hadoop.fs.LocalFileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.test.GenericTestUtils;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -114,6 +127,54 @@ public class TestRunJar {
                new File(unjarDir, FOOBAZ_TXT).exists());
   }
 
+  private File generateBigJar(File dir) throws Exception {
+    File file = new File(dir, "job.jar");
+    try(JarOutputStream stream = new JarOutputStream(
+        new FileOutputStream(file))) {
+      Random r = new Random(100);
+      for (int i = 0; i < 10; ++i) {
+        JarEntry entry = new JarEntry(
+            ((i % 2 == 0) ? "dir/" : "") + "f" + Integer.toString(i));
+        stream.putNextEntry(entry);
+        for (int j=0; j < 756; ++j) {
+          stream.write(r.nextInt() & 0xFF);
+        }
+        stream.closeEntry();
+      }
+      stream.close();
+    }
+    return file;
+  }
+
+  /**
+   * Test unjarring a big file. This checks appending the remainder of the file
+   * to the tee output stream in RunJar.unJarAndSave.
+   */
+  @SuppressWarnings("deprecation")
+  @Test
+  public void testBigJar() throws Exception {
+    Random r = new Random(System.currentTimeMillis());
+    File dir = new File(TEST_ROOT_DIR, Long.toHexString(r.nextLong()));
+    Assert.assertTrue(dir.mkdirs());
+    File input = generateBigJar(dir);
+    File output = new File(dir, "job2.jar");
+    try {
+      try (InputStream is = new FileInputStream(input)) {
+        RunJar.unJarAndSave(is, dir, "job2.jar", Pattern.compile(".*"));
+      }
+      Assert.assertEquals(input.length(), output.length());
+      for (int i = 0; i < 10; ++i) {
+        File subdir = new File(dir, ((i % 2 == 0) ? "dir/" : ""));
+        File f = new File(subdir, "f" + Integer.toString(i));
+        Assert.assertEquals(756, f.length());
+      }
+    } finally {
+      // Clean up
+      FileSystem fs = LocalFileSystem.getLocal(new Configuration());
+      fs.delete(new Path(dir.getAbsolutePath()), true);
+    }
+  }
+
   @Test
   public void testUnJarDoesNotLooseLastModify() throws Exception {
     File unjarDir = getUnjarDir("unjar-lastmod");
@@ -164,5 +225,45 @@ public class TestRunJar {
     // run RunJar
     runJar.run(args);
     // it should not throw an exception
+  }
+
+  @Test
+  public void testUnJar2() throws IOException {
+    // make a simple zip
+    File jarFile = new File(TEST_ROOT_DIR, TEST_JAR_NAME);
+    JarOutputStream jstream =
+        new JarOutputStream(new FileOutputStream(jarFile));
+    JarEntry je = new JarEntry("META-INF/MANIFEST.MF");
+    byte[] data = "Manifest-Version: 1.0\nCreated-By: 1.8.0_1 (Manual)"
+        .getBytes(StandardCharsets.UTF_8);
+    je.setSize(data.length);
+    jstream.putNextEntry(je);
+    jstream.write(data);
+    jstream.closeEntry();
+    je = new JarEntry("../outside.path");
+    data = "any data here".getBytes(StandardCharsets.UTF_8);
+    je.setSize(data.length);
+    jstream.putNextEntry(je);
+    jstream.write(data);
+    jstream.closeEntry();
+    jstream.close();
+
+    File unjarDir = getUnjarDir("unjar-path");
+
+    // Unjar everything
+    try {
+      RunJar.unJar(jarFile, unjarDir, MATCH_ANY);
+      fail("unJar should throw IOException.");
+    } catch (IOException e) {
+      GenericTestUtils.assertExceptionContains(
+          "would create file outside of", e);
+    }
+    try {
+      RunJar.unJar(new FileInputStream(jarFile), unjarDir, MATCH_ANY);
+      fail("unJar should throw IOException.");
+    } catch (IOException e) {
+      GenericTestUtils.assertExceptionContains(
+          "would create file outside of", e);
+    }
   }
 }

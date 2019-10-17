@@ -34,6 +34,7 @@ import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainer;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer
     .RMContainerImpl;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.PendingAsk;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.placement.AppPlacementAllocator;
 import org.apache.hadoop.yarn.server.scheduler.SchedulerRequestKey;
 import org.apache.hadoop.yarn.util.resource.Resources;
@@ -145,7 +146,7 @@ public class ContainerUpdateContext {
           createResourceRequests(rmContainer, schedulerNode,
               schedulerKey, resToIncrease);
       updateResReqs.put(schedulerKey, resMap);
-      appSchedulingInfo.addRequestToAppPlacement(false, updateResReqs);
+      appSchedulingInfo.updateResourceRequests(updateResReqs, false);
     }
     return true;
   }
@@ -155,16 +156,16 @@ public class ContainerUpdateContext {
     AppPlacementAllocator<SchedulerNode> appPlacementAllocator =
         appSchedulingInfo.getAppPlacementAllocator(schedulerKey);
     if (appPlacementAllocator != null) {
-      Map<String, ResourceRequest> resourceRequests = appPlacementAllocator
-          .getResourceRequests();
-      ResourceRequest prevReq = resourceRequests.get(ResourceRequest.ANY);
+      PendingAsk pendingAsk = appPlacementAllocator.getPendingAsk(
+          ResourceRequest.ANY);
       // Decrement the pending using a dummy RR with
       // resource = prev update req capability
-      if (prevReq != null) {
+      if (pendingAsk != null && pendingAsk.getCount() > 0) {
         appSchedulingInfo.allocate(NodeType.OFF_SWITCH, schedulerNode,
             schedulerKey, Container.newInstance(UNDEFINED,
                 schedulerNode.getNodeID(), "host:port",
-                prevReq.getCapability(), schedulerKey.getPriority(), null));
+                pendingAsk.getPerAllocationResource(),
+                schedulerKey.getPriority(), null));
       }
     }
   }
@@ -289,7 +290,7 @@ public class ContainerUpdateContext {
           (rmContainer, node, schedulerKey,
           rmContainer.getContainer().getResource());
       reqsToUpdate.put(schedulerKey, resMap);
-      appSchedulingInfo.addRequestToAppPlacement(true, reqsToUpdate);
+      appSchedulingInfo.updateResourceRequests(reqsToUpdate, true);
       return UNDEFINED;
     }
     return retVal;

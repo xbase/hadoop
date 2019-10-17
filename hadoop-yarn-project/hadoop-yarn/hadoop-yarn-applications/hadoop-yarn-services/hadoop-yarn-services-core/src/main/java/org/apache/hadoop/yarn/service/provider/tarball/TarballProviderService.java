@@ -22,6 +22,7 @@ import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceType;
 import org.apache.hadoop.yarn.service.api.records.Service;
 import org.apache.hadoop.yarn.service.component.instance.ComponentInstance;
+import org.apache.hadoop.yarn.service.containerlaunch.ContainerLaunchService;
 import org.apache.hadoop.yarn.service.provider.AbstractProviderService;
 import org.apache.hadoop.yarn.service.utils.SliderFileSystem;
 import org.apache.hadoop.yarn.service.containerlaunch.AbstractLauncher;
@@ -33,14 +34,14 @@ public class TarballProviderService extends AbstractProviderService {
   @Override
   public void processArtifact(AbstractLauncher launcher,
       ComponentInstance instance, SliderFileSystem fileSystem,
-      Service service)
-      throws IOException {
-    Path artifact = new Path(instance.getCompSpec().getArtifact().getId());
+      Service service, ContainerLaunchService.ComponentLaunchContext
+      compLaunchCtx) throws IOException {
+    Path artifact = new Path(compLaunchCtx.getArtifact().getId());
     if (!fileSystem.isFile(artifact)) {
       throw new IOException(
-          "Package doesn't exist as a resource: " + artifact.toString());
+          "Package doesn't exist as a resource: " + artifact);
     }
-    log.info("Adding resource {}", artifact.toString());
+    log.info("Adding resource {}", artifact);
     LocalResourceType type = LocalResourceType.ARCHIVE;
     LocalResource packageResource = fileSystem.createAmResource(artifact, type);
     launcher.addLocalResource(APP_LIB_DIR, packageResource);

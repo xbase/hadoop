@@ -63,6 +63,7 @@ import org.apache.hadoop.util.DiskValidatorFactory;
 import org.apache.hadoop.util.Shell;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
 import org.apache.hadoop.yarn.YarnUncaughtExceptionHandler;
+import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
 import org.apache.hadoop.yarn.api.records.SerializedException;
@@ -408,8 +409,12 @@ public class ContainerLocalizer {
    */
   public static void buildMainArgs(List<String> command,
       String user, String appId, String locId,
-      InetSocketAddress nmAddr, List<String> localDirs) {
-    
+      InetSocketAddress nmAddr, List<String> localDirs, Configuration conf) {
+
+    String logLevel = conf.get(YarnConfiguration.
+            NM_CONTAINER_LOCALIZER_LOG_LEVEL,
+        YarnConfiguration.NM_CONTAINER_LOCALIZER_LOG_LEVEL_DEFAULT);
+    addLog4jSystemProperties(logLevel, command);
     command.add(ContainerLocalizer.class.getName());
     command.add(user);
     command.add(appId);
@@ -419,6 +424,16 @@ public class ContainerLocalizer {
     for(String dir : localDirs) {
       command.add(dir);
     }
+  }
+
+  private static void addLog4jSystemProperties(
+      String logLevel, List<String> command) {
+    command.add("-Dlog4j.configuration=container-log4j.properties");
+    command.add("-D" + YarnConfiguration.YARN_APP_CONTAINER_LOG_DIR + "=" +
+        ApplicationConstants.LOG_DIR_EXPANSION_VAR);
+    command.add("-D" + YarnConfiguration.YARN_APP_CONTAINER_LOG_SIZE + "=0");
+    command.add("-Dhadoop.root.logger=" + logLevel + ",CLA");
+    command.add("-Dhadoop.root.logfile=container-localizer-syslog");
   }
 
   public static void main(String[] argv) throws Throwable {

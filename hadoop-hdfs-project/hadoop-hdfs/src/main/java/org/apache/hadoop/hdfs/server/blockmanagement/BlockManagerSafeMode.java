@@ -486,7 +486,7 @@ class BlockManagerSafeMode {
 
     if (!blockManager.getShouldPostponeBlocksFromFuture() &&
         !inRollBack && blockManager.isGenStampInFuture(brr)) {
-      if (BlockIdManager.isStripedBlockID(brr.getBlockId())) {
+      if (blockManager.getBlockIdManager().isStripedBlock(brr)) {
         bytesInFutureECBlockGroups.add(brr.getBytesOnDisk());
       } else {
         bytesInFutureBlocks.add(brr.getBytesOnDisk());
@@ -561,7 +561,12 @@ class BlockManagerSafeMode {
    */
   private boolean areThresholdsMet() {
     assert namesystem.hasWriteLock();
-    int datanodeNum = blockManager.getDatanodeManager().getNumLiveDataNodes();
+    // Calculating the number of live datanodes is time-consuming
+    // in large clusters. Skip it when datanodeThreshold is zero.
+    int datanodeNum = 0;
+    if (datanodeThreshold > 0) {
+      datanodeNum = blockManager.getDatanodeManager().getNumLiveDataNodes();
+    }
     synchronized (this) {
       return blockSafe >= blockThreshold && datanodeNum >= datanodeThreshold;
     }

@@ -23,6 +23,7 @@
 #include "test/test-container-executor-common.h"
 
 #include <inttypes.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -32,11 +33,14 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/param.h>
+
 
 static char* username = NULL;
 static char* yarn_username = NULL;
 static char** local_dirs = NULL;
 static char** log_dirs = NULL;
+static uid_t nm_uid = -1;
 
 /**
  * Run the command using the effective user id.
@@ -152,8 +156,8 @@ void check_pid_file(const char* pid_file, pid_t mypid) {
 }
 
 void test_get_user_directory() {
-  char *user_dir = get_user_directory(TMPDIR, "user");
-  char *expected = TMPDIR "/usercache/user";
+  char *user_dir = get_user_directory(TEST_ROOT, "user");
+  char *expected = TEST_ROOT "/usercache/user";
   if (strcmp(user_dir, expected) != 0) {
     printf("test_get_user_directory expected %s got %s\n", expected, user_dir);
     exit(1);
@@ -161,9 +165,32 @@ void test_get_user_directory() {
   free(user_dir);
 }
 
+void test_check_nm_local_dir() {
+  // check filesystem is same as running user.
+  int expected = 0;
+  char *local_path = TEST_ROOT "target";
+  char *root_path = "/";
+  if (mkdirs(local_path, 0700) != 0) {
+    printf("FAIL: unble to create node manager local directory: %s\n", local_path);
+    exit(1);
+  }
+  int actual = check_nm_local_dir(nm_uid, local_path);
+  if (expected != actual) {
+    printf("test_nm_local_dir expected %d got %d\n", expected, actual);
+    exit(1);
+  }
+  // check filesystem is different from running user.
+  expected = 1;
+  actual = check_nm_local_dir(nm_uid, root_path);
+  if (expected != actual && nm_uid != 0) {
+    printf("test_nm_local_dir expected %d got %d\n", expected, actual);
+    exit(1);
+  }
+}
+
 void test_get_app_directory() {
-  char *expected = TMPDIR "/usercache/user/appcache/app_200906101234_0001";
-  char *app_dir = (char *) get_app_directory(TMPDIR, "user",
+  char *expected = TEST_ROOT "/usercache/user/appcache/app_200906101234_0001";
+  char *app_dir = (char *) get_app_directory(TEST_ROOT, "user",
       "app_200906101234_0001");
   if (strcmp(app_dir, expected) != 0) {
     printf("test_get_app_directory expected %s got %s\n", expected, app_dir);
@@ -173,9 +200,9 @@ void test_get_app_directory() {
 }
 
 void test_get_container_directory() {
-  char *container_dir = get_container_work_directory(TMPDIR, "owen", "app_1",
+  char *container_dir = get_container_work_directory(TEST_ROOT, "owen", "app_1",
 						 "container_1");
-  char *expected = TMPDIR"/usercache/owen/appcache/app_1/container_1";
+  char *expected = TEST_ROOT "/usercache/owen/appcache/app_1/container_1";
   if (strcmp(container_dir, expected) != 0) {
     printf("Fail get_container_work_directory got %s expected %s\n",
 	   container_dir, expected);
@@ -185,9 +212,9 @@ void test_get_container_directory() {
 }
 
 void test_get_container_launcher_file() {
-  char *expected_file = (TMPDIR"/usercache/user/appcache/app_200906101234_0001"
+  char *expected_file = (TEST_ROOT "/usercache/user/appcache/app_200906101234_0001"
 			 "/launch_container.sh");
-  char *app_dir = get_app_directory(TMPDIR, "user",
+  char *app_dir = get_app_directory(TEST_ROOT, "user",
                                     "app_200906101234_0001");
   char *container_file =  get_container_launcher_file(app_dir);
   if (strcmp(container_file, expected_file) != 0) {
@@ -425,6 +452,8 @@ void test_is_feature_enabled() {
   fprintf(file, "feature.name4.enabled=asdkjfasdkljfklsdjf0\n");
   fprintf(file, "feature.name5.enabled=-1\n");
   fprintf(file, "feature.name6.enabled=2\n");
+  fprintf(file, "feature.name7.enabled=true\n");
+  fprintf(file, "feature.name8.enabled=True\n");
   fclose(file);
   read_config(filename, &exec_cfg);
   cfg = *(get_configuration_section("", &exec_cfg));
@@ -440,6 +469,10 @@ void test_is_feature_enabled() {
   validate_feature_enabled_value(enabled, "feature.name5.enabled",
           enabled, &cfg);
   validate_feature_enabled_value(disabled, "feature.name6.enabled",
+          disabled, &cfg);
+  validate_feature_enabled_value(enabled, "feature.name7.enabled",
+          disabled, &cfg);
+  validate_feature_enabled_value(enabled, "feature.name8.enabled",
           disabled, &cfg);
 
 
@@ -774,7 +807,8 @@ void test_init_app() {
     exit(1);
   } else if (child == 0) {
     char *final_pgm[] = {"touch", "my-touch-file", 0};
-    if (initialize_app(yarn_username, "app_4", TEST_ROOT "/creds.txt",
+    if (initialize_app(yarn_username, "app_4", "container_1",
+                       TEST_ROOT "/creds.txt",
                        local_dirs, log_dirs, final_pgm) != 0) {
       printf("FAIL: failed in child\n");
       exit(42);
@@ -815,6 +849,14 @@ void test_init_app() {
     exit(1);
   }
   free(app_dir);
+
+  char *container_dir = get_container_log_directory(TEST_ROOT "/logs/userlogs",
+                  "app_4", "container_1");
+  if (container_dir != NULL && access(container_dir, R_OK) != 0) {
+    printf("FAIL: failed to create container log directory %s\n", container_dir);
+    exit(1);
+  }
+  free(container_dir);
 }
 
 void test_run_container() {
@@ -1164,6 +1206,169 @@ void test_trim_function() {
   free(trimmed);
 }
 
+int is_empty(char *name);
+
+void test_is_empty() {
+  printf("\nTesting is_empty function\n");
+  if (is_empty("/")) {
+    printf("FAIL: / should not be empty\n");
+    exit(1);
+  }
+  char *noexist = TEST_ROOT "/noexist";
+  if (is_empty(noexist)) {
+    printf("%s should not exist\n", noexist);
+    exit(1);
+  }
+  char *emptydir = TEST_ROOT "/emptydir";
+  mkdir(emptydir, S_IRWXU);
+  if (!is_empty(emptydir)) {
+    printf("FAIL: %s should be empty\n", emptydir);
+    exit(1);
+  }
+}
+
+#define TCE_FAKE_CGROOT TEST_ROOT "/cgroup_root"
+#define TCE_NUM_CG_CONTROLLERS 6
+extern int clean_docker_cgroups_internal(const char *mount_table,
+                                  const char *yarn_hierarchy,
+                                  const char* container_id);
+
+void test_cleaning_docker_cgroups() {
+  const char *controllers[TCE_NUM_CG_CONTROLLERS] = { "blkio", "cpu", "cpuset", "devices", "memory", "systemd" };
+  const char *yarn_hierarchy = "hadoop-yarn";
+  const char *fake_mount_table = TEST_ROOT "/fake_mounts";
+  const char *container_id = "container_1410901177871_0001_01_000005";
+  const char *other_container_id = "container_e17_1410901177871_0001_01_000005";
+  char cgroup_paths[TCE_NUM_CG_CONTROLLERS][PATH_MAX];
+  char container_paths[TCE_NUM_CG_CONTROLLERS][PATH_MAX];
+  char other_container_paths[TCE_NUM_CG_CONTROLLERS][PATH_MAX];
+
+  printf("\nTesting clean_docker_cgroups\n");
+
+  // Setup fake mount table
+  FILE *file;
+  file = fopen(fake_mount_table, "w");
+  if (file == NULL) {
+    printf("Failed to open %s.\n", fake_mount_table);
+    exit(1);
+  }
+  fprintf(file, "rootfs " TEST_ROOT "/fake_root rootfs rw 0 0\n");
+  fprintf(file, "sysfs " TEST_ROOT "/fake_sys sysfs rw,nosuid,nodev,noexec,relatime 0 0\n");
+  fprintf(file, "proc " TEST_ROOT "/fake_proc proc rw,nosuid,nodev,noexec,relatime 0 0\n");
+  for (int i = 0; i < TCE_NUM_CG_CONTROLLERS; i++) {
+    fprintf(file, "cgroup %s/%s cgroup rw,nosuid,nodev,noexec,relatime,%s 0 0\n",
+            TCE_FAKE_CGROOT, controllers[i], controllers[i]);
+  }
+  fprintf(file, "/dev/vda " TEST_ROOT "/fake_root ext4 rw,relatime,data=ordered 0 0\n");
+  fclose(file);
+
+  // Test with null inputs
+  int ret = clean_docker_cgroups_internal(NULL, yarn_hierarchy, container_id);
+  if (ret != -1) {
+    printf("FAIL: clean_docker_cgroups_internal with NULL mount table should fail\n");
+    exit(1);
+  }
+  ret = clean_docker_cgroups_internal(fake_mount_table, NULL, container_id);
+  if (ret != -1) {
+    printf("FAIL: clean_docker_cgroups_internal with NULL yarn_hierarchy should fail\n");
+    exit(1);
+  }
+  ret = clean_docker_cgroups_internal(fake_mount_table, yarn_hierarchy, NULL);
+  if (ret != -1) {
+    printf("FAIL: clean_docker_cgroups_internal with NULL container_id should fail\n");
+    exit(1);
+  }
+
+  // Test with invalid container_id
+  ret = clean_docker_cgroups_internal(fake_mount_table, yarn_hierarchy, "not_a_container_123");
+  if (ret != -1) {
+    printf("FAIL: clean_docker_cgroups_internal with invalid container_id should fail\n");
+    exit(1);
+  }
+  if (mkdir(TCE_FAKE_CGROOT, 0755) != 0) {
+    printf("FAIL: failed to mkdir " TCE_FAKE_CGROOT "\n");
+    exit(1);
+  }
+  for (int i = 0; i < TCE_NUM_CG_CONTROLLERS; i++) {
+    snprintf(cgroup_paths[i], PATH_MAX, TCE_FAKE_CGROOT "/%s/%s", controllers[i], yarn_hierarchy);
+    if (mkdirs(cgroup_paths[i], 0755) != 0) {
+      printf("FAIL: failed to mkdir %s\n", cgroup_paths[i]);
+      exit(1);
+    }
+  }
+  for (int i = 0; i < TCE_NUM_CG_CONTROLLERS; i++) {
+    DIR *dir = NULL;
+    dir = opendir(cgroup_paths[i]);
+    if (dir == NULL) {
+      printf("FAIL: failed to open dir %s\n", cgroup_paths[i]);
+      exit(1);
+    }
+    closedir(dir);
+  }
+  // Test before creating any containers
+  ret = clean_docker_cgroups_internal(fake_mount_table, yarn_hierarchy, container_id);
+  if (ret != 0) {
+    printf("FAIL: failed to clean cgroups: mt=%s, yh=%s, cId=%s\n",
+           fake_mount_table, yarn_hierarchy, container_id);
+  }
+  // make sure hadoop-yarn dirs are still there
+  for (int i = 0; i < TCE_NUM_CG_CONTROLLERS; i++) {
+    DIR *dir = NULL;
+    dir = opendir(cgroup_paths[i]);
+    if (dir == NULL) {
+      printf("FAIL: failed to open dir %s\n", cgroup_paths[i]);
+      exit(1);
+    }
+    closedir(dir);
+  }
+  // Create container dirs
+  for (int i = 0; i < TCE_NUM_CG_CONTROLLERS; i++) {
+    snprintf(container_paths[i], PATH_MAX, TCE_FAKE_CGROOT "/%s/%s/%s",
+            controllers[i], yarn_hierarchy, container_id);
+    if (mkdirs(container_paths[i], 0755) != 0) {
+      printf("FAIL: failed to mkdir %s\n", container_paths[i]);
+      exit(1);
+    }
+    snprintf(other_container_paths[i], PATH_MAX, TCE_FAKE_CGROOT "/%s/%s/%s",
+            controllers[i], yarn_hierarchy, other_container_id);
+    if (mkdirs(other_container_paths[i], 0755) != 0) {
+      printf("FAIL: failed to mkdir %s\n", other_container_paths[i]);
+      exit(1);
+    }
+  }
+  ret = clean_docker_cgroups_internal(fake_mount_table, yarn_hierarchy, container_id);
+  // make sure hadoop-yarn dirs are still there
+  for (int i = 0; i < TCE_NUM_CG_CONTROLLERS; i++) {
+    DIR *dir = NULL;
+    dir = opendir(cgroup_paths[i]);
+    if (dir == NULL) {
+      printf("FAIL: failed to open dir %s\n", cgroup_paths[i]);
+      exit(1);
+    }
+    closedir(dir);
+  }
+  // make sure container dirs deleted
+  for (int i = 0; i < TCE_NUM_CG_CONTROLLERS; i++) {
+    DIR *dir = NULL;
+    dir = opendir(container_paths[i]);
+    if (dir != NULL) {
+      printf("FAIL: container cgroup %s not deleted\n", container_paths[i]);
+      exit(1);
+    }
+    closedir(dir);
+  }
+  // make sure other container dirs are still there
+  for (int i = 0; i < TCE_NUM_CG_CONTROLLERS; i++) {
+    DIR *dir = NULL;
+    dir = opendir(other_container_paths[i]);
+    if (dir == NULL) {
+      printf("FAIL: container cgroup %s should not be deleted\n", other_container_paths[i]);
+      exit(1);
+    }
+    closedir(dir);
+  }
+}
+
 // This test is expected to be executed either by a regular
 // user or by root. If executed by a regular user it doesn't
 // test all the functions that would depend on changing the
@@ -1181,6 +1386,8 @@ int main(int argc, char **argv) {
   int ret;
   LOGFILE = stdout;
   ERRORFILE = stderr;
+
+  nm_uid = getuid();
 
   printf("Attempting to clean up from any previous runs\n");
   // clean up any junk from previous run
@@ -1223,6 +1430,9 @@ int main(int argc, char **argv) {
 
   printf("\nStarting tests\n");
 
+  printf("\ntest_is_empty()\n");
+  test_is_empty();
+
   printf("\nTesting recursive_unlink_children()\n");
   test_recursive_unlink_children();
 
@@ -1231,6 +1441,9 @@ int main(int argc, char **argv) {
 
   printf("\nTesting get_user_directory()\n");
   test_get_user_directory();
+
+  printf("\nTesting check_nm_local_dir()\n");
+  test_check_nm_local_dir();
 
   printf("\nTesting get_app_directory()\n");
   test_get_app_directory();
@@ -1259,6 +1472,8 @@ int main(int argc, char **argv) {
   test_is_feature_enabled();
 
   test_check_user(0);
+
+  test_cleaning_docker_cgroups();
 
 #ifdef __APPLE__
    printf("OS X: disabling CrashReporter\n");

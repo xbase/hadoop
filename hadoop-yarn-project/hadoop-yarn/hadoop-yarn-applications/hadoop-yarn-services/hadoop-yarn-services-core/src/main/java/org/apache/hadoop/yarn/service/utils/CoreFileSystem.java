@@ -112,10 +112,38 @@ public class CoreFileSystem {
   public Path buildClusterDirPath(String clustername) {
     Preconditions.checkNotNull(clustername);
     Path path = getBaseApplicationPath();
-    return new Path(path, YarnServiceConstants.SERVICES_DIRECTORY + "/" + clustername);
+    return new Path(path, YarnServiceConstants.SERVICES_DIRECTORY + "/"
+        + clustername);
   }
 
+  /**
+   * Build up the upgrade path string for a cluster. No attempt to
+   * create the directory is made.
+   *
+   * @param clusterName name of the cluster
+   * @param version version of the cluster
+   * @return the upgrade path to the cluster
+   */
+  public Path buildClusterUpgradeDirPath(String clusterName, String version) {
+    Preconditions.checkNotNull(clusterName);
+    Preconditions.checkNotNull(version);
+    return new Path(buildClusterDirPath(clusterName),
+        YarnServiceConstants.UPGRADE_DIR + "/" + version);
+  }
 
+  /**
+   * Delete the upgrade cluster directory.
+   * @param clusterName name of the cluster
+   * @param version     version of the cluster
+   * @throws IOException
+   */
+  public void deleteClusterUpgradeDir(String clusterName, String version)
+      throws IOException {
+    Preconditions.checkNotNull(clusterName);
+    Preconditions.checkNotNull(version);
+    Path upgradeCluster = buildClusterUpgradeDirPath(clusterName, version);
+    fileSystem.delete(upgradeCluster, true);
+  }
   /**
    * Build up the path string for keytab install location -no attempt to
    * create the directory is made
@@ -295,6 +323,9 @@ public class CoreFileSystem {
    *          reasons including if file check throws IOException
    */
   public boolean isFile(Path path) {
+    if (path == null) {
+      return false;
+    }
     boolean isFile = false;
     try {
       FileStatus status = fileSystem.getFileStatus(path);
@@ -321,26 +352,24 @@ public class CoreFileSystem {
   }
 
   /**
-   * Get slider dependency parent dir in HDFS
+   * Get service dependency absolute filepath in HDFS used for application
+   * submission.
    * 
-   * @return the parent dir path of slider.tar.gz in HDFS
-   */
-  public Path getDependencyPath() {
-    String parentDir = YarnServiceConstants.DEPENDENCY_DIR;
-    return new Path(String.format(parentDir, VersionInfo.getVersion()));
-  }
-
-  /**
-   * Get slider.tar.gz absolute filepath in HDFS
-   * 
-   * @return the absolute path to slider.tar.gz in HDFS
+   * @return the absolute path to service dependency tarball in HDFS
    */
   public Path getDependencyTarGzip() {
-    Path dependencyLibAmPath = getDependencyPath();
-    Path dependencyLibTarGzip = new Path(
-        dependencyLibAmPath.toUri().toString(),
-        YarnServiceConstants.DEPENDENCY_TAR_GZ_FILE_NAME
-            + YarnServiceConstants.DEPENDENCY_TAR_GZ_FILE_EXT);
+    Path dependencyLibTarGzip = null;
+    String configuredDependencyTarballPath = configuration
+        .get(YarnServiceConf.DEPENDENCY_TARBALL_PATH);
+    if (configuredDependencyTarballPath != null) {
+      dependencyLibTarGzip = new Path(configuredDependencyTarballPath);
+    }
+    if (dependencyLibTarGzip == null) {
+      dependencyLibTarGzip = new Path(String.format(YarnServiceConstants
+          .DEPENDENCY_DIR, VersionInfo.getVersion()),
+          YarnServiceConstants.DEPENDENCY_TAR_GZ_FILE_NAME
+              + YarnServiceConstants.DEPENDENCY_TAR_GZ_FILE_EXT);
+    }
     return dependencyLibTarGzip;
   }
 
@@ -467,8 +496,7 @@ public class CoreFileSystem {
     fileSystem.getConf().set(CommonConfigurationKeys.FS_PERMISSIONS_UMASK_KEY,
         "000");
     fileSystem.mkdirs(destPath.getParent(), fp);
-    log.info("Copying file {} to {}", localPath.toURI(),
-        fileSystem.getScheme() + ":/" + destPath.toUri());
+    log.info("Copying file {} to {}", localPath.toURI(), destPath);
     
     fileSystem.copyFromLocalFile(false, true, new Path(localPath.getPath()),
         destPath);

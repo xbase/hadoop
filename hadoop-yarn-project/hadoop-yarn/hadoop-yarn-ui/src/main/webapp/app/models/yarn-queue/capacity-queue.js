@@ -20,23 +20,26 @@ import DS from 'ember-data';
 import Converter from 'yarn-ui/utils/converter';
 
 export default DS.Model.extend({
-  name: DS.attr('string'),
-  children: DS.attr('array'),
-  parent: DS.attr('string'),
-  capacity: DS.attr('number'),
-  maxCapacity: DS.attr('number'),
-  usedCapacity: DS.attr('number'),
-  absCapacity: DS.attr('number'),
-  absMaxCapacity: DS.attr('number'),
-  absUsedCapacity: DS.attr('number'),
-  state: DS.attr('string'),
-  userLimit: DS.attr('number'),
-  userLimitFactor: DS.attr('number'),
-  preemptionDisabled: DS.attr('number'),
-  numPendingApplications: DS.attr('number'),
-  numActiveApplications: DS.attr('number'),
-  users: DS.hasMany('YarnUser'),
-  type: DS.attr('string'),
+  name: DS.attr("string"),
+  children: DS.attr("array"),
+  parent: DS.attr("string"),
+  capacity: DS.attr("number"),
+  partitions: DS.attr("array"),
+  partitionMap: DS.attr("object"),
+  maxCapacity: DS.attr("number"),
+  usedCapacity: DS.attr("number"),
+  absCapacity: DS.attr("number"),
+  absMaxCapacity: DS.attr("number"),
+  absUsedCapacity: DS.attr("number"),
+  state: DS.attr("string"),
+  userLimit: DS.attr("number"),
+  userLimitFactor: DS.attr("number"),
+  preemptionDisabled: DS.attr("number"),
+  numPendingApplications: DS.attr("number"),
+  numActiveApplications: DS.attr("number"),
+  users: DS.hasMany("YarnUser"),
+  type: DS.attr("string"),
+  resources: DS.attr("object"),
 
   isLeafQueue: function() {
     var len = this.get("children.length");
@@ -50,20 +53,31 @@ export default DS.Model.extend({
     var floatToFixed = Converter.floatToFixed;
     return [
       {
-        label: "Absolute Capacity",
-        value: this.get("name") === "root" ? 100 : floatToFixed(this.get("absCapacity"))
+        label: "Absolute Used",
+        style: "primary",
+        value:
+          this.get("name") === "root"
+            ? floatToFixed(this.get("usedCapacity"))
+            : floatToFixed(this.get("absUsedCapacity"))
       },
       {
-        label: "Absolute Used",
-        value: this.get("name") === "root" ? floatToFixed(this.get("usedCapacity")) : floatToFixed(this.get("absUsedCapacity"))
+        label: "Absolute Capacity",
+        style: "primary",
+        value:
+          this.get("name") === "root"
+            ? 100
+            : floatToFixed(this.get("absCapacity"))
       },
       {
         label: "Absolute Max Capacity",
-        value: this.get("name") === "root" ? 100 : floatToFixed(this.get("absMaxCapacity"))
+        style: "secondary",
+        value:
+          this.get("name") === "root"
+            ? 100
+            : floatToFixed(this.get("absMaxCapacity"))
       }
     ];
   }.property("absCapacity", "usedCapacity", "absMaxCapacity"),
-
   userUsagesDonutChartData: function() {
     var data = [];
     if (this.get("users")) {
@@ -80,7 +94,7 @@ export default DS.Model.extend({
 
   hasUserUsages: function() {
     return this.get("userUsagesDonutChartData").length > 0;
-  }.property(),
+  }.property("userUsagesDonutChartData"),
 
   numOfApplicationsDonutChartData: function() {
     return [

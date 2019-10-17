@@ -47,7 +47,6 @@ import org.apache.hadoop.yarn.api.records.ContainerUpdateType;
 import org.apache.hadoop.yarn.api.records.ExecutionType;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.NodeState;
-import org.apache.hadoop.yarn.api.records.ProfileCapability;
 import org.apache.hadoop.yarn.api.records.QueueInfo;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.ResourceBlacklistRequest;
@@ -67,7 +66,6 @@ import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.security.YarnAuthorizationProvider;
 import org.apache.hadoop.yarn.server.resourcemanager.nodelabels.RMNodeLabelsManager;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.ResourceProfilesManager;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMAppState;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt
     .RMAppAttemptState;
@@ -238,13 +236,14 @@ public class RMServerUtils {
    */
   public static void normalizeAndValidateRequests(List<ResourceRequest> ask,
       Resource maximumResource, String queueName, YarnScheduler scheduler,
-      RMContext rmContext)
-      throws InvalidResourceRequestException {
+      RMContext rmContext) throws InvalidResourceRequestException {
     // Get queue from scheduler
     QueueInfo queueInfo = null;
     try {
       queueInfo = scheduler.getQueueInfo(queueName, false, false);
     } catch (IOException e) {
+      //Queue may not exist since it could be auto-created in case of
+      // dynamic queues
     }
 
     for (ResourceRequest resReq : ask) {
@@ -624,37 +623,6 @@ public class RMServerUtils {
           rmContext.getNodeLabelManager().getLabelsToNodes(
               Collections.singleton(label));
       return labelsToNodes.get(label);
-    }
-  }
-
-  public static void convertProfileToResourceCapability(ResourceRequest ask,
-      Configuration conf, ResourceProfilesManager resourceProfilesManager)
-      throws YarnException {
-
-    if (LOG_HANDLE.isDebugEnabled()) {
-      LOG_HANDLE
-          .debug("Converting profile to resource capability for ask " + ask);
-    }
-
-    boolean profilesEnabled =
-        conf.getBoolean(YarnConfiguration.RM_RESOURCE_PROFILES_ENABLED,
-            YarnConfiguration.DEFAULT_RM_RESOURCE_PROFILES_ENABLED);
-    if (!profilesEnabled) {
-      if (ask.getProfileCapability() != null && !ask.getProfileCapability()
-          .getProfileCapabilityOverride().equals(Resources.none())) {
-        ask.setCapability(
-            ask.getProfileCapability().getProfileCapabilityOverride());
-      }
-    } else {
-      if (ask.getProfileCapability() != null) {
-        ask.setCapability(ProfileCapability
-            .toResource(ask.getProfileCapability(),
-                resourceProfilesManager.getResourceProfiles()));
-      }
-    }
-    if (LOG_HANDLE.isDebugEnabled()) {
-      LOG_HANDLE
-          .debug("Converted profile to resource capability for ask " + ask);
     }
   }
 

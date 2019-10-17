@@ -24,24 +24,22 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceType;
 import org.apache.hadoop.yarn.service.ServiceContext;
-import org.apache.hadoop.yarn.service.api.records.Service;
-import org.apache.hadoop.yarn.service.api.records.Component;
 import org.apache.hadoop.yarn.service.api.records.ConfigFile;
 import org.apache.hadoop.yarn.service.api.records.ConfigFormat;
-import org.apache.hadoop.yarn.service.api.records.Configuration;
 import org.apache.hadoop.yarn.service.component.instance.ComponentInstance;
 import org.apache.hadoop.yarn.service.conf.YarnServiceConstants;
-import org.apache.hadoop.yarn.service.conf.YarnServiceConf;
 import org.apache.hadoop.yarn.service.containerlaunch.AbstractLauncher;
+import org.apache.hadoop.yarn.service.containerlaunch.ContainerLaunchService;
 import org.apache.hadoop.yarn.service.exceptions.BadCommandArgumentsException;
 import org.apache.hadoop.yarn.service.exceptions.SliderException;
 import org.apache.hadoop.yarn.service.utils.PublishedConfiguration;
 import org.apache.hadoop.yarn.service.utils.PublishedConfigurationOutputter;
-import org.apache.hadoop.yarn.service.utils.SliderFileSystem;
 import org.apache.hadoop.yarn.service.utils.ServiceUtils;
+import org.apache.hadoop.yarn.service.utils.SliderFileSystem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,7 +52,11 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.regex.Pattern;
 
-import static org.apache.hadoop.yarn.service.api.ServiceApiConstants.*;
+import static org.apache.hadoop.yarn.service.api.ServiceApiConstants.COMPONENT_ID;
+import static org.apache.hadoop.yarn.service.api.ServiceApiConstants.COMPONENT_INSTANCE_NAME;
+import static org.apache.hadoop.yarn.service.api.ServiceApiConstants.COMPONENT_NAME;
+import static org.apache.hadoop.yarn.service.api.ServiceApiConstants.COMPONENT_NAME_LC;
+import static org.apache.hadoop.yarn.service.api.ServiceApiConstants.CONTAINER_ID;
 
 /**
  * This is a factoring out of methods handy for providers. It's bonded to a log
@@ -162,57 +164,11 @@ public class ProviderUtils implements YarnServiceConstants {
     }
   }
 
-  /**
-   * Localize the service keytabs for the service.
-   * @param launcher container launcher
-   * @param fileSystem file system
-   * @throws IOException trouble uploading to HDFS
-   */
-  public void localizeServiceKeytabs(AbstractLauncher launcher,
-      SliderFileSystem fileSystem, Service service) throws IOException {
-
-    Configuration conf = service.getConfiguration();
-    String keytabPathOnHost =
-        conf.getProperty(YarnServiceConf.KEY_AM_KEYTAB_LOCAL_PATH);
-    if (ServiceUtils.isUnset(keytabPathOnHost)) {
-      String amKeytabName =
-          conf.getProperty(YarnServiceConf.KEY_AM_LOGIN_KEYTAB_NAME);
-      String keytabDir =
-          conf.getProperty(YarnServiceConf.KEY_HDFS_KEYTAB_DIR);
-      // we need to localize the keytab files in the directory
-      Path keytabDirPath = fileSystem.buildKeytabPath(keytabDir, null,
-          service.getName());
-      boolean serviceKeytabsDeployed = false;
-      if (fileSystem.getFileSystem().exists(keytabDirPath)) {
-        FileStatus[] keytabs = fileSystem.getFileSystem().listStatus(
-            keytabDirPath);
-        LocalResource keytabRes;
-        for (FileStatus keytab : keytabs) {
-          if (!amKeytabName.equals(keytab.getPath().getName())
-              && keytab.getPath().getName().endsWith(".keytab")) {
-            serviceKeytabsDeployed = true;
-            log.info("Localizing keytab {}", keytab.getPath().getName());
-            keytabRes = fileSystem.createAmResource(keytab.getPath(),
-                LocalResourceType.FILE);
-            launcher.addLocalResource(KEYTAB_DIR + "/" +
-                    keytab.getPath().getName(),
-                keytabRes);
-          }
-        }
-      }
-      if (!serviceKeytabsDeployed) {
-        log.warn("No service keytabs for the service have been localized.  "
-            + "If the service requires keytabs for secure operation, "
-            + "please ensure that the required keytabs have been uploaded "
-            + "to the folder {}", keytabDirPath);
-      }
-    }
-  }
-
   public static Path initCompInstanceDir(SliderFileSystem fs,
+      ContainerLaunchService.ComponentLaunchContext compLaunchContext,
       ComponentInstance instance) {
-    Path compDir = new Path(new Path(fs.getAppDir(), "components"),
-        instance.getCompName());
+    Path compDir = fs.getComponentDir(compLaunchContext.getServiceVersion(),
+        compLaunchContext.getName());
     Path compInstanceDir = new Path(compDir, instance.getCompInstanceName());
     instance.setCompInstanceDir(compInstanceDir);
     return compInstanceDir;
@@ -221,12 +177,15 @@ public class ProviderUtils implements YarnServiceConstants {
   // 1. Create all config files for a component on hdfs for localization
   // 2. Add the config file to localResource
   public static synchronized void createConfigFileAndAddLocalResource(
-      AbstractLauncher launcher, SliderFileSystem fs, Component component,
+      AbstractLauncher launcher, SliderFileSystem fs,
+      ContainerLaunchService.ComponentLaunchContext compLaunchContext,
       Map<String, String> tokensForSubstitution, ComponentInstance instance,
       ServiceContext context) throws IOException {
-    Path compInstanceDir = initCompInstanceDir(fs, instance);
+    Path compInstanceDir = initCompInstanceDir(fs, compLaunchContext, instance);
     if (!fs.getFileSystem().exists(compInstanceDir)) {
-      log.info(instance.getCompInstanceId() + ": Creating dir on hdfs: " + compInstanceDir);
+      log.info("{} version {} : Creating dir on hdfs: {}",
+          instance.getCompInstanceId(), compLaunchContext.getServiceVersion(),
+          compInstanceDir);
       fs.getFileSystem().mkdirs(compInstanceDir,
           new FsPermission(FsAction.ALL, FsAction.NONE, FsAction.NONE));
     } else {
@@ -239,7 +198,12 @@ public class ProviderUtils implements YarnServiceConstants {
           + tokensForSubstitution);
     }
 
-    for (ConfigFile originalFile : component.getConfiguration().getFiles()) {
+    for (ConfigFile originalFile : compLaunchContext.getConfiguration()
+        .getFiles()) {
+
+      if (isStaticFile(originalFile)) {
+        continue;
+      }
       ConfigFile configFile = originalFile.copy();
       String fileName = new Path(configFile.getDestFile()).getName();
 
@@ -249,7 +213,14 @@ public class ProviderUtils implements YarnServiceConstants {
             .replaceAll(Pattern.quote(token.getKey()), token.getValue()));
       }
 
+      /* When source file is not specified, write new configs
+       * to compInstanceDir/fileName
+       * When source file is specified, it reads and performs variable
+       * substitution and merges in new configs, and writes a new file to
+       * compInstanceDir/fileName.
+       */
       Path remoteFile = new Path(compInstanceDir, fileName);
+
       if (!fs.getFileSystem().exists(remoteFile)) {
         log.info("Saving config file on hdfs for component " + instance
             .getCompInstanceName() + ": " + configFile);
@@ -281,20 +252,76 @@ public class ProviderUtils implements YarnServiceConstants {
       // Add resource for localization
       LocalResource configResource =
           fs.createAmResource(remoteFile, LocalResourceType.FILE);
-      File destFile = new File(configFile.getDestFile());
+      Path destFile = new Path(configFile.getDestFile());
       String symlink = APP_CONF_DIR + "/" + fileName;
-      if (destFile.isAbsolute()) {
-        launcher.addLocalResource(symlink, configResource,
-            configFile.getDestFile());
-        log.info("Add config file for localization: " + symlink + " -> "
-            + configResource.getResource().getFile() + ", dest mount path: "
-            + configFile.getDestFile());
-      } else {
-        launcher.addLocalResource(symlink, configResource);
-        log.info("Add config file for localization: " + symlink + " -> "
-            + configResource.getResource().getFile());
-      }
+      addLocalResource(launcher, symlink, configResource, destFile);
     }
+  }
+
+  public static synchronized void handleStaticFilesForLocalization(
+      AbstractLauncher launcher, SliderFileSystem fs, ContainerLaunchService
+      .ComponentLaunchContext componentLaunchCtx)
+      throws IOException {
+    for (ConfigFile staticFile :
+        componentLaunchCtx.getConfiguration().getFiles()) {
+      // Only handle static file here.
+      if (!isStaticFile(staticFile)) {
+        continue;
+      }
+
+      if (staticFile.getSrcFile() == null) {
+        // This should not happen, AbstractClientProvider should have checked
+        // this.
+        throw new IOException("srcFile is null, please double check.");
+      }
+      Path sourceFile = new Path(staticFile.getSrcFile());
+
+      // Output properties to sourceFile if not existed
+      if (!fs.getFileSystem().exists(sourceFile)) {
+        throw new IOException(
+            "srcFile=" + sourceFile + " doesn't exist, please double check.");
+      }
+
+      FileStatus fileStatus = fs.getFileSystem().getFileStatus(sourceFile);
+      if (fileStatus.isDirectory()) {
+        throw new IOException("srcFile=" + sourceFile +
+            " is a directory, which is not supported.");
+      }
+
+      // Add resource for localization
+      LocalResource localResource = fs.createAmResource(sourceFile,
+          (staticFile.getType() == ConfigFile.TypeEnum.ARCHIVE ?
+              LocalResourceType.ARCHIVE :
+              LocalResourceType.FILE));
+      Path destFile = new Path(sourceFile.getName());
+      if (staticFile.getDestFile() != null && !staticFile.getDestFile()
+          .isEmpty()) {
+        destFile = new Path(staticFile.getDestFile());
+      }
+
+      addLocalResource(launcher, destFile.getName(), localResource, destFile);
+    }
+  }
+
+  private static void addLocalResource(AbstractLauncher launcher,
+      String symlink, LocalResource localResource, Path destFile) {
+    if (destFile.isAbsolute()) {
+      launcher.addLocalResource(symlink, localResource, destFile.toString());
+      log.info("Added file for localization: "+ symlink +" -> " +
+          localResource.getResource().getFile() + ", dest mount path: " +
+          destFile);
+    } else{
+      launcher.addLocalResource(symlink, localResource);
+      log.info("Added file for localization: " + symlink+ " -> " +
+          localResource.getResource().getFile());
+    }
+  }
+
+  // Static file is files uploaded by users before launch the service. Which
+  // should be localized to container local disk without any changes.
+  private static boolean isStaticFile(ConfigFile file) {
+    return file.getType().equals(ConfigFile.TypeEnum.ARCHIVE) || file.getType()
+        .equals(ConfigFile.TypeEnum.STATIC);
   }
 
   private static void resolvePropsInConfigFileAndSaveOnHdfs(SliderFileSystem fs,
@@ -393,13 +420,14 @@ public class ProviderUtils implements YarnServiceConstants {
    * @return tokens to replace
    */
   public static Map<String, String> initCompTokensForSubstitute(
-      ComponentInstance instance) {
+      ComponentInstance instance, Container container,
+      ContainerLaunchService.ComponentLaunchContext componentLaunchContext) {
     Map<String, String> tokens = new HashMap<>();
-    tokens.put(COMPONENT_NAME, instance.getCompSpec().getName());
+    tokens.put(COMPONENT_NAME, componentLaunchContext.getName());
     tokens
-        .put(COMPONENT_NAME_LC, instance.getCompSpec().getName().toLowerCase());
+        .put(COMPONENT_NAME_LC, componentLaunchContext.getName().toLowerCase());
     tokens.put(COMPONENT_INSTANCE_NAME, instance.getCompInstanceName());
-    tokens.put(CONTAINER_ID, instance.getContainer().getId().toString());
+    tokens.put(CONTAINER_ID, container.getId().toString());
     tokens.put(COMPONENT_ID,
         String.valueOf(instance.getCompInstanceId().getId()));
     tokens.putAll(instance.getComponent().getDependencyHostIpTokens());

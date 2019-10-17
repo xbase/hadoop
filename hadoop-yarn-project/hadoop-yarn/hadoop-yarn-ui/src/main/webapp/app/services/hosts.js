@@ -72,11 +72,20 @@ export default Ember.Service.extend({
     return this.normalizeURL(this.get("env.app.hosts.timelineWebAddress"));
   }),
 
+  timelineV1WebAddress: Ember.computed(function () {
+    return this.normalizeURL(this.get("env.app.hosts.timelineV1WebAddress"));
+  }),
+
   rmWebAddress: Ember.computed(function () {
     return this.normalizeURL(this.get("env.app.hosts.rmWebAddress"));
   }),
 
   dashWebAddress: Ember.computed(function () {
     return this.normalizeURL(this.get("env.app.hosts.dashWebAddress"));
+  }),
+
+  isSecurityEnabled: Ember.computed(function () {
+    console.log(this.get("env.app.hosts.isSecurityEnabled"));
+    return this.get("env.app.hosts.isSecurityEnabled");
   })
 });

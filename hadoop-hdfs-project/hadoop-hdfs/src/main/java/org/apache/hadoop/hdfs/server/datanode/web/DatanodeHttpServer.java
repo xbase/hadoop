@@ -72,6 +72,7 @@ import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_ADMIN;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_HTTPS_ADDRESS_DEFAULT;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_HTTPS_ADDRESS_KEY;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_HTTP_ADDRESS_KEY;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_HTTP_INTERNAL_PROXY_PORT;
 
 public class DatanodeHttpServer implements Closeable {
   private final HttpServer2 infoServer;
@@ -88,6 +89,13 @@ public class DatanodeHttpServer implements Closeable {
   private InetSocketAddress httpsAddress;
   static final Log LOG = LogFactory.getLog(DatanodeHttpServer.class);
 
+  // HttpServer threads are only used for the web UI and basic servlets, so
+  // set them to the minimum possible
+  private static final int HTTP_SELECTOR_THREADS = 1;
+  private static final int HTTP_ACCEPTOR_THREADS = 1;
+  private static final int HTTP_MAX_THREADS =
+      HTTP_SELECTOR_THREADS + HTTP_ACCEPTOR_THREADS + 1;
+
   public DatanodeHttpServer(final Configuration conf,
       final DataNode datanode,
       final ServerSocketChannel externalHttpChannel)
@@ -96,13 +104,20 @@ public class DatanodeHttpServer implements Closeable {
     this.conf = conf;
 
     Configuration confForInfoServer = new Configuration(conf);
-    confForInfoServer.setInt(HttpServer2.HTTP_MAX_THREADS_KEY, 10);
+    confForInfoServer.setInt(HttpServer2.HTTP_MAX_THREADS_KEY,
+        HTTP_MAX_THREADS);
+    confForInfoServer.setInt(HttpServer2.HTTP_SELECTOR_COUNT_KEY,
+        HTTP_SELECTOR_THREADS);
+    confForInfoServer.setInt(HttpServer2.HTTP_ACCEPTOR_COUNT_KEY,
+        HTTP_ACCEPTOR_THREADS);
+    int proxyPort =
+        confForInfoServer.getInt(DFS_DATANODE_HTTP_INTERNAL_PROXY_PORT, 0);
     HttpServer2.Builder builder = new HttpServer2.Builder()
         .setName("datanode")
         .setConf(confForInfoServer)
         .setACL(new AccessControlList(conf.get(DFS_ADMIN, " ")))
         .hostName(getHostnameForSpnegoPrincipal(confForInfoServer))
-        .addEndpoint(URI.create("http://localhost:0"))
+        .addEndpoint(URI.create("http://localhost:" + proxyPort))
         .setFindPort(true);
 
     final boolean xFrameEnabled = conf.getBoolean(
@@ -117,6 +132,7 @@ public class DatanodeHttpServer implements Closeable {
 
     this.infoServer = builder.build();
 
+    this.infoServer.setAttribute(HttpServer2.CONF_CONTEXT_ATTRIBUTE, conf);
     this.infoServer.setAttribute("datanode", datanode);
     this.infoServer.setAttribute(JspHelper.CURRENT_CONF, conf);
     this.infoServer.addServlet(null, "/blockScannerReport",

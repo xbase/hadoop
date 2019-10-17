@@ -58,13 +58,13 @@ import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsCreateModes;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.io.MultipleIOException;
-import org.apache.hadoop.io.Text;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.security.token.DelegationTokenIssuer;
 import org.apache.hadoop.util.ClassUtil;
 import org.apache.hadoop.util.DataChecksum;
 import org.apache.hadoop.util.Progressable;
@@ -121,7 +121,8 @@ import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.*;
 @SuppressWarnings("DeprecatedIsStillUsed")
 @InterfaceAudience.Public
 @InterfaceStability.Stable
-public abstract class FileSystem extends Configured implements Closeable {
+public abstract class FileSystem extends Configured
+    implements Closeable, DelegationTokenIssuer {
   public static final String FS_DEFAULT_NAME_KEY =
                    CommonConfigurationKeys.FS_DEFAULT_NAME_KEY;
   public static final String DEFAULT_FS =
@@ -386,6 +387,7 @@ public abstract class FileSystem extends Configured implements Closeable {
    */
   @InterfaceAudience.Public
   @InterfaceStability.Evolving
+  @Override
   public String getCanonicalServiceName() {
     return (getChildFileSystems() == null)
       ? SecurityUtil.buildDTServiceName(getUri(), getDefaultPort())
@@ -600,69 +602,9 @@ public abstract class FileSystem extends Configured implements Closeable {
    * @throws IOException on any problem obtaining a token
    */
   @InterfaceAudience.Private()
+  @Override
   public Token<?> getDelegationToken(String renewer) throws IOException {
     return null;
-  }
-
-  /**
-   * Obtain all delegation tokens used by this FileSystem that are not
-   * already present in the given Credentials. Existing tokens will neither
-   * be verified as valid nor having the given renewer.  Missing tokens will
-   * be acquired and added to the given Credentials.
-   *
-   * Default Impl: works for simple FS with its own token
-   * and also for an embedded FS whose tokens are those of its
-   * child FileSystems (i.e. the embedded FS has no tokens of its own).
-   *
-   * @param renewer the user allowed to renew the delegation tokens
-   * @param credentials cache in which to add new delegation tokens
-   * @return list of new delegation tokens
-   * @throws IOException problems obtaining a token
-   */
-  @InterfaceAudience.Public
-  @InterfaceStability.Evolving
-  public Token<?>[] addDelegationTokens(
-      final String renewer, Credentials credentials) throws IOException {
-    if (credentials == null) {
-      credentials = new Credentials();
-    }
-    final List<Token<?>> tokens = new ArrayList<>();
-    collectDelegationTokens(renewer, credentials, tokens);
-    return tokens.toArray(new Token<?>[tokens.size()]);
-  }
-
-  /**
-   * Recursively obtain the tokens for this FileSystem and all descendant
-   * FileSystems as determined by {@link #getChildFileSystems()}.
-   * @param renewer the user allowed to renew the delegation tokens
-   * @param credentials cache in which to add the new delegation tokens
-   * @param tokens list in which to add acquired tokens
-   * @throws IOException problems obtaining a token
-   */
-  private void collectDelegationTokens(final String renewer,
-                                       final Credentials credentials,
-                                       final List<Token<?>> tokens)
-                                           throws IOException {
-    final String serviceName = getCanonicalServiceName();
-    // Collect token of the this filesystem and then of its embedded children
-    if (serviceName != null) { // fs has token, grab it
-      final Text service = new Text(serviceName);
-      Token<?> token = credentials.getToken(service);
-      if (token == null) {
-        token = getDelegationToken(renewer);
-        if (token != null) {
-          tokens.add(token);
-          credentials.addToken(service, token);
-        }
-      }
-    }
-    // Now collect the tokens from the children
-    final FileSystem[] children = getChildFileSystems();
-    if (children != null) {
-      for (final FileSystem fs : children) {
-        fs.collectDelegationTokens(renewer, credentials, tokens);
-      }
-    }
   }
 
   /**
@@ -678,6 +620,13 @@ public abstract class FileSystem extends Configured implements Closeable {
   @VisibleForTesting
   public FileSystem[] getChildFileSystems() {
     return null;
+  }
+
+  @InterfaceAudience.Private
+  @Override
+  public DelegationTokenIssuer[] getAdditionalTokenIssuers()
+      throws IOException {
+    return getChildFileSystems();
   }
 
   /**
@@ -957,7 +906,26 @@ public abstract class FileSystem extends Configured implements Closeable {
    * resource directly and verify that the resource referenced
    * satisfies constraints specified at its construciton.
    * @param fd PathHandle object returned by the FS authority.
+   * @throws InvalidPathHandleException If {@link PathHandle} constraints are
+   *                                    not satisfied
+   * @throws IOException IO failure
+   * @throws UnsupportedOperationException If {@link #open(PathHandle, int)}
+   *                                       not overridden by subclass
+   */
+  public FSDataInputStream open(PathHandle fd) throws IOException {
+    return open(fd, getConf().getInt(IO_FILE_BUFFER_SIZE_KEY,
+        IO_FILE_BUFFER_SIZE_DEFAULT));
+  }
+
+  /**
+   * Open an FSDataInputStream matching the PathHandle instance. The
+   * implementation may encode metadata in PathHandle to address the
+   * resource directly and verify that the resource referenced
+   * satisfies constraints specified at its construciton.
+   * @param fd PathHandle object returned by the FS authority.
    * @param bufferSize the size of the buffer to use
+   * @throws InvalidPathHandleException If {@link PathHandle} constraints are
+   *                                    not satisfied
    * @throws IOException IO failure
    * @throws UnsupportedOperationException If not overridden by subclass
    */
@@ -979,6 +947,8 @@ public abstract class FileSystem extends Configured implements Closeable {
    *         the specified constraints.
    */
   public final PathHandle getPathHandle(FileStatus stat, HandleOpt... opt) {
+    // method is final with a default so clients calling getPathHandle(stat)
+    // get the same semantics for all FileSystem implementations
     if (null == opt || 0 == opt.length) {
       return createPathHandle(stat, HandleOpt.path());
     }
@@ -1628,7 +1598,7 @@ public abstract class FileSystem extends Configured implements Closeable {
   /**
    * Mark a path to be deleted when its FileSystem is closed.
    * When the JVM shuts down cleanly, all cached FileSystem objects will be
-   * closed automatically —these the marked paths will be deleted as a result.
+   * closed automatically. These the marked paths will be deleted as a result.
    *
    * If a FileSystem instance is not cached, i.e. has been created with
    * {@link #createFileSystem(URI, Configuration)}, then the paths will
@@ -2037,7 +2007,7 @@ public abstract class FileSystem extends Configured implements Closeable {
    *  </dd>
    * </dl>
    *
-   * @param pathPattern a regular expression specifying a pth pattern
+   * @param pathPattern a glob specifying a path pattern
 
    * @return an array of paths that match the path pattern
    * @throws IOException IO failure
@@ -2051,7 +2021,7 @@ public abstract class FileSystem extends Configured implements Closeable {
    * {@code pathPattern} and is accepted by the user-supplied path filter.
    * Results are sorted by their path names.
    *
-   * @param pathPattern a regular expression specifying the path pattern
+   * @param pathPattern a glob specifying the path pattern
    * @param filter a user-supplied path filter
    * @return null if {@code pathPattern} has no glob and the path does not exist
    *         an empty array if {@code pathPattern} has a glob and no path

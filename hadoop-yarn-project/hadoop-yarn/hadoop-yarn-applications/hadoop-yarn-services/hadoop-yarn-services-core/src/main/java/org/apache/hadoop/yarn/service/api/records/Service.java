@@ -26,6 +26,8 @@ import io.swagger.annotations.ApiModelProperty;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 
+import javax.xml.bind.annotation.XmlAccessType;
+import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlRootElement;
 import java.util.ArrayList;
@@ -43,9 +45,10 @@ import java.util.Objects;
 @ApiModel(description = "An Service resource has the following attributes.")
 @javax.annotation.Generated(value = "class io.swagger.codegen.languages.JavaClientCodegen", date = "2016-06-02T08:15:05.615-07:00")
 @XmlRootElement
+@XmlAccessorType(XmlAccessType.FIELD)
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonPropertyOrder({ "name", "state", "resource", "number_of_containers",
-    "lifetime", "containers" })
+@JsonPropertyOrder({ "name", "version", "description", "state", "resource",
+    "number_of_containers", "lifetime", "containers" })
 public class Service extends BaseResource {
   private static final long serialVersionUID = -4491694636566094885L;
 
@@ -53,15 +56,24 @@ public class Service extends BaseResource {
   private String id = null;
   private Artifact artifact = null;
   private Resource resource = null;
+  @JsonProperty("launch_time")
+  @XmlElement(name = "launch_time")
   private Date launchTime = null;
+  @JsonProperty("number_of_running_containers")
+  @XmlElement(name = "number_of_running_containers")
   private Long numberOfRunningContainers = null;
   private Long lifetime = null;
-  private PlacementPolicy placementPolicy = null;
   private List<Component> components = new ArrayList<>();
   private Configuration configuration = new Configuration();
   private ServiceState state = null;
   private Map<String, String> quicklinks = new HashMap<>();
   private String queue = null;
+  @JsonProperty("kerberos_principal")
+  @XmlElement(name = "kerberos_principal")
+  private KerberosPrincipal kerberosPrincipal = new KerberosPrincipal();
+  private String version = null;
+  private String description = null;
+  private String dockerClientConfig = null;
 
   /**
    * A unique service name.
@@ -97,6 +109,43 @@ public class Service extends BaseResource {
 
   public void setId(String id) {
     this.id = id;
+  }
+
+  @ApiModelProperty(example = "null", required = true,
+      value = "Version of the service.")
+  @JsonProperty("version")
+  public String getVersion() {
+    return version;
+  }
+
+  public void setVersion(String version) {
+    this.version = version;
+  }
+
+  /**
+   * Version of the service.
+   */
+  public Service version(String version) {
+    this.version = version;
+    return this;
+  }
+
+  @ApiModelProperty(example = "null", value = "Description of the service.")
+  @JsonProperty("description")
+  public String getDescription() {
+    return description;
+  }
+
+  public void setDescription(String description) {
+    this.description = description;
+  }
+
+  /**
+   * Description of the service.
+   */
+  public Service description(String description) {
+    this.description = description;
+    return this;
   }
 
   /**
@@ -148,12 +197,10 @@ public class Service extends BaseResource {
   }
 
   @ApiModelProperty(example = "null", value = "The time when the service was created, e.g. 2016-03-16T01:01:49.000Z.")
-  @JsonProperty("launch_time")
   public Date getLaunchTime() {
     return launchTime == null ? null : (Date) launchTime.clone();
   }
 
-  @XmlElement(name = "launch_time")
   public void setLaunchTime(Date launchTime) {
     this.launchTime = launchTime == null ? null : (Date) launchTime.clone();
   }
@@ -171,12 +218,10 @@ public class Service extends BaseResource {
   }
 
   @ApiModelProperty(example = "null", value = "In get response this provides the total number of running containers for this service (across all components) at the time of request. Note, a subsequent request can return a different number as and when more containers get allocated until it reaches the total number of containers or if a flex request has been made between the two requests.")
-  @JsonProperty("number_of_running_containers")
   public Long getNumberOfRunningContainers() {
     return numberOfRunningContainers;
   }
 
-  @XmlElement(name = "number_of_running_containers")
   public void setNumberOfRunningContainers(Long numberOfRunningContainers) {
     this.numberOfRunningContainers = numberOfRunningContainers;
   }
@@ -199,30 +244,6 @@ public class Service extends BaseResource {
 
   public void setLifetime(Long lifetime) {
     this.lifetime = lifetime;
-  }
-
-  /**
-   * Advanced scheduling and placement policies (optional). If not specified, it
-   * defaults to the default placement policy of the service owner. The design of
-   * placement policies are in the works. It is not very clear at this point,
-   * how policies in conjunction with labels be exposed to service owners.
-   * This is a placeholder for now. The advanced structure of this attribute
-   * will be determined by YARN-4902.
-   **/
-  public Service placementPolicy(PlacementPolicy placementPolicy) {
-    this.placementPolicy = placementPolicy;
-    return this;
-  }
-
-  @ApiModelProperty(example = "null", value = "Advanced scheduling and placement policies (optional). If not specified, it defaults to the default placement policy of the service owner. The design of placement policies are in the works. It is not very clear at this point, how policies in conjunction with labels be exposed to service owners. This is a placeholder for now. The advanced structure of this attribute will be determined by YARN-4902.")
-  @JsonProperty("placement_policy")
-  public PlacementPolicy getPlacementPolicy() {
-    return placementPolicy;
-  }
-
-  @XmlElement(name = "placement_policy")
-  public void setPlacementPolicy(PlacementPolicy placementPolicy) {
-    this.placementPolicy = placementPolicy;
   }
 
   /**
@@ -332,6 +353,45 @@ public class Service extends BaseResource {
     this.queue = queue;
   }
 
+  public Service kerberosPrincipal(KerberosPrincipal kerberosPrincipal) {
+    this.kerberosPrincipal = kerberosPrincipal;
+    return this;
+  }
+
+  /**
+   * The Kerberos Principal of the service.
+   * @return kerberosPrincipal
+   **/
+  @ApiModelProperty(value = "The Kerberos Principal of the service")
+  public KerberosPrincipal getKerberosPrincipal() {
+    return kerberosPrincipal;
+  }
+
+  public void setKerberosPrincipal(KerberosPrincipal kerberosPrincipal) {
+    this.kerberosPrincipal = kerberosPrincipal;
+  }
+
+  @JsonProperty("docker_client_config")
+  @XmlElement(name = "docker_client_config")
+  @SuppressWarnings("checkstyle:hiddenfield")
+  public Service dockerClientConfig(String dockerClientConfig) {
+    this.dockerClientConfig = dockerClientConfig;
+    return this;
+  }
+
+  /**
+   * The Docker client config for the service.
+   * @return dockerClientConfig
+   */
+  @ApiModelProperty(value = "The Docker client config for the service")
+  public String getDockerClientConfig() {
+    return dockerClientConfig;
+  }
+
+  public void setDockerClientConfig(String dockerClientConfig) {
+    this.dockerClientConfig = dockerClientConfig;
+  }
+
   @Override
   public boolean equals(java.lang.Object o) {
     if (this == o) {
@@ -356,6 +416,9 @@ public class Service extends BaseResource {
 
     sb.append("    name: ").append(toIndentedString(name)).append("\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
+    sb.append("    version: ").append(toIndentedString(version)).append("\n");
+    sb.append("    description: ").append(toIndentedString(description))
+        .append("\n");
     sb.append("    artifact: ").append(toIndentedString(artifact)).append("\n");
     sb.append("    resource: ").append(toIndentedString(resource)).append("\n");
     sb.append("    launchTime: ").append(toIndentedString(launchTime))
@@ -363,8 +426,6 @@ public class Service extends BaseResource {
     sb.append("    numberOfRunningContainers: ")
         .append(toIndentedString(numberOfRunningContainers)).append("\n");
     sb.append("    lifetime: ").append(toIndentedString(lifetime)).append("\n");
-    sb.append("    placementPolicy: ").append(toIndentedString(placementPolicy))
-        .append("\n");
     sb.append("    components: ").append(toIndentedString(components))
         .append("\n");
     sb.append("    configuration: ").append(toIndentedString(configuration))
@@ -373,6 +434,10 @@ public class Service extends BaseResource {
     sb.append("    quicklinks: ").append(toIndentedString(quicklinks))
         .append("\n");
     sb.append("    queue: ").append(toIndentedString(queue)).append("\n");
+    sb.append("    kerberosPrincipal: ")
+        .append(toIndentedString(kerberosPrincipal)).append("\n");
+    sb.append("    dockerClientConfig: ")
+        .append(toIndentedString(dockerClientConfig)).append("\n");
     sb.append("}");
     return sb.toString();
   }

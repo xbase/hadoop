@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.yarn.service.api.records;
 
+import com.fasterxml.jackson.annotation.JsonValue;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 
@@ -26,8 +27,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+import javax.xml.bind.annotation.XmlAccessType;
+import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlEnum;
 import javax.xml.bind.annotation.XmlRootElement;
+import javax.xml.bind.annotation.XmlType;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -46,24 +51,123 @@ import org.apache.hadoop.classification.InterfaceStability;
 @ApiModel(description = "One or more components of the service. If the service is HBase say, then the component can be a simple role like master or regionserver. If the service is a complex business webapp then a component can be other services say Kafka or Storm. Thereby it opens up the support for complex and nested services.")
 @javax.annotation.Generated(value = "class io.swagger.codegen.languages.JavaClientCodegen", date = "2016-06-02T08:15:05.615-07:00")
 @XmlRootElement
+@XmlAccessorType(XmlAccessType.FIELD)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class Component implements Serializable {
   private static final long serialVersionUID = -8430058381509087805L;
 
+  @JsonProperty("name")
   private String name = null;
+
+  @JsonProperty("dependencies")
   private List<String> dependencies = new ArrayList<String>();
+
+  @JsonProperty("readiness_check")
+  @XmlElement(name = "readiness_check")
   private ReadinessCheck readinessCheck = null;
+
+  @JsonProperty("artifact")
   private Artifact artifact = null;
+
+  @JsonProperty("launch_command")
+  @XmlElement(name = "launch_command")
   private String launchCommand = null;
+
+  @JsonProperty("resource")
   private Resource resource = null;
+
+  @JsonProperty("number_of_containers")
+  @XmlElement(name = "number_of_containers")
   private Long numberOfContainers = null;
+
+  @JsonProperty("run_privileged_container")
+  @XmlElement(name = "run_privileged_container")
   private Boolean runPrivilegedContainer = false;
+
+  @JsonProperty("placement_policy")
+  @XmlElement(name = "placement_policy")
   private PlacementPolicy placementPolicy = null;
+
+  @JsonProperty("state")
   private ComponentState state = ComponentState.FLEXING;
+
+  @JsonProperty("configuration")
   private Configuration configuration = new Configuration();
+
+  @JsonProperty("quicklinks")
   private List<String> quicklinks = new ArrayList<String>();
+
+  @JsonProperty("containers")
   private List<Container> containers =
       Collections.synchronizedList(new ArrayList<Container>());
+
+
+  @JsonProperty("restart_policy")
+  @XmlElement(name = "restart_policy")
+  private RestartPolicyEnum restartPolicy = RestartPolicyEnum.ALWAYS;
+
+  /**
+   * Policy of restart component. Including ALWAYS - Long lived components
+   * (Always restart component instance even if instance exit code &#x3D; 0.);
+   *
+   * ON_FAILURE (Only restart component instance if instance exit code !&#x3D;
+   * 0);
+   * NEVER (Do not restart in any cases)
+   *
+   * @return restartPolicy
+   **/
+  @XmlType(name = "restart_policy")
+  @XmlEnum
+  public enum RestartPolicyEnum {
+    ALWAYS("ALWAYS"),
+
+    ON_FAILURE("ON_FAILURE"),
+
+    NEVER("NEVER");
+    private String value;
+
+    RestartPolicyEnum(String value) {
+      this.value = value;
+    }
+
+    @Override
+    @JsonValue
+    public String toString() {
+      return value;
+    }
+  }
+
+  public Component restartPolicy(RestartPolicyEnum restartPolicyEnumVal) {
+    this.restartPolicy = restartPolicyEnumVal;
+    return this;
+  }
+
+  /**
+   * Policy of restart component.
+   *
+   * Including
+   * ALWAYS (Always restart component instance even if instance exit
+   * code &#x3D; 0);
+   *
+   * ON_FAILURE (Only restart component instance if instance exit code !&#x3D;
+   * 0);
+   *
+   * NEVER (Do not restart in any cases)
+   *
+   * @return restartPolicy
+   **/
+  @ApiModelProperty(value = "Policy of restart component. Including ALWAYS "
+      + "(Always restart component even if instance exit code = 0); "
+      + "ON_FAILURE (Only restart component if instance exit code != 0); "
+      + "NEVER (Do not restart in any cases)")
+  public RestartPolicyEnum getRestartPolicy() {
+    return restartPolicy;
+  }
+
+  public void setRestartPolicy(RestartPolicyEnum restartPolicy) {
+    this.restartPolicy = restartPolicy;
+  }
+
 
   /**
    * Name of the service component (mandatory).
@@ -74,7 +178,6 @@ public class Component implements Serializable {
   }
 
   @ApiModelProperty(example = "null", required = true, value = "Name of the service component (mandatory).")
-  @JsonProperty("name")
   public String getName() {
     return name;
   }
@@ -95,7 +198,6 @@ public class Component implements Serializable {
   }
 
   @ApiModelProperty(example = "null", value = "An array of service components which should be in READY state (as defined by readiness check), before this component can be started. The dependencies across all components of an service should be represented as a DAG.")
-  @JsonProperty("dependencies")
   public List<String> getDependencies() {
     return dependencies;
   }
@@ -113,12 +215,10 @@ public class Component implements Serializable {
   }
 
   @ApiModelProperty(example = "null", value = "Readiness check for this component.")
-  @JsonProperty("readiness_check")
   public ReadinessCheck getReadinessCheck() {
     return readinessCheck;
   }
 
-  @XmlElement(name = "readiness_check")
   public void setReadinessCheck(ReadinessCheck readinessCheck) {
     this.readinessCheck = readinessCheck;
   }
@@ -133,7 +233,6 @@ public class Component implements Serializable {
   }
 
   @ApiModelProperty(example = "null", value = "Artifact of the component (optional). If not specified, the service level global artifact takes effect.")
-  @JsonProperty("artifact")
   public Artifact getArtifact() {
     return artifact;
   }
@@ -153,12 +252,10 @@ public class Component implements Serializable {
   }
 
   @ApiModelProperty(example = "null", value = "The custom launch command of this component (optional). When specified at the component level, it overrides the value specified at the global level (if any).")
-  @JsonProperty("launch_command")
   public String getLaunchCommand() {
     return launchCommand;
   }
 
-  @XmlElement(name = "launch_command")
   public void setLaunchCommand(String launchCommand) {
     this.launchCommand = launchCommand;
   }
@@ -173,7 +270,6 @@ public class Component implements Serializable {
   }
 
   @ApiModelProperty(example = "null", value = "Resource of this component (optional). If not specified, the service level global resource takes effect.")
-  @JsonProperty("resource")
   public Resource getResource() {
     return resource;
   }
@@ -192,18 +288,15 @@ public class Component implements Serializable {
   }
 
   @ApiModelProperty(example = "null", value = "Number of containers for this component (optional). If not specified, the service level global number_of_containers takes effect.")
-  @JsonProperty("number_of_containers")
   public Long getNumberOfContainers() {
     return numberOfContainers;
   }
 
-  @XmlElement(name = "number_of_containers")
   public void setNumberOfContainers(Long numberOfContainers) {
     this.numberOfContainers = numberOfContainers;
   }
 
   @ApiModelProperty(example = "null", value = "Containers of a started component. Specifying a value for this attribute for the POST payload raises a validation error. This blob is available only in the GET response of a started service.")
-  @JsonProperty("containers")
   public List<Container> getContainers() {
     return containers;
   }
@@ -228,6 +321,15 @@ public class Component implements Serializable {
     return null;
   }
 
+  public Container getComponentInstance(String compInstanceName) {
+    for (Container container : containers) {
+      if (compInstanceName.equals(container.getComponentInstanceName())) {
+        return container;
+      }
+    }
+    return null;
+  }
+
   /**
    * Run all containers of this component in privileged mode (YARN-4262).
    **/
@@ -237,34 +339,29 @@ public class Component implements Serializable {
   }
 
   @ApiModelProperty(example = "null", value = "Run all containers of this component in privileged mode (YARN-4262).")
-  @JsonProperty("run_privileged_container")
   public Boolean getRunPrivilegedContainer() {
     return runPrivilegedContainer;
   }
 
-  @XmlElement(name = "run_privileged_container")
   public void setRunPrivilegedContainer(Boolean runPrivilegedContainer) {
     this.runPrivilegedContainer = runPrivilegedContainer;
   }
 
   /**
    * Advanced scheduling and placement policies for all containers of this
-   * component (optional). If not specified, the service level placement_policy
-   * takes effect. Refer to the description at the global level for more
-   * details.
+   * component.
    **/
   public Component placementPolicy(PlacementPolicy placementPolicy) {
     this.placementPolicy = placementPolicy;
     return this;
   }
 
-  @ApiModelProperty(example = "null", value = "Advanced scheduling and placement policies for all containers of this component (optional). If not specified, the service level placement_policy takes effect. Refer to the description at the global level for more details.")
-  @JsonProperty("placement_policy")
+  @ApiModelProperty(example = "null", value = "Advanced scheduling and "
+      + "placement policies for all containers of this component.")
   public PlacementPolicy getPlacementPolicy() {
     return placementPolicy;
   }
 
-  @XmlElement(name = "placement_policy")
   public void setPlacementPolicy(PlacementPolicy placementPolicy) {
     this.placementPolicy = placementPolicy;
   }
@@ -278,7 +375,6 @@ public class Component implements Serializable {
   }
 
   @ApiModelProperty(example = "null", value = "Config properties for this component.")
-  @JsonProperty("configuration")
   public Configuration getConfiguration() {
     return configuration;
   }
@@ -297,7 +393,6 @@ public class Component implements Serializable {
   }
 
   @ApiModelProperty(example = "null", value = "A list of quicklink keys defined at the service level, and to be resolved by this component.")
-  @JsonProperty("quicklinks")
   public List<String> getQuicklinks() {
     return quicklinks;
   }
@@ -312,7 +407,6 @@ public class Component implements Serializable {
   }
 
   @ApiModelProperty(example = "null", value = "State of the component.")
-  @JsonProperty("state")
   public ComponentState getState() {
     return state;
   }
@@ -426,5 +520,17 @@ public class Component implements Serializable {
     if (this.getReadinessCheck() == null) {
       this.setReadinessCheck(that.getReadinessCheck());
     }
+  }
+
+  public void overwrite(Component that) {
+    setArtifact(that.getArtifact());
+    setResource(that.resource);
+    setNumberOfContainers(that.getNumberOfContainers());
+    setLaunchCommand(that.getLaunchCommand());
+    setConfiguration(that.configuration);
+    setRunPrivilegedContainer(that.getRunPrivilegedContainer());
+    setDependencies(that.getDependencies());
+    setPlacementPolicy(that.getPlacementPolicy());
+    setReadinessCheck(that.getReadinessCheck());
   }
 }

@@ -20,7 +20,6 @@ package org.apache.hadoop.util.curator;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import org.apache.curator.framework.AuthInfo;
@@ -32,6 +31,7 @@ import org.apache.curator.retry.RetryNTimes;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeys;
+import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.util.ZKUtil;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.data.ACL;
@@ -100,22 +100,11 @@ public final class ZKCuratorManager {
    * Utility method to fetch ZK auth info from the configuration.
    * @throws java.io.IOException if the Zookeeper ACLs configuration file
    * cannot be read
+   * @throws ZKUtil.BadAuthFormatException if the auth format is invalid
    */
   public static List<ZKUtil.ZKAuthInfo> getZKAuths(Configuration conf)
       throws IOException {
-    String zkAuthConf = conf.get(CommonConfigurationKeys.ZK_AUTH);
-    try {
-      zkAuthConf = ZKUtil.resolveConfIndirection(zkAuthConf);
-      if (zkAuthConf != null) {
-        return ZKUtil.parseAuth(zkAuthConf);
-      } else {
-        return Collections.emptyList();
-      }
-    } catch (IOException | ZKUtil.BadAuthFormatException e) {
-      LOG.error("Couldn't read Auth based on {}",
-          CommonConfigurationKeys.ZK_AUTH);
-      throw e;
-    }
+    return SecurityUtil.getZKAuthInfos(conf, CommonConfigurationKeys.ZK_AUTH);
   }
 
   /**
@@ -207,7 +196,10 @@ public final class ZKCuratorManager {
    */
   public String getStringData(final String path) throws Exception {
     byte[] bytes = getData(path);
-    return new String(bytes, Charset.forName("UTF-8"));
+    if (bytes != null) {
+      return new String(bytes, Charset.forName("UTF-8"));
+    }
+    return null;
   }
 
   /**
@@ -219,7 +211,10 @@ public final class ZKCuratorManager {
    */
   public String getStringData(final String path, Stat stat) throws Exception {
     byte[] bytes = getData(path, stat);
-    return new String(bytes, Charset.forName("UTF-8"));
+    if (bytes != null) {
+      return new String(bytes, Charset.forName("UTF-8"));
+    }
+    return null;
   }
 
   /**
@@ -301,6 +296,18 @@ public final class ZKCuratorManager {
    * @throws Exception If it cannot create the file.
    */
   public void createRootDirRecursively(String path) throws Exception {
+    createRootDirRecursively(path, null);
+  }
+
+  /**
+   * Utility function to ensure that the configured base znode exists.
+   * This recursively creates the znode as well as all of its parents.
+   * @param path Path of the znode to create.
+   * @param zkAcl ACLs for ZooKeeper.
+   * @throws Exception If it cannot create the file.
+   */
+  public void createRootDirRecursively(String path, List<ACL> zkAcl)
+      throws Exception {
     String[] pathParts = path.split("/");
     Preconditions.checkArgument(
         pathParts.length >= 1 && pathParts[0].isEmpty(),
@@ -309,7 +316,7 @@ public final class ZKCuratorManager {
 
     for (int i = 1; i < pathParts.length; i++) {
       sb.append("/").append(pathParts[i]);
-      create(sb.toString());
+      create(sb.toString(), zkAcl);
     }
   }
 

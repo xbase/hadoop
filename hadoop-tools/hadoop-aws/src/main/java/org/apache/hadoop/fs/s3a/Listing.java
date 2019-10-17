@@ -108,6 +108,7 @@ public class Listing {
    * @return the iterator
    * @throws IOException IO Problems
    */
+  @Retries.RetryRaw
   FileStatusListingIterator createFileStatusListingIterator(
       Path listPath,
       S3ListRequest request,
@@ -330,6 +331,7 @@ public class Listing {
      *                       items that are not listed from source.
      * @throws IOException IO Problems
      */
+    @Retries.RetryTranslated
     FileStatusListingIterator(ObjectListingIterator source,
         PathFilter filter,
         FileStatusAcceptor acceptor,
@@ -361,10 +363,12 @@ public class Listing {
      * @throws IOException
      */
     @Override
+    @Retries.RetryTranslated
     public boolean hasNext() throws IOException {
       return sourceHasNext() || providedStatusIterator.hasNext();
     }
 
+    @Retries.RetryTranslated
     private boolean sourceHasNext() throws IOException {
       if (statusBatchIterator.hasNext() || requestNextBatch()) {
         return true;
@@ -379,14 +383,16 @@ public class Listing {
     }
 
     @Override
+    @Retries.RetryTranslated
     public FileStatus next() throws IOException {
       final FileStatus status;
       if (sourceHasNext()) {
         status = statusBatchIterator.next();
         // We remove from provided list the file status listed by S3 so that
         // this does not return duplicate items.
-        LOG.debug("Removing the status from provided file status {}", status);
-        providedStatus.remove(status);
+        if (providedStatus.remove(status)) {
+          LOG.debug("Removed the status from provided file status {}", status);
+        }
       } else {
         if (providedStatusIterator.hasNext()) {
           status = providedStatusIterator.next();
@@ -407,6 +413,7 @@ public class Listing {
      * @return true if a new batch was created.
      * @throws IOException IO problems
      */
+    @Retries.RetryTranslated
     private boolean requestNextBatch() throws IOException {
       // look for more object listing batches being available
       while (source.hasNext()) {
@@ -540,10 +547,12 @@ public class Listing {
      * initial set of results/fail if there was a problem talking to the bucket.
      * @param listPath path of the listing
      * @param request initial request to make
-     * */
+     * @throws IOException if listObjects raises one.
+     */
+    @Retries.RetryRaw
     ObjectListingIterator(
         Path listPath,
-        S3ListRequest request) {
+        S3ListRequest request) throws IOException {
       this.listPath = listPath;
       this.maxKeys = owner.getMaxKeys();
       this.objects = owner.listObjects(request);
@@ -571,6 +580,7 @@ public class Listing {
      * @throws NoSuchElementException if there is no more data to list.
      */
     @Override
+    @Retries.RetryTranslated
     public S3ListResult next() throws IOException {
       if (firstListing) {
         // on the first listing, don't request more data.
@@ -713,7 +723,7 @@ public class Listing {
       if (tombstones != null) {
         this.tombstones = tombstones;
       } else {
-        this.tombstones = Collections.EMPTY_SET;
+        this.tombstones = Collections.emptySet();
       }
     }
 
@@ -813,20 +823,5 @@ public class Listing {
       return (status != null) && !status.getPath().equals(qualifiedPath);
     }
   }
-
-  /**
-   * A Path filter which accepts all filenames.
-   */
-  static final PathFilter ACCEPT_ALL = new PathFilter() {
-    @Override
-    public boolean accept(Path file) {
-      return true;
-    }
-
-    @Override
-    public String toString() {
-      return "ACCEPT_ALL";
-    }
-  };
 
 }

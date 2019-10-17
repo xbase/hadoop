@@ -28,6 +28,7 @@ import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.http.HttpServer2;
+import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.HttpCrossOriginFilterInitializer;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.service.CompositeService;
@@ -63,6 +64,8 @@ public class TimelineReaderServer extends CompositeService {
 
   private HttpServer2 readerWebServer;
   private TimelineReaderManager timelineReaderManager;
+  private String webAppURLWithoutScheme;
+
 
   public TimelineReaderServer() {
     super(TimelineReaderServer.class.getName());
@@ -73,10 +76,10 @@ public class TimelineReaderServer extends CompositeService {
     if (!YarnConfiguration.timelineServiceV2Enabled(conf)) {
       throw new YarnException("timeline service v.2 is not enabled");
     }
-    InetSocketAddress bindAddr = conf.getSocketAddr(
-        YarnConfiguration.TIMELINE_SERVICE_ADDRESS,
-            YarnConfiguration.DEFAULT_TIMELINE_SERVICE_ADDRESS,
-                YarnConfiguration.DEFAULT_TIMELINE_SERVICE_PORT);
+    webAppURLWithoutScheme =
+        WebAppUtils.getTimelineReaderWebAppURLWithoutScheme(conf);
+    InetSocketAddress bindAddr =
+        NetUtils.createSocketAddr(webAppURLWithoutScheme);
     // Login from keytab if security is enabled.
     try {
       SecurityUtil.login(conf, YarnConfiguration.TIMELINE_SERVICE_KEYTAB,
@@ -170,15 +173,30 @@ public class TimelineReaderServer extends CompositeService {
   private void startTimelineReaderWebApp() {
     Configuration conf = getConfig();
     addFilters(conf);
-    String bindAddress = WebAppUtils.getWebAppBindURL(conf,
-        YarnConfiguration.TIMELINE_SERVICE_BIND_HOST,
-        WebAppUtils.getTimelineReaderWebAppURL(conf));
+
+    String hostProperty = YarnConfiguration.TIMELINE_SERVICE_READER_BIND_HOST;
+    String host = conf.getTrimmed(hostProperty);
+    if (host == null || host.isEmpty()) {
+      // if reader bind-host is not set, fall back to timeline-service.bind-host
+      // to maintain compatibility
+      hostProperty = YarnConfiguration.TIMELINE_SERVICE_BIND_HOST;
+    }
+    String bindAddress = WebAppUtils
+        .getWebAppBindURL(conf, hostProperty, webAppURLWithoutScheme);
+
     LOG.info("Instantiating TimelineReaderWebApp at " + bindAddress);
     try {
+
+      String httpScheme = WebAppUtils.getHttpSchemePrefix(conf);
+
       HttpServer2.Builder builder = new HttpServer2.Builder()
             .setName("timeline")
             .setConf(conf)
-            .addEndpoint(URI.create("http://" + bindAddress));
+            .addEndpoint(URI.create(httpScheme + bindAddress));
+
+      if (httpScheme.equals(WebAppUtils.HTTPS_PREFIX)) {
+        WebAppUtils.loadSslConfiguration(builder, conf);
+      }
       readerWebServer = builder.build();
       readerWebServer.addJerseyResourcePackage(
           TimelineReaderWebServices.class.getPackage().getName() + ";"
@@ -224,7 +242,7 @@ public class TimelineReaderServer extends CompositeService {
   public static void main(String[] args) {
     Configuration conf = new YarnConfiguration();
     conf.setBoolean(YarnConfiguration.TIMELINE_SERVICE_ENABLED, true);
-    conf.setFloat(YarnConfiguration.TIMELINE_SERVICE_VERSION, 2.0f);
+    conf.setFloat(YarnConfiguration.TIMELINE_SERVICE_VERSIONS, 2.0f);
     TimelineReaderServer server = startTimelineReaderServer(args, conf);
     server.join();
   }

@@ -30,6 +30,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
+import org.apache.hadoop.util.Time;
 import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ExecutionType;
@@ -38,6 +39,7 @@ import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.ResourceUtilization;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.nodelabels.CommonNodeLabelsManager;
+import org.apache.hadoop.yarn.server.resourcemanager.RMContext;
 import org.apache.hadoop.yarn.server.resourcemanager.nodelabels.RMNodeLabelsManager;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainer;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainerState;
@@ -73,12 +75,17 @@ public abstract class SchedulerNode {
 
   private final RMNode rmNode;
   private final String nodeName;
+  private final RMContext rmContext;
 
   private volatile Set<String> labels = null;
+
+  // Last updated time
+  private volatile long lastHeartbeatMonotonicTime;
 
   public SchedulerNode(RMNode node, boolean usePortForNodeName,
       Set<String> labels) {
     this.rmNode = node;
+    this.rmContext = node.getRMContext();
     this.unallocatedResource = Resources.clone(node.getTotalCapability());
     this.totalResource = Resources.clone(node.getTotalCapability());
     if (usePortForNodeName) {
@@ -87,6 +94,7 @@ public abstract class SchedulerNode {
       nodeName = rmNode.getHostName();
     }
     this.labels = ImmutableSet.copyOf(labels);
+    this.lastHeartbeatMonotonicTime = Time.monotonicNow();
   }
 
   public SchedulerNode(RMNode node, boolean usePortForNodeName) {
@@ -237,6 +245,18 @@ public abstract class SchedulerNode {
 
     launchedContainers.remove(containerId);
     Container container = info.container.getContainer();
+
+    // We remove allocation tags when a container is actually
+    // released on NM. This is to avoid running into situation
+    // when AM releases a container and NM has some delay to
+    // actually release it, then the tag can still be visible
+    // at RM so that RM can respect it during scheduling new containers.
+    if (rmContext != null && rmContext.getAllocationTagsManager() != null) {
+      rmContext.getAllocationTagsManager()
+          .removeContainer(container.getNodeId(),
+              container.getId(), container.getAllocationTags());
+    }
+
     updateResourceForReleasedContainer(container);
 
     if (LOG.isDebugEnabled()) {
@@ -453,6 +473,35 @@ public abstract class SchedulerNode {
     return this.nodeUtilization;
   }
 
+  public long getLastHeartbeatMonotonicTime() {
+    return lastHeartbeatMonotonicTime;
+  }
+
+  /**
+   * This will be called for each node heartbeat.
+   */
+  public void notifyNodeUpdate() {
+    this.lastHeartbeatMonotonicTime = Time.monotonicNow();
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (!(o instanceof SchedulerNode)) {
+      return false;
+    }
+
+    SchedulerNode that = (SchedulerNode) o;
+
+    return getNodeID().equals(that.getNodeID());
+  }
+
+  @Override
+  public int hashCode() {
+    return getNodeID().hashCode();
+  }
 
   private static class ContainerInfo {
     private final RMContainer container;

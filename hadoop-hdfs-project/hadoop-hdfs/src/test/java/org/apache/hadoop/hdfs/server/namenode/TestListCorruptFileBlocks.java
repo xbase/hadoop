@@ -92,7 +92,7 @@ public class TestListCorruptFileBlocks {
       File storageDir = cluster.getInstanceStorageDir(0, 1);
       File data_dir = MiniDFSCluster.getFinalizedDir(storageDir, bpid);
       assertTrue("data directory does not exist", data_dir.exists());
-      List<File> metaFiles = MiniDFSCluster.getAllBlockMetadataFiles(data_dir);
+      List<File> metaFiles = MiniDFSCluster.getAllBlockFiles(data_dir);
       assertTrue("Data directory does not contain any blocks or there was an "
           + "IO error", metaFiles != null && !metaFiles.isEmpty());
       File metaFile = metaFiles.get(0);
@@ -172,7 +172,7 @@ public class TestListCorruptFileBlocks {
       File data_dir = MiniDFSCluster.getFinalizedDir(storageDir, 
           cluster.getNamesystem().getBlockPoolId());
       assertTrue("data directory does not exist", data_dir.exists());
-      List<File> metaFiles = MiniDFSCluster.getAllBlockMetadataFiles(data_dir);
+      List<File> metaFiles = MiniDFSCluster.getAllBlockFiles(data_dir);
       assertTrue("Data directory does not contain any blocks or there was an "
           + "IO error", metaFiles != null && !metaFiles.isEmpty());
       File metaFile = metaFiles.get(0);
@@ -452,7 +452,7 @@ public class TestListCorruptFileBlocks {
       cluster = new MiniDFSCluster.Builder(conf).build();
       FileSystem fs = cluster.getFileSystem();
       final int maxCorruptFileBlocks = 
-        FSNamesystem.DEFAULT_MAX_CORRUPT_FILEBLOCKS_RETURNED;
+        conf.getInt(DFSConfigKeys.DFS_NAMENODE_MAX_CORRUPT_FILE_BLOCKS_RETURNED_KEY, 100);
 
       // create 110 files with one block each
       DFSTestUtil util = new DFSTestUtil.Builder().setName("testMaxCorruptFiles").

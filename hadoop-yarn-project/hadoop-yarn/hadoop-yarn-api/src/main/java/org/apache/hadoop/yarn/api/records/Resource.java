@@ -18,7 +18,10 @@
 
 package org.apache.hadoop.yarn.api.records;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 
 import org.apache.commons.lang.NotImplementedException;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -82,6 +85,29 @@ public abstract class Resource implements Comparable<Resource> {
   @Stable
   public static Resource newInstance(long memory, int vCores) {
     return new LightWeightResource(memory, vCores);
+  }
+
+  /**
+   * Create a new {@link Resource} instance with the given CPU and memory
+   * values and additional resource values as set in the {@code others}
+   * parameter. Note that the CPU and memory settings in the {@code others}
+   * parameter will be ignored.
+   *
+   * @param memory the memory value
+   * @param vCores the CPU value
+   * @param others a map of other resource values indexed by resource name
+   * @return a {@link Resource} instance with the given resource values
+   */
+  @Public
+  @Stable
+  public static Resource newInstance(long memory, int vCores,
+      Map<String, Long> others) {
+    if (others != null) {
+      return new LightWeightResource(memory, vCores,
+          ResourceUtils.createResourceTypesArray(others));
+    } else {
+      return newInstance(memory, vCores);
+    }
   }
 
   @InterfaceAudience.Private
@@ -209,6 +235,22 @@ public abstract class Resource implements Comparable<Resource> {
   }
 
   /**
+   * Get list of resource information, this will be used by JAXB.
+   * @return list of resources copy.
+   */
+  @InterfaceAudience.Private
+  @InterfaceStability.Unstable
+  public List<ResourceInformation> getAllResourcesListCopy() {
+    List<ResourceInformation> list = new ArrayList<>();
+    for (ResourceInformation i : resources) {
+      ResourceInformation ri = new ResourceInformation();
+      ResourceInformation.copy(i, ri);
+      list.add(ri);
+    }
+    return list;
+  }
+
+  /**
    * Get ResourceInformation for a specified resource.
    *
    * @param resource name of the resource
@@ -327,6 +369,9 @@ public abstract class Resource implements Comparable<Resource> {
       return;
     }
     if (resource.equals(ResourceInformation.VCORES_URI)) {
+      if (value > Integer.MAX_VALUE) {
+        value = (long) Integer.MAX_VALUE;
+      }
       this.setVirtualCores((int)value);
       return;
     }
@@ -360,7 +405,7 @@ public abstract class Resource implements Comparable<Resource> {
   protected void throwExceptionWhenArrayOutOfBound(int index) {
     String exceptionMsg = String.format(
         "Trying to access ResourceInformation for given index=%d. "
-            + "Acceptable index range is [0,%d), please check double check "
+            + "Acceptable index range is [0,%d), please double check "
             + "configured resources in resource-types.xml",
         index, ResourceUtils.getNumberOfKnownResourceTypes());
 

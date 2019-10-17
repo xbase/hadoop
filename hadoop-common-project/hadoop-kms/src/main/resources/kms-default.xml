@@ -93,6 +93,21 @@
     </description>
   </property>
 
+  <property>
+    <name>hadoop.http.socket.backlog.size</name>
+    <value>500</value>
+    <description>
+      KMS Server accept queue size.
+    </description>
+  </property>
+
+  <property>
+    <name>hadoop.http.idle_timeout.ms</name>
+    <value>1000</value>
+    <description>
+      KMS Server connection timeout in milliseconds.
+    </description>
+  </property>
   <!-- KMS Backend KeyProvider -->
 
   <property>

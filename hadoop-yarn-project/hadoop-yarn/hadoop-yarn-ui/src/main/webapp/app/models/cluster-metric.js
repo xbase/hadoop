@@ -43,6 +43,8 @@ export default DS.Model.extend({
   decommissionedNodes: DS.attr('number'),
   rebootedNodes: DS.attr('number'),
   activeNodes: DS.attr('number'),
+  totalUsedResourcesAcrossPartition: DS.attr('object'),
+  totalClusterResourcesAcrossPartition: DS.attr('object'),
 
   getFinishedAppsDataForDonutChart: function() {
     var arr = [];
@@ -95,8 +97,12 @@ export default DS.Model.extend({
       label: "Decomissioned",
       value: this.get("decommissionedNodes")
     });
+    arr.push({
+      label: "Lost",
+      value: this.get("lostNodes")
+    });
     return arr;
-  }.property("activeNodes", "unhealthyNodes", "decommissioningNodes", "decommissionedNodes"),
+  }.property("activeNodes", "unhealthyNodes", "decommissioningNodes", "decommissionedNodes", "lostNodes"),
 
   getMemoryDataForDonutChart: function() {
     var type = "MB";
@@ -135,4 +141,71 @@ export default DS.Model.extend({
 
     return arr;
   }.property("allocatedVirtualCores", "reservedVirtualCores", "availableVirtualCores"),
+
+  getResourceTypes: function() {
+    var types = [];
+    if (this.get("totalClusterResourcesAcrossPartition")) {
+
+      console.log(types);
+    }
+  }.property("totalClusterResourcesAcrossPartition"),
+
+  /*
+   * Returned format
+   * [
+   *     {
+   *         name: <resource-name>
+   *         unit: <resource-unit>
+   *         [
+   *            {
+   *               label: <label>
+   *               value: <value>
+   *            },
+   *            {
+   *            }
+   *            ...
+   *         ],
+   *     }
+   * ]
+   */
+  getAllResourceTypesDonutChart: function() {
+    if (this.get("totalClusterResourcesAcrossPartition")
+      && this.get("totalUsedResourcesAcrossPartition")) {
+      var usages = [];
+
+      var clusterResourceInformations = this.get("totalClusterResourcesAcrossPartition").resourceInformations.resourceInformation;
+      var usedResourceInformations = this.get("totalUsedResourcesAcrossPartition").resourceInformations.resourceInformation;
+
+      clusterResourceInformations.forEach(function(cluster) {
+        var perResourceTypeUsage = {
+          name: cluster.name,
+          unit: cluster.units,
+          data: []
+        };
+
+        usedResourceInformations.forEach(function (used) {
+          if (used.name === perResourceTypeUsage.name) {
+            var usedValue = used.value;
+            perResourceTypeUsage.data.push({
+              label: "Used",
+              value: usedValue
+            }, {
+              label: "Available",
+              value: cluster.value - usedValue
+            });
+          }
+        });
+
+        usages.push(perResourceTypeUsage);
+
+        // Make sure id is a valid w3c ID
+        perResourceTypeUsage.id = perResourceTypeUsage.name.replace('/', '-');
+        perResourceTypeUsage.id = perResourceTypeUsage.id.replace('.', '-');
+      });
+
+      console.log(usages);
+      return usages;
+    }
+    return null;
+  }.property()
 });

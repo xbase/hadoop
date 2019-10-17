@@ -143,8 +143,7 @@ public class RegularContainerAllocator extends AbstractContainerAllocator {
 
     // Is the nodePartition of pending request matches the node's partition
     // If not match, jump to next priority.
-    if (!appInfo.acceptNodePartition(schedulerKey, node.getPartition(),
-        schedulingMode)) {
+    if (!appInfo.precheckNode(schedulerKey, node, schedulingMode)) {
       ActivitiesLogger.APP.recordSkippedAppActivityWithoutAllocation(
           activitiesManager, node, application, priority,
           ActivityDiagnosticConstant.
@@ -180,11 +179,22 @@ public class RegularContainerAllocator extends AbstractContainerAllocator {
     // This is to make sure non-partitioned-resource-request will prefer
     // to be allocated to non-partitioned nodes
     int missedNonPartitionedRequestSchedulingOpportunity = 0;
+    AppPlacementAllocator appPlacementAllocator =
+        appInfo.getAppPlacementAllocator(schedulerKey);
+    if (null == appPlacementAllocator){
+      // This is possible when #pending resource decreased by a different
+      // thread.
+      ActivitiesLogger.APP.recordSkippedAppActivityWithoutAllocation(
+          activitiesManager, node, application, priority,
+          ActivityDiagnosticConstant.PRIORITY_SKIPPED_BECAUSE_NULL_ANY_REQUEST);
+      return ContainerAllocation.PRIORITY_SKIPPED;
+    }
+    String requestPartition =
+        appPlacementAllocator.getPrimaryRequestedNodePartition();
+
     // Only do this when request associated with given scheduler key accepts
     // NO_LABEL under RESPECT_EXCLUSIVITY mode
-    if (StringUtils.equals(RMNodeLabelsManager.NO_LABEL,
-        appInfo.getAppPlacementAllocator(schedulerKey)
-            .getPrimaryRequestedNodePartition())) {
+    if (StringUtils.equals(RMNodeLabelsManager.NO_LABEL, requestPartition)) {
       missedNonPartitionedRequestSchedulingOpportunity =
           application.addMissedNonPartitionedRequestSchedulingOpportunity(
               schedulerKey);
@@ -253,7 +263,7 @@ public class RegularContainerAllocator extends AbstractContainerAllocator {
             reservedContainer, schedulingMode, resourceLimits);
     
     if (null == reservedContainer) {
-      if (result.state == AllocationState.PRIORITY_SKIPPED) {
+      if (result.getAllocationState() == AllocationState.PRIORITY_SKIPPED) {
         // Don't count 'skipped nodes' as a scheduling opportunity!
         application.subtractSchedulingOpportunity(schedulerKey);
       }
@@ -262,12 +272,9 @@ public class RegularContainerAllocator extends AbstractContainerAllocator {
     return result;
   }
   
-  public float getLocalityWaitFactor(
-      SchedulerRequestKey schedulerKey, int clusterNodes) {
+  public float getLocalityWaitFactor(int uniqAsks, int clusterNodes) {
     // Estimate: Required unique resources (i.e. hosts + racks)
-    int requiredResources = Math.max(
-        application.getAppPlacementAllocator(schedulerKey)
-            .getUniqueLocationAsks() - 1, 0);
+    int requiredResources = Math.max(uniqAsks - 1, 0);
     
     // waitFactor can't be more than '1' 
     // i.e. no point skipping more than clustersize opportunities
@@ -297,9 +304,16 @@ public class RegularContainerAllocator extends AbstractContainerAllocator {
       if (rmContext.getScheduler().getNumClusterNodes() == 0) {
         return false;
       }
+
+      int uniqLocationAsks = 0;
+      AppPlacementAllocator appPlacementAllocator =
+          application.getAppPlacementAllocator(schedulerKey);
+      if (appPlacementAllocator != null) {
+        uniqLocationAsks = appPlacementAllocator.getUniqueLocationAsks();
+      }
       // If we have only ANY requests for this schedulerKey, we should not
       // delay its scheduling.
-      if (application.getResourceRequests(schedulerKey).size() == 1) {
+      if (uniqLocationAsks == 1) {
         return true;
       }
 
@@ -313,7 +327,7 @@ public class RegularContainerAllocator extends AbstractContainerAllocator {
       } else {
         long requiredContainers =
             application.getOutstandingAsksCount(schedulerKey);
-        float localityWaitFactor = getLocalityWaitFactor(schedulerKey,
+        float localityWaitFactor = getLocalityWaitFactor(uniqLocationAsks,
             rmContext.getScheduler().getNumClusterNodes());
         // Cap the delay by the number of nodes in the cluster.
         return (Math.min(rmContext.getScheduler().getNumClusterNodes(),
@@ -473,8 +487,8 @@ public class RegularContainerAllocator extends AbstractContainerAllocator {
 
       // When a returned allocation is LOCALITY_SKIPPED, since we're in
       // off-switch request now, we will skip this app w.r.t priorities 
-      if (allocation.state == AllocationState.LOCALITY_SKIPPED) {
-        allocation.state = AllocationState.APP_SKIPPED;
+      if (allocation.getAllocationState() == AllocationState.LOCALITY_SKIPPED) {
+        allocation = ContainerAllocation.APP_SKIPPED;
       }
       allocation.requestLocalityType = requestLocalityType;
 
@@ -530,8 +544,7 @@ public class RegularContainerAllocator extends AbstractContainerAllocator {
             currentResoureLimits.getAmountNeededUnreserve());
 
     boolean needToUnreserve =
-        Resources.greaterThan(rc, clusterResource,
-            resourceNeedToUnReserve, Resources.none());
+        rc.isAnyMajorResourceAboveZero(resourceNeedToUnReserve);
 
     RMContainer unreservedContainer = null;
     boolean reservationsContinueLooking =
@@ -738,9 +751,25 @@ public class RegularContainerAllocator extends AbstractContainerAllocator {
       // When reserving container
       RMContainer updatedContainer = reservedContainer;
       if (updatedContainer == null) {
+        AppPlacementAllocator<FiCaSchedulerNode> ps =
+            application.getAppSchedulingInfo()
+                .getAppPlacementAllocator(schedulerKey);
+        if (null == ps) {
+          LOG.warn("Failed to get " + AppPlacementAllocator.class.getName()
+              + " for application=" + application.getApplicationId()
+              + " schedulerRequestKey=" + schedulerKey);
+          ActivitiesLogger.APP
+              .recordAppActivityWithoutAllocation(activitiesManager, node,
+                  application, schedulerKey.getPriority(),
+                  ActivityDiagnosticConstant.
+                      PRIORITY_SKIPPED_BECAUSE_NULL_ANY_REQUEST,
+                  ActivityState.REJECTED);
+          return ContainerAllocation.PRIORITY_SKIPPED;
+        }
         updatedContainer = new RMContainerImpl(container, schedulerKey,
             application.getApplicationAttemptId(), node.getNodeID(),
-            application.getAppSchedulingInfo().getUser(), rmContext);
+            application.getAppSchedulingInfo().getUser(), rmContext,
+            ps.getPrimaryRequestedNodePartition());
       }
       allocationResult.updatedContainer = updatedContainer;
     }
@@ -806,6 +835,12 @@ public class RegularContainerAllocator extends AbstractContainerAllocator {
         application.getAppSchedulingInfo().getAppPlacementAllocator(
             schedulerKey);
 
+    // This could be null when #pending request decreased by another thread.
+    if (schedulingPS == null) {
+      return new ContainerAllocation(reservedContainer, null,
+          AllocationState.QUEUE_SKIPPED);
+    }
+
     result = ContainerAllocation.PRIORITY_SKIPPED;
 
     Iterator<FiCaSchedulerNode> iter = schedulingPS.getPreferredNodeIterator(
@@ -816,8 +851,8 @@ public class RegularContainerAllocator extends AbstractContainerAllocator {
       result = tryAllocateOnNode(clusterResource, node, schedulingMode,
           resourceLimits, schedulerKey, reservedContainer);
 
-      if (AllocationState.ALLOCATED == result.state
-          || AllocationState.RESERVED == result.state) {
+      if (AllocationState.ALLOCATED == result.getAllocationState()
+          || AllocationState.RESERVED == result.getAllocationState()) {
         result = doAllocation(result, node, schedulerKey, reservedContainer);
         break;
       }

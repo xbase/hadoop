@@ -252,11 +252,16 @@ final class FSDirErasureCodingOp {
    *                      rebuilding
    * @throws IOException
    */
-  static void enableErasureCodingPolicy(final FSNamesystem fsn,
+  static boolean enableErasureCodingPolicy(final FSNamesystem fsn,
       String ecPolicyName, final boolean logRetryCache) throws IOException {
     Preconditions.checkNotNull(ecPolicyName);
-    fsn.getErasureCodingPolicyManager().enablePolicy(ecPolicyName);
-    fsn.getEditLog().logEnableErasureCodingPolicy(ecPolicyName, logRetryCache);
+    boolean success =
+        fsn.getErasureCodingPolicyManager().enablePolicy(ecPolicyName);
+    if (success) {
+      fsn.getEditLog().logEnableErasureCodingPolicy(ecPolicyName,
+          logRetryCache);
+    }
+    return success;
   }
 
   /**
@@ -268,11 +273,16 @@ final class FSDirErasureCodingOp {
    *                      rebuilding
    * @throws IOException
    */
-  static void disableErasureCodingPolicy(final FSNamesystem fsn,
+  static boolean disableErasureCodingPolicy(final FSNamesystem fsn,
       String ecPolicyName, final boolean logRetryCache) throws IOException {
     Preconditions.checkNotNull(ecPolicyName);
-    fsn.getErasureCodingPolicyManager().disablePolicy(ecPolicyName);
-    fsn.getEditLog().logDisableErasureCodingPolicy(ecPolicyName, logRetryCache);
+    boolean success =
+        fsn.getErasureCodingPolicyManager().disablePolicy(ecPolicyName);
+    if (success) {
+      fsn.getEditLog().logDisableErasureCodingPolicy(ecPolicyName,
+          logRetryCache);
+    }
+    return success;
   }
 
   private static List<XAttr> removeErasureCodingPolicyXAttr(
@@ -307,7 +317,8 @@ final class FSDirErasureCodingOp {
    *
    * @param fsn namespace
    * @param src path
-   * @return {@link ErasureCodingPolicy}
+   * @return {@link ErasureCodingPolicy}, or null if no policy has
+   * been set or the policy is REPLICATION
    * @throws IOException
    * @throws FileNotFoundException if the path does not exist.
    * @throws AccessControlException if no read access
@@ -317,17 +328,25 @@ final class FSDirErasureCodingOp {
       throws IOException, AccessControlException {
     assert fsn.hasReadLock();
 
+    if (FSDirectory.isExactReservedName(src)) {
+      return null;
+    }
+
     FSDirectory fsd = fsn.getFSDirectory();
     final INodesInPath iip = fsd.resolvePath(pc, src, DirOp.READ);
     if (fsn.isPermissionEnabled()) {
       fsn.getFSDirectory().checkPathAccess(pc, iip, FsAction.READ);
     }
 
-    if (iip.getLastINode() == null) {
-      throw new FileNotFoundException("Path not found: " + iip.getPath());
+    ErasureCodingPolicy ecPolicy;
+    if (iip.isDotSnapshotDir()) {
+      ecPolicy = null;
+    } else if (iip.getLastINode() == null) {
+      throw new FileNotFoundException("Path not found: " + src);
+    } else {
+      ecPolicy = getErasureCodingPolicyForPath(fsd, iip);
     }
 
-    ErasureCodingPolicy ecPolicy = getErasureCodingPolicyForPath(fsd, iip);
     if (ecPolicy != null && ecPolicy.isReplicationPolicy()) {
       ecPolicy = null;
     }
@@ -409,7 +428,7 @@ final class FSDirErasureCodingOp {
         if (inode.isSymlink()) {
           return null;
         }
-        final XAttrFeature xaf = inode.getXAttrFeature();
+        final XAttrFeature xaf = inode.getXAttrFeature(iip.getPathSnapshotId());
         if (xaf != null) {
           XAttr xattr = xaf.getXAttr(XATTR_ERASURECODING_POLICY);
           if (xattr != null) {

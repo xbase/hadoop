@@ -45,6 +45,7 @@ public class TestSnapshotCommands {
   @BeforeClass
   public static void clusterSetUp() throws IOException {
     conf = new HdfsConfiguration();
+    conf.setInt(DFSConfigKeys.DFS_NAMENODE_SNAPSHOT_MAX_LIMIT, 3);
     cluster = new MiniDFSCluster.Builder(conf).build();
     cluster.waitActive();
     fs = cluster.getFileSystem();
@@ -115,6 +116,23 @@ public class TestSnapshotCommands {
   }
 
   @Test
+  public void testMaxSnapshotLimit() throws Exception {
+    DFSTestUtil.FsShellRun("-mkdir /sub3", conf);
+    DFSTestUtil.DFSAdminRun("-allowSnapshot /sub3", 0,
+        "Allowing snapshot " + "on /sub3 succeeded", conf);
+    // test createSnapshot
+    DFSTestUtil.FsShellRun("-createSnapshot /sub3 sn0", 0,
+        "Created snapshot /sub3/.snapshot/sn0", conf);
+    DFSTestUtil.FsShellRun("-createSnapshot /sub3 sn1", 0,
+        "Created snapshot /sub3/.snapshot/sn1", conf);
+    DFSTestUtil.FsShellRun("-createSnapshot /sub3 sn2", 0,
+        "Created snapshot /sub3/.snapshot/sn2", conf);
+    DFSTestUtil.FsShellRun("-createSnapshot /sub3 sn3", 1,
+        "Failed to add snapshot: there are already 3 snapshot(s) and "
+            + "the max snapshot limit is 3", conf);
+  }
+
+  @Test
   public void testMkdirUsingReservedName() throws Exception {
     // test can not create dir with reserved name: .snapshot
     DFSTestUtil.FsShellRun("-ls /", conf);
@@ -136,6 +154,11 @@ public class TestSnapshotCommands {
     //try renaming from a non-existing snapshot
     DFSTestUtil.FsShellRun("-renameSnapshot /sub1 sn.nonexist sn.rename", 1,
         "renameSnapshot: The snapshot sn.nonexist does not exist for directory /sub1", conf);
+
+    //try renaming a non-existing snapshot to itself
+    DFSTestUtil.FsShellRun("-renameSnapshot /sub1 sn.nonexist sn.nonexist", 1,
+        "renameSnapshot: The snapshot sn.nonexist " +
+            "does not exist for directory /sub1", conf);
 
     //try renaming to existing snapshots
     DFSTestUtil.FsShellRun("-createSnapshot /sub1 sn.new", conf);

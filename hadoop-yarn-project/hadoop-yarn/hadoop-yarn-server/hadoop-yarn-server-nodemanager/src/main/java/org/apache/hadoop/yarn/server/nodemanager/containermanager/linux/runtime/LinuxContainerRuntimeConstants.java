@@ -70,6 +70,10 @@ public final class LinuxContainerRuntimeConstants {
       List.class, "user_local_dirs");
   public static final Attribute<List> CONTAINER_LOCAL_DIRS = Attribute
       .attribute(List.class, "container_local_dirs");
+  public static final Attribute<List> USER_FILECACHE_DIRS = Attribute
+      .attribute(List.class, "user_filecache_dirs");
+  public static final Attribute<List> APPLICATION_LOCAL_DIRS = Attribute
+      .attribute(List.class, "application_local_dirs");
   public static final Attribute<List> CONTAINER_LOG_DIRS = Attribute.attribute(
       List.class, "container_log_dirs");
   public static final Attribute<String> RESOURCES_OPTIONS = Attribute.attribute(
@@ -85,4 +89,6 @@ public final class LinuxContainerRuntimeConstants {
       String.class, "pid");
   public static final Attribute<ContainerExecutor.Signal> SIGNAL = Attribute
       .attribute(ContainerExecutor.Signal.class, "signal");
+  public static final Attribute<String> PROCFS = Attribute.attribute(
+      String.class, "procfs");
 }

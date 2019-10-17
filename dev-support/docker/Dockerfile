@@ -57,6 +57,7 @@ RUN apt-get -q update && apt-get -q install -y \
     libsnappy-dev \
     libssl-dev \
     libtool \
+    libzstd1-dev \
     locales \
     make \
     pinentry-curses \
@@ -151,9 +152,10 @@ RUN apt-get -q update && apt-get -q install -y shellcheck
 RUN apt-get -q update && apt-get -q install -y bats
 
 ####
-# Install pylint (always want latest)
+# Install pylint at fixed version (2.0.0 removed python2 support)
+# https://github.com/PyCQA/pylint/issues/2294
 ####
-RUN pip2 install pylint
+RUN pip2 install pylint==1.9.2
 
 ####
 # Install dateutil.parser
@@ -173,7 +175,7 @@ RUN apt-get -y install nodejs && \
 ###
 # Avoid out of memory errors in builds
 ###
-ENV MAVEN_OPTS -Xms256m -Xmx1g
+ENV MAVEN_OPTS -Xms256m -Xmx1536m
 
 
 ###

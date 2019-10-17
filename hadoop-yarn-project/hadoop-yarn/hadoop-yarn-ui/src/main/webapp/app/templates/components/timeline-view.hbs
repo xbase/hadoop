@@ -16,7 +16,7 @@
  * limitations under the License.
 }}
 
-<div class="col-md-12 container-fluid">
+<div class="col-md-12">
   <div class="panel panel-default">
     <div class="panel-heading">
       {{#if attemptModel}}
@@ -25,19 +25,19 @@
         Containers
       {{/if}}
     </div>
-    {{#if isDataEmpty}}
-      <ul class="nav nav-tabs" role="tablist">
-        <li class="active">
-          <a href="#graphViewTab" role="tab" data-toggle="tab">Graph View</a>
-        </li>
-        <li class="">
-          <a href="#gridViewTab" role="tab" data-toggle="tab">Grid View</a>
-        </li>
-      </ul>
-      <div class="panel-body">
-        <div class="tab-content">
-          <div role="tabpanel" class="tab-pane active" id="graphViewTab">
-            <br/><br/>
+    <ul class="nav nav-tabs" role="tablist">
+      <li class="{{if (eq viewType "graph") "active" ""}}">
+        <a href="#graphViewTab" role="tab" data-toggle="tab" {{action "changeViewType" "graph"}}>Graph View</a>
+      </li>
+      <li class="{{if (eq viewType "grid") "active" ""}}">
+        <a href="#gridViewTab" role="tab" data-toggle="tab" {{action "changeViewType" "grid"}}>Grid View</a>
+      </li>
+    </ul>
+    <div class="panel-body">
+      <div class="tab-content">
+        <div role="tabpanel" class="tab-pane {{if (eq viewType "graph") "active" ""}}" id="graphViewTab">
+          <br/><br/>
+          <div class="row">
             <div class="col-md-7 container-fluid" id={{parent-id}}></div>
             <!-- diag info -->
             <div class="col-md-5 container-fluid">
@@ -57,17 +57,27 @@
               </div>
             </div>
           </div>
-          <div role="tabpanel" class="tab-pane" id="gridViewTab">
-            {{em-table columns=gridColumns rows=gridRows}}
-          </div>
+          {{#unless attemptModel}}
+            {{#if selected.diagnosticsInfo}}
+            <div class="row">
+              <div class="col-md-12">
+                <div class="panel panel-default">
+                  <div class="panel-heading">
+                    Diagnostic Info for {{selected.id}}
+                  </div>
+                  <div class="diagnostic-info">
+                    <pre>{{selected.diagnosticsInfo}}</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {{/if}}
+          {{/unless}}
+        </div>
+        <div role="tabpanel" class="tab-pane {{if (eq viewType "grid") "active" ""}}" id="gridViewTab">
+          {{em-table columns=gridColumns rows=gridRows definition=tableDefinition}}
         </div>
       </div>
-    {{else}}
-      <div class="panel-body">
-        <h4 class="text-center">No data available!</h4>
-      </div>
-    {{/if}}
+    </div>
   </div>
 </div>
-
-{{outlet}}

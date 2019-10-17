@@ -30,6 +30,7 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Random;
 import java.util.Vector;
@@ -118,7 +119,6 @@ public class TestProcfsBasedProcessTree {
   }
 
   @Test(timeout = 30000)
-  @SuppressWarnings("deprecation")
   public void testProcessTree() throws Exception {
     try {
       Assert.assertTrue(ProcfsBasedProcessTree.isAvailable());
@@ -155,7 +155,8 @@ public class TestProcfsBasedProcessTree {
         + " $(($1-1))\n" + "else\n" + " echo $$ > " + lowestDescendant + "\n"
         + "(sleep 300&\n"
         + "echo $! > " + lostDescendant + ")\n"
-        + " while true\n do\n" + "  sleep 5\n" + " done\n" + "fi");
+        + " while true\n do\n" + "  sleep 5\n" + " done\n" + "fi",
+            StandardCharsets.UTF_8);
 
     Thread t = new RogueTaskThread();
     t.start();
@@ -163,7 +164,7 @@ public class TestProcfsBasedProcessTree {
     LOG.info("Root process pid: " + pid);
     ProcfsBasedProcessTree p = createProcessTree(pid);
     p.updateProcessTree(); // initialize
-    LOG.info("ProcessTree: " + p.toString());
+    LOG.info("ProcessTree: " + p);
 
     File leaf = new File(lowestDescendant);
     // wait till lowest descendant process of Rougue Task starts execution
@@ -176,7 +177,7 @@ public class TestProcfsBasedProcessTree {
     }
 
     p.updateProcessTree(); // reconstruct
-    LOG.info("ProcessTree: " + p.toString());
+    LOG.info("ProcessTree: " + p);
 
     // Verify the orphaned pid is In process tree
     String lostpid = getPidFromPidFile(lostDescendant);
@@ -395,7 +396,6 @@ public class TestProcfsBasedProcessTree {
    *           files.
    */
   @Test(timeout = 30000)
-  @SuppressWarnings("deprecation")
   public void testCpuAndMemoryForProcessTree() throws IOException {
 
     // test processes
@@ -908,13 +908,8 @@ public class TestProcfsBasedProcessTree {
       throws IOException {
     for (String pid : pids) {
       File pidDir = new File(procfsRootDir, pid);
-      pidDir.mkdir();
-      if (!pidDir.exists()) {
-        throw new IOException("couldn't make process directory under "
-            + "fake procfs");
-      } else {
-        LOG.info("created pid dir");
-      }
+      FileUtils.forceMkdir(pidDir);
+      LOG.info("created pid dir: " + pidDir);
     }
   }
 

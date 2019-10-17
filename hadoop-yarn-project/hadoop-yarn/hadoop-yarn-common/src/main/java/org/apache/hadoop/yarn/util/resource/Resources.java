@@ -347,6 +347,11 @@ public class Resources {
     return lhs;
   }
 
+  public static Resource multiplyAndNormalizeUp(ResourceCalculator calculator,
+      Resource lhs, double[] by, Resource factor) {
+    return calculator.multiplyAndNormalizeUp(lhs, by, factor);
+  }
+
   public static Resource multiplyAndNormalizeUp(
       ResourceCalculator calculator,Resource lhs, double by, Resource factor) {
     return calculator.multiplyAndNormalizeUp(lhs, by, factor);
@@ -542,8 +547,8 @@ public class Resources {
     return ret;
   }
 
-  public static boolean isAnyMajorResourceZero(ResourceCalculator rc,
-      Resource resource) {
-    return rc.isAnyMajorResourceZero(resource);
+  public static Resource normalizeDown(ResourceCalculator calculator,
+      Resource resource, Resource factor) {
+    return calculator.normalizeDown(resource, factor);
   }
 }

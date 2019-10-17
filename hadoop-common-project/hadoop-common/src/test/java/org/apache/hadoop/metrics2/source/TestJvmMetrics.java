@@ -101,7 +101,7 @@ public class TestJvmMetrics {
     verify(rb).tag(SessionId, "test");
     for (JvmMetricsInfo info : JvmMetricsInfo.values()) {
       if (info.name().equals("GcTimePercentage")) {
-        verify(rb).addCounter(eq(info), anyInt());
+        verify(rb).addGauge(eq(info), anyInt());
       }
     }
   }
@@ -199,5 +199,31 @@ public class TestJvmMetrics {
     Assert.assertTrue(gcCount > 0);
     Assert.assertTrue(alerter.numAlerts > 0);
     Assert.assertTrue(alerter.maxGcTimePercentage >= alertGcPerc);
+  }
+
+  @Test
+  public void testJvmMetricsSingletonWithSameProcessName() {
+    JvmMetrics jvmMetrics1 = org.apache.hadoop.metrics2.source.JvmMetrics
+        .initSingleton("test", null);
+    JvmMetrics jvmMetrics2 = org.apache.hadoop.metrics2.source.JvmMetrics
+        .initSingleton("test", null);
+    Assert.assertEquals("initSingleton should return the singleton instance",
+        jvmMetrics1, jvmMetrics2);
+  }
+
+  @Test
+  public void testJvmMetricsSingletonWithDifferentProcessNames() {
+    final String process1Name = "process1";
+    JvmMetrics jvmMetrics1 = org.apache.hadoop.metrics2.source.JvmMetrics
+        .initSingleton(process1Name, null);
+    final String process2Name = "process2";
+    JvmMetrics jvmMetrics2 = org.apache.hadoop.metrics2.source.JvmMetrics
+        .initSingleton(process2Name, null);
+    Assert.assertEquals("initSingleton should return the singleton instance",
+        jvmMetrics1, jvmMetrics2);
+    Assert.assertEquals("unexpected process name of the singleton instance",
+        process1Name, jvmMetrics1.processName);
+    Assert.assertEquals("unexpected process name of the singleton instance",
+        process1Name, jvmMetrics2.processName);
   }
 }

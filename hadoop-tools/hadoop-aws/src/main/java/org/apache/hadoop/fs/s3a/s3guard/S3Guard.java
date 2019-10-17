@@ -37,6 +37,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.s3a.Retries;
 import org.apache.hadoop.fs.s3a.S3AFileStatus;
 import org.apache.hadoop.fs.s3a.S3AInstrumentation;
 import org.apache.hadoop.fs.s3a.Tristate;
@@ -83,6 +84,7 @@ public final class S3Guard {
    * @return Reference to new MetadataStore.
    * @throws IOException if the metadata store cannot be instantiated
    */
+  @Retries.OnceTranslated
   public static MetadataStore getMetadataStore(FileSystem fs)
       throws IOException {
     Preconditions.checkNotNull(fs);
@@ -255,7 +257,15 @@ public final class S3Guard {
    * Update MetadataStore to reflect creation of the given  directories.
    *
    * If an IOException is raised while trying to update the entry, this
-   * operation catches the exception and returns.
+   * operation catches the exception, swallows it and returns.
+   *
+   * @deprecated this is no longer called by {@code S3AFilesystem.innerMkDirs}.
+   * See: HADOOP-15079 (January 2018).
+   * It is currently retained because of its discussion in the method on
+   * atomicity and in case we need to reinstate it or adapt the current
+   * process of directory marker creation.
+   * But it is not being tested and so may age with time...consider
+   * deleting it in future if it's clear there's no need for it.
    * @param ms    MetadataStore to update.
    * @param dirs  null, or an ordered list of directories from leaf to root.
    *              E.g. if /a/ exists, and  mkdirs(/a/b/c/d) is called, this
@@ -265,6 +275,8 @@ public final class S3Guard {
    * @param owner Hadoop user name.
    * @param authoritative Whether to mark new directories as authoritative.
    */
+  @Deprecated
+  @Retries.OnceExceptionsSwallowed
   public static void makeDirsOrdered(MetadataStore ms, List<Path> dirs,
       String owner, boolean authoritative) {
     if (dirs == null) {

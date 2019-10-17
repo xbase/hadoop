@@ -40,6 +40,8 @@ public interface YarnServiceConstants {
   String APP_TYPE = "yarn-service";
 
   String KEYTAB_DIR = "keytabs";
+  String KEYTAB_LOCATION = KEYTAB_DIR + "/%s" + ".keytab";
+
   String RESOURCE_DIR = "resources";
 
 
@@ -82,6 +84,7 @@ public interface YarnServiceConstants {
   String HADOOP_USER_NAME = "HADOOP_USER_NAME";
 
   String APP_CONF_DIR = "conf";
+  String APP_RESOURCES_DIR = "resources";
 
   String APP_LIB_DIR = "lib";
 
@@ -89,4 +92,7 @@ public interface YarnServiceConstants {
   String ERR_FILE = "stderr.txt";
 
   String CONTENT = "content";
+  String PRINCIPAL = "yarn.service.am.principal";
+
+  String UPGRADE_DIR = "upgrade";
 }

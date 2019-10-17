@@ -16,9 +16,42 @@
  * limitations under the License.
  */
 
+import Ember from 'ember';
 import AbstractRoute from './abstract';
+import AppAttemptMixin from 'yarn-ui/mixins/app-attempt';
 
-export default AbstractRoute.extend({
+export default AbstractRoute.extend(AppAttemptMixin, {
+  model(param, transition) {
+    const {service} = transition.queryParams;
+    transition.send('updateBreadcrumbs', param.app_id, service);
+
+    return Ember.RSVP.hash({
+      appId: param.app_id,
+      serviceName: service,
+      app: this.fetchAppInfoFromRMorATS(param.app_id, this.store),
+
+      quicklinks: this.store.queryRecord('yarn-service-info', { appId: param.app_id }).then(function (info) {
+        if (info && info.get('quicklinks')) {
+          return info.get('quicklinks');
+        }
+        return [];
+      }, function () {
+        return [];
+      }),
+
+      serviceInfo: new Ember.RSVP.Promise(resolve => {
+        if (service) {
+          this.store.queryRecord('yarn-service', {serviceName: service}).then(function(info) {
+            resolve(info);
+          }, function() {
+            resolve(null);
+          });
+        } else {
+          resolve(null);
+        }
+      })
+    });
+  },
   actions: {
     updateBreadcrumbs(appId, serviceName, tailCrumbs) {
       var controller = this.controllerFor('yarn-app');

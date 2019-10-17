@@ -83,11 +83,11 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Examples:</p>
  * <p><blockquote><pre>
- * $ bin/hadoop dfs -fs darwin:9820 -ls /data
- * list /data directory in dfs with namenode darwin:9820
+ * $ bin/hadoop dfs -fs darwin:8020 -ls /data
+ * list /data directory in dfs with namenode darwin:8020
  * 
- * $ bin/hadoop dfs -D fs.default.name=darwin:9820 -ls /data
- * list /data directory in dfs with namenode darwin:9820
+ * $ bin/hadoop dfs -D fs.default.name=darwin:8020 -ls /data
+ * list /data directory in dfs with namenode darwin:8020
  *     
  * $ bin/hadoop dfs -conf core-site.xml -conf hdfs-site.xml -ls /data
  * list /data directory in dfs with multiple conf files specified.
@@ -525,6 +525,9 @@ public class GenericOptionsParser {
     }
     List<String> newArgs = new ArrayList<String>(args.length);
     for (int i=0; i < args.length; i++) {
+      if (args[i] == null) {
+        continue;
+      }
       String prop = null;
       if (args[i].equals("-D")) {
         newArgs.add(args[i]);

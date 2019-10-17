@@ -54,17 +54,6 @@ public interface RegistryConstants {
    * flag to indicate whether or not the registry should
    * be enabled in the RM: {@value}.
    */
-  String KEY_REGISTRY_ENABLED = REGISTRY_PREFIX + "rm.enabled";
-
-  /**
-   * Defaut value for enabling the registry in the RM: {@value}.
-   */
-  boolean DEFAULT_REGISTRY_ENABLED = false;
-
-  /**
-   * flag to indicate whether or not the registry should
-   * be enabled in the RM: {@value}.
-   */
   String KEY_DNS_ENABLED = DNS_PREFIX + "enabled";
 
   /**
@@ -95,7 +84,7 @@ public interface RegistryConstants {
   /**
    * Default DNS port number.
    */
-  int DEFAULT_DNS_PORT = 5353;
+  int DEFAULT_DNS_PORT = 5335;
 
   /**
    * DNSSEC Enabled?
@@ -221,6 +210,7 @@ public interface RegistryConstants {
    * No authentication; client is anonymous.
    */
   String REGISTRY_CLIENT_AUTH_ANONYMOUS = "";
+  String REGISTRY_CLIENT_AUTH_SIMPLE = "simple";
 
   /**
    * Registry client authentication ID.

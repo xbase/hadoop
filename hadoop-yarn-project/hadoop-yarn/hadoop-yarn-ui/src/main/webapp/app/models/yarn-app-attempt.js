@@ -32,6 +32,7 @@ export default DS.Model.extend({
   logsLink: DS.attr('string'),
   state: DS.attr('string'),
   appAttemptId: DS.attr('string'),
+  diagnosticsInfo: DS.attr('string'),
 
   appId: Ember.computed("id",function () {
     var id = this.get("id");
@@ -139,5 +140,10 @@ export default DS.Model.extend({
   attemptState: function() {
     return this.get("state");
   }.property(),
+
+  masterNodeURL: function() {
+    var addr = encodeURIComponent(this.get("nodeHttpAddress"));
+    return `#/yarn-node/${this.get("nodeId")}/${addr}/info/`;
+  }.property("nodeId", "nodeHttpAddress"),
 
 });

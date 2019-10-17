@@ -315,8 +315,8 @@ public class NodeStatusUpdaterImpl extends AbstractService implements
         statusUpdater.join();
         registerWithRM();
         statusUpdater = new Thread(statusUpdaterRunnable, "Node Status Updater");
-        statusUpdater.start();
         this.isStopped = false;
+        statusUpdater.start();
         LOG.info("NodeStatusUpdater thread is reRegistered and restarted");
       } catch (Exception e) {
         String errorMessage = "Unexpected error rebooting NodeStatusUpdater";
@@ -380,6 +380,20 @@ public class NodeStatusUpdaterImpl extends AbstractService implements
 
       if (containerReports != null) {
         LOG.info("Registering with RM using containers :" + containerReports);
+      }
+      if (logAggregationEnabled) {
+        // pull log aggregation status for application running in this NM
+        List<LogAggregationReport> logAggregationReports =
+            context.getNMLogAggregationStatusTracker()
+                .pullCachedLogAggregationReports();
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("The cache log aggregation status size:"
+              + logAggregationReports.size());
+        }
+        if (logAggregationReports != null
+            && !logAggregationReports.isEmpty()) {
+          request.setLogAggregationReportsForApps(logAggregationReports);
+        }
       }
       regNMResponse =
           resourceTracker.registerNodeManager(request);
@@ -1028,9 +1042,12 @@ public class NodeStatusUpdaterImpl extends AbstractService implements
     public void verifyRMHeartbeatResponseForNodeLabels(
         NodeHeartbeatResponse response) {
       if (areLabelsSentToRM) {
-        if (response.getAreNodeLabelsAcceptedByRM() && LOG.isDebugEnabled()) {
-          LOG.debug("Node Labels {" + StringUtils.join(",", previousNodeLabels)
-              + "} were Accepted by RM ");
+        if (response.getAreNodeLabelsAcceptedByRM()) {
+          if(LOG.isDebugEnabled()){
+            LOG.debug(
+                "Node Labels {" + StringUtils.join(",", previousNodeLabels)
+                    + "} were Accepted by RM ");
+          }
         } else {
           // case where updated labels from NodeLabelsProvider is sent to RM and
           // RM rejected the labels
@@ -1118,6 +1135,7 @@ public class NodeStatusUpdaterImpl extends AbstractService implements
             if (systemCredentials != null && !systemCredentials.isEmpty()) {
               ((NMContext) context).setSystemCrendentialsForApps(
                   parseCredentials(systemCredentials));
+              context.getContainerManager().handleCredentialUpdate();
             }
             List<org.apache.hadoop.yarn.api.records.Container>
                 containersToUpdate = response.getContainersToUpdate();

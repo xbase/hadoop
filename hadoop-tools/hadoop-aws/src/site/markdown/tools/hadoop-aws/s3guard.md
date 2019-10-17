@@ -426,7 +426,7 @@ hadoop s3guard diff s3a://ireland-1
 Prints and optionally checks the s3guard and encryption status of a bucket.
 
 ```bash
-hadoop s3guard bucket-info [ -guarded ] [-unguarded] [-auth] [-nonauth] [-encryption ENCRYPTION] s3a://BUCKET
+hadoop s3guard bucket-info [ -guarded ] [-unguarded] [-auth] [-nonauth] [-magic] [-encryption ENCRYPTION] s3a://BUCKET
 ```
 
 Options
@@ -437,6 +437,7 @@ Options
 | `-unguarded` | Require S3Guard to be disabled |
 | `-auth` | Require the S3Guard mode to be "authoritative" |
 | `-nonauth` | Require the S3Guard mode to be "non-authoritative" |
+| `-magic` | Require the S3 filesystem to be support the "magic" committer |
 | `-encryption <type>` | Require a specific server-side encryption algorithm  |
 
 The server side encryption options are not directly related to S3Guard, but
@@ -445,10 +446,11 @@ it is often convenient to check them at the same time.
 Example
 
 ```bash
-hadoop s3guard bucket-info -guarded s3a://ireland-1
+hadoop s3guard bucket-info -guarded -magic s3a://ireland-1
 ```
 
 List the details of bucket `s3a://ireland-1`, mandating that it must have S3Guard enabled
+("-guarded") and that support for the magic S3A committer is enabled ("-magic")
 
 ```
 Filesystem s3a://ireland-1
@@ -476,6 +478,7 @@ Metadata Store Diagnostics:
     TableSizeBytes: 12812,ItemCount: 91,
     TableArn: arn:aws:dynamodb:eu-west-1:00000000:table/ireland-1,}
   write-capacity=20
+The "magic" committer is supported
 
 S3A Client
   Endpoint: fs.s3a.endpoint=s3-eu-west-1.amazonaws.com
@@ -503,7 +506,7 @@ Input seek policy: fs.s3a.experimental.input.fadvise=normal
 
 Note that other clients may have a S3Guard table set up to store metadata
 on this bucket; the checks are all done from the perspective of the configuration
-setttings of the current client.
+settings of the current client.
 
 ```bash
 hadoop s3guard bucket-info -guarded -auth s3a://landsat-pds
@@ -512,9 +515,42 @@ hadoop s3guard bucket-info -guarded -auth s3a://landsat-pds
 Require the bucket to be using S3Guard in authoritative mode. This will normally
 fail against this specific bucket.
 
+### List or Delete Leftover Multipart Uploads: `s3guard uploads`
+
+Lists or deletes all pending (uncompleted) multipart uploads older than
+given age.
+
+```bash
+hadoop s3guard uploads (-list | -abort | -expect <num-uploads>) [-verbose] \
+    [-days <days>] [-hours <hours>] [-minutes <minutes>] [-seconds <seconds>] \
+    [-force] s3a://bucket/prefix
+```
+
+The command lists or deletes all multipart uploads which are older than
+the given age, and that match the prefix supplied, if any.
+
+For example, to delete all uncompleted multipart uploads older than two
+days in the folder at `s3a://my-bucket/path/to/stuff`, use the following
+command:
+
+```bash
+hadoop s3guard uploads -abort -days 2 s3a://my-bucket/path/to/stuff
+```
+
+We recommend running with `-list` first to confirm the parts shown
+are those that you wish to delete. Note that the command will prompt
+you with a "Are you sure?" prompt unless you specify the `-force`
+option. This is to safeguard against accidental deletion of data, which
+is especially risky without a long age parameter as it can affect
+in-fight uploads.
+
+The `-expect` option is similar to `-list`, except it is silent by
+default, and terminates with a success or failure exit code depending
+on whether or not the supplied number matches the number of uploads
+found that match the given options (path, age).
+
 
 ### Delete a table: `s3guard destroy`
-
 
 Deletes a metadata store. With DynamoDB as the store, this means
 the specific DynamoDB table use to store the metadata.
@@ -762,6 +798,6 @@ The IO load of clients of the (shared) DynamoDB table was exceeded.
 Currently S3Guard doesn't do any throttling and retries here; the way to address
 this is to increase capacity via the AWS console or the `set-capacity` command.
 
-## Other Topis
+## Other Topics
 
 For details on how to test S3Guard, see [Testing S3Guard](./testing.html#s3guard)

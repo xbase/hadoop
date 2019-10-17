@@ -210,8 +210,14 @@ public class DFSck extends Configured implements Tool {
             allDone = true;
             break;
           }
+          if (line.startsWith("Access denied for user")) {
+            out.println("Failed to open path '" + dir + "': Permission denied");
+            errCode = -1;
+            return errCode;
+          }
           if ((line.isEmpty())
               || (line.startsWith("FSCK started by"))
+              || (line.startsWith("FSCK ended at"))
               || (line.startsWith("The filesystem under path")))
             continue;
           numCorrupt++;
@@ -354,7 +360,7 @@ public class DFSck extends Configured implements Tool {
     BufferedReader input = new BufferedReader(new InputStreamReader(
                                               stream, "UTF-8"));
     String line = null;
-    String lastLine = null;
+    String lastLine = NamenodeFsck.CORRUPT_STATUS;
     int errCode = -1;
     try {
       while ((line = input.readLine()) != null) {

@@ -89,6 +89,21 @@ public abstract class Shell {
     return true;
   }
 
+  // "1.8"->8, "9"->9, "10"->10
+  private static final int JAVA_SPEC_VER = Math.max(8, Integer.parseInt(
+      System.getProperty("java.specification.version").split("\\.")[0]));
+
+  /**
+   * Query to see if major version of Java specification of the system
+   * is equal or greater than the parameter.
+   *
+   * @param version 8, 9, 10 etc.
+   * @return comparison with system property, always true for 8
+   */
+  public static boolean isJavaVersionAtLeast(int version) {
+    return JAVA_SPEC_VER >= version;
+  }
+
   /**
    * Maximum command line length in Windows
    * KB830473 documents this as 8191
@@ -1190,7 +1205,7 @@ public abstract class Shell {
 
     /**
      * Returns the timeout value set for the executor's sub-commands.
-     * @return The timeout value in seconds
+     * @return The timeout value in milliseconds
      */
     @VisibleForTesting
     public long getTimeoutInterval() {
@@ -1372,5 +1387,20 @@ public abstract class Shell {
     synchronized (CHILD_SHELLS) {
       return new HashSet<>(CHILD_SHELLS.keySet());
     }
+  }
+
+  /**
+   * Static method to return the memory lock limit for datanode.
+   * @param ulimit max value at which memory locked should be capped.
+   * @return long value specifying the memory lock limit.
+   */
+  public static Long getMemlockLimit(Long ulimit) {
+    if (WINDOWS) {
+      // HDFS-13560: if ulimit is too large on Windows, Windows will complain
+      // "1450: Insufficient system resources exist to complete the requested
+      // service". Thus, cap Windows memory lock limit at Integer.MAX_VALUE.
+      return Math.min(Integer.MAX_VALUE, ulimit);
+    }
+    return ulimit;
   }
 }

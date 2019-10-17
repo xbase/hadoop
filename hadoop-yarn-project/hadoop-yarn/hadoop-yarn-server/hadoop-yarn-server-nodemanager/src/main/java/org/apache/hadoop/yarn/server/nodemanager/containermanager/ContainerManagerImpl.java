@@ -21,7 +21,9 @@ package org.apache.hadoop.yarn.server.nodemanager.containermanager;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.ByteString;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.UpdateContainerTokenEvent;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.loghandler.event.LogHandlerTokenUpdatedEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.scheduler.ContainerSchedulerEvent;
+import org.apache.hadoop.yarn.server.nodemanager.recovery.RecoveryIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
@@ -170,7 +172,6 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -214,6 +215,7 @@ public class ContainerManagerImpl extends CompositeService implements
   protected final AsyncDispatcher dispatcher;
 
   private final DeletionService deletionService;
+  private LogHandler logHandler;
   private boolean serviceStopped = false;
   private final ReadLock readLock;
   private final WriteLock writeLock;
@@ -253,7 +255,8 @@ public class ContainerManagerImpl extends CompositeService implements
     AuxiliaryLocalPathHandler auxiliaryLocalPathHandler =
         new AuxiliaryLocalPathHandlerImpl(dirsHandler);
     // Start configurable services
-    auxiliaryServices = new AuxServices(auxiliaryLocalPathHandler);
+    auxiliaryServices = new AuxServices(auxiliaryLocalPathHandler,
+        this.context, this.deletionService);
     auxiliaryServices.registerServiceListener(this);
     addService(auxiliaryServices);
 
@@ -291,7 +294,7 @@ public class ContainerManagerImpl extends CompositeService implements
   @Override
   public void serviceInit(Configuration conf) throws Exception {
 
-    LogHandler logHandler =
+    logHandler =
       createLogHandler(conf, this.context, this.deletionService);
     addIfService(logHandler);
     dispatcher.register(LogHandlerEventType.class, logHandler);
@@ -353,24 +356,32 @@ public class ContainerManagerImpl extends CompositeService implements
       rsrcLocalizationSrvc.recoverLocalizedResources(
           stateStore.loadLocalizationState());
 
+      RecoveredApplicationsState appsState = stateStore.loadApplicationsState();
+      try (RecoveryIterator<ContainerManagerApplicationProto> rasIterator =
+               appsState.getIterator()) {
+        while (rasIterator.hasNext()) {
+          ContainerManagerApplicationProto proto = rasIterator.next();
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Recovering application with state: " + proto.toString());
+          }
+          recoverApplication(proto);
+        }
+      }
+
+      try (RecoveryIterator<RecoveredContainerState> rcsIterator =
+               stateStore.getContainerStateIterator()) {
+        while (rcsIterator.hasNext()) {
+          RecoveredContainerState rcs = rcsIterator.next();
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Recovering container with state: " + rcs);
+          }
+          recoverContainer(rcs);
+        }
+      }
+
+      // Recovery AMRMProxy state after apps and containers are recovered
       if (this.amrmProxyEnabled) {
         this.getAMRMProxyService().recover();
-      }
-
-      RecoveredApplicationsState appsState = stateStore.loadApplicationsState();
-      for (ContainerManagerApplicationProto proto :
-           appsState.getApplications()) {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Recovering application with state: " + proto.toString());
-        }
-        recoverApplication(proto);
-      }
-
-      for (RecoveredContainerState rcs : stateStore.loadContainersState()) {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Recovering container with state: " + rcs);
-        }
-        recoverContainer(rcs);
       }
 
       //Dispatching the RECOVERY_COMPLETED event through the dispatcher
@@ -450,7 +461,8 @@ public class ContainerManagerImpl extends CompositeService implements
           originalToken.getLogAggregationContext(),
           originalToken.getNodeLabelExpression(),
           originalToken.getContainerType(), originalToken.getExecutionType(),
-          originalToken.getAllocationRequestId());
+          originalToken.getAllocationRequestId(),
+          originalToken.getAllcationTags());
 
     } else {
       token = BuilderUtils.newContainerTokenIdentifier(req.getContainerToken());
@@ -493,7 +505,7 @@ public class ContainerManagerImpl extends CompositeService implements
     Container container = new ContainerImpl(getConfig(), dispatcher,
         launchContext, credentials, metrics, token, context, rcs);
     context.getContainers().put(token.getContainerID(), container);
-    containerScheduler.recoverActiveContainer(container, rcs.getStatus());
+    containerScheduler.recoverActiveContainer(container, rcs);
     app.handle(new ApplicationContainerInitEvent(container));
   }
 
@@ -607,7 +619,7 @@ public class ContainerManagerImpl extends CompositeService implements
     if (conf.getBoolean(
         CommonConfigurationKeysPublic.HADOOP_SECURITY_AUTHORIZATION, 
         false)) {
-      refreshServiceAcls(conf, new NMPolicyProvider());
+      refreshServiceAcls(conf, NMPolicyProvider.getInstance());
     }
     
     String bindHost = conf.get(YarnConfiguration.NM_BIND_HOST);
@@ -1099,24 +1111,8 @@ public class ContainerManagerImpl extends CompositeService implements
           // Create the application
           // populate the flow context from the launch context if the timeline
           // service v.2 is enabled
-          FlowContext flowContext = null;
-          if (YarnConfiguration.timelineServiceV2Enabled(getConfig())) {
-            String flowName = launchContext.getEnvironment()
-                .get(TimelineUtils.FLOW_NAME_TAG_PREFIX);
-            String flowVersion = launchContext.getEnvironment()
-                .get(TimelineUtils.FLOW_VERSION_TAG_PREFIX);
-            String flowRunIdStr = launchContext.getEnvironment()
-                .get(TimelineUtils.FLOW_RUN_ID_TAG_PREFIX);
-            long flowRunId = 0L;
-            if (flowRunIdStr != null && !flowRunIdStr.isEmpty()) {
-              flowRunId = Long.parseLong(flowRunIdStr);
-            }
-            flowContext = new FlowContext(flowName, flowVersion, flowRunId);
-            if (LOG.isDebugEnabled()) {
-              LOG.debug("Flow context: " + flowContext
-                  + " created for an application " + applicationID);
-            }
-          }
+          FlowContext flowContext =
+              getFlowContext(launchContext, applicationID);
 
           Application application =
               new ApplicationImpl(dispatcher, user, flowContext,
@@ -1134,6 +1130,31 @@ public class ContainerManagerImpl extends CompositeService implements
                     logAggregationContext, flowContext));
             dispatcher.getEventHandler().handle(new ApplicationInitEvent(
                 applicationID, appAcls, logAggregationContext));
+          }
+        } else if (containerTokenIdentifier.getContainerType()
+            == ContainerType.APPLICATION_MASTER) {
+          FlowContext flowContext =
+              getFlowContext(launchContext, applicationID);
+          if (flowContext != null) {
+            ApplicationImpl application =
+                (ApplicationImpl) context.getApplications().get(applicationID);
+
+            // update flowContext reference in ApplicationImpl
+            application.setFlowContext(flowContext);
+
+            // Required to update state store for recovery.
+            context.getNMStateStore().storeApplication(applicationID,
+                buildAppProto(applicationID, user, credentials,
+                    container.getLaunchContext().getApplicationACLs(),
+                    containerTokenIdentifier.getLogAggregationContext(),
+                    flowContext));
+
+            LOG.info(
+                "Updated application reference with flowContext " + flowContext
+                    + " for app " + applicationID);
+          } else {
+            LOG.info("TimelineService V2.0 is not enabled. Skipping updating "
+                + "flowContext for application " + applicationID);
           }
         }
 
@@ -1158,6 +1179,30 @@ public class ContainerManagerImpl extends CompositeService implements
     } finally {
       this.readLock.unlock();
     }
+  }
+
+  private FlowContext getFlowContext(ContainerLaunchContext launchContext,
+      ApplicationId applicationID) {
+    FlowContext flowContext = null;
+    if (YarnConfiguration.timelineServiceV2Enabled(getConfig())) {
+      String flowName = launchContext.getEnvironment()
+          .get(TimelineUtils.FLOW_NAME_TAG_PREFIX);
+      String flowVersion = launchContext.getEnvironment()
+          .get(TimelineUtils.FLOW_VERSION_TAG_PREFIX);
+      String flowRunIdStr = launchContext.getEnvironment()
+          .get(TimelineUtils.FLOW_RUN_ID_TAG_PREFIX);
+      long flowRunId = 0L;
+      if (flowRunIdStr != null && !flowRunIdStr.isEmpty()) {
+        flowRunId = Long.parseLong(flowRunIdStr);
+      }
+      flowContext = new FlowContext(flowName, flowVersion, flowRunId);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug(
+            "Flow context: " + flowContext + " created for an application "
+                + applicationID);
+      }
+    }
+    return flowContext;
   }
 
   protected ContainerTokenIdentifier verifyAndGetContainerTokenIdentifier(
@@ -1764,6 +1809,7 @@ public class ContainerManagerImpl extends CompositeService implements
   public void reInitializeContainer(ContainerId containerId,
       ContainerLaunchContext reInitLaunchContext, boolean autoCommit)
       throws YarnException {
+    LOG.debug("{} requested reinit", containerId);
     Container container = preReInitializeOrLocalizeCheck(containerId,
         ReInitOp.RE_INIT);
     ResourceSet resourceSet = new ResourceSet();
@@ -1867,5 +1913,13 @@ public class ContainerManagerImpl extends CompositeService implements
   @Override
   public ContainerScheduler getContainerScheduler() {
     return this.containerScheduler;
+  }
+
+  @Override
+  public void handleCredentialUpdate() {
+    Set<ApplicationId> invalidApps = logHandler.getInvalidTokenApps();
+    if (!invalidApps.isEmpty()) {
+      dispatcher.getEventHandler().handle(new LogHandlerTokenUpdatedEvent());
+    }
   }
 }

@@ -1316,13 +1316,13 @@ With the Applications API, you can obtain a collection of resources, each of whi
 
 ### Query Parameters Supported
 
-Multiple parameters can be specified for GET operations. The started and finished times have a begin and end parameter to allow you to specify ranges. For example, one could request all applications that started between 1:00am and 2:00pm on 12/19/2011 with startedTimeBegin=1324256400&startedTimeEnd=1324303200. If the Begin parameter is not specified, it defaults to 0, and if the End parameter is not specified, it defaults to infinity.
+Multiple parameters can be specified for GET operations. The started and finished times have a begin and end parameter to allow you to specify ranges. For example, one could request all applications that started between 1:00am and 2:00pm on 12/19/2011 with startedTimeBegin=1324256400&startedTimeEnd=1324303200. If the Begin parameter is not specified, it defaults to 0, and if the End parameter is not specified, it defaults to infinity. All query parameters for this api will filter on all applications. However the `queue` query parameter will only implicitly filter on unfinished applications that are currently in the given queue.
 
       * state [deprecated] - state of the application
       * states - applications matching the given application states, specified as a comma-separated list.
       * finalStatus - the final status of the application - reported by the application itself
       * user - user name
-      * queue - queue name
+      * queue - unfinished applications that are currently in this queue
       * limit - total number of app objects to be returned
       * startedTimeBegin - applications with start time beginning with this time, specified in ms since epoch
       * startedTimeEnd - applications with start time ending with this time, specified in ms since epoch
@@ -2107,8 +2107,7 @@ With the Nodes API, you can obtain a collection of resources, each of which repr
 
 ### Query Parameters Supported
 
-      * state - the state of the node
-      * healthy - true or false
+      * states - the states of the node, specified as a comma-separated list, valid values are: NEW, RUNNING, UNHEALTHY, DECOMMISSIONING, DECOMMISSIONED, LOST, REBOOTED, SHUTDOWN
 
 ### Elements of the *nodes* object
 
@@ -2286,7 +2285,7 @@ Use the following URI to obtain a Node Object, from a node identified by the nod
 | Item | Data Type | Description |
 |:---- |:---- |:---- |
 | rack | string | The rack location of this node |
-| state | string | State of the node - valid values are: NEW, RUNNING, UNHEALTHY, DECOMMISSIONING, DECOMMISSIONED, LOST, REBOOTED |
+| state | string | State of the node - valid values are: NEW, RUNNING, UNHEALTHY, DECOMMISSIONING, DECOMMISSIONED, LOST, REBOOTED, SHUTDOWN |
 | id | string | The node id |
 | nodeHostName | string | The host name of the node |
 | nodeHTTPAddress | string | The nodes HTTP address |
@@ -4367,7 +4366,7 @@ HTTP Request:
 
 ```json
       Accept: application/json
-      GET http://rm-http-address:port/ws/v1/cluster/apps/{appid}/timeout
+      PUT http://rm-http-address:port/ws/v1/cluster/apps/{appid}/timeout
       Content-Type: application/json
         {
         "timeout":
@@ -4405,7 +4404,7 @@ HTTP Request:
 
 ```xml
       Accept: application/xml
-      GET http://rm-http-address:port/ws/v1/cluster/apps/{appid}/timeout
+      PUT http://rm-http-address:port/ws/v1/cluster/apps/{appid}/timeout
       Content-Type: application/xml
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <timeout>
@@ -4446,6 +4445,7 @@ Please note that this feature is currently in the alpha stage and is subject to 
 
 ### HTTP Operations Supported
 
+      * GET
       * PUT
 
 ### Elements of the *sched-conf* object
@@ -4456,6 +4456,45 @@ Please note that this feature is currently in the alpha stage and is subject to 
 | add-queue | object | A queue to add to the scheduler along with this queue's configurations |
 | remove-queue | string | Full path name of a queue to remove |
 | global-updates | map | Map of key value pairs to update scheduler's global configuration |
+
+### GET Request Examples
+
+Get requests are used to retrieve the scheduler's configuration that is currently loaded into scheduler's context.
+
+**XML response**
+
+HTTP Request:
+
+      Accept: application/xml
+      Content-Type: application/xml
+      GET http://rm-http-address:port/ws/v1/cluster/scheduler-conf
+
+Response Header:
+
+      TTP/1.1 200 OK
+      Content-Type: application/xml; charset=utf-8
+      Transfer-Encoding: chunked
+
+Response Body:
+
+
+```xml
+      <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+      <configuration>
+        <property>
+          <name>yarn.scheduler.capacity.root.queues</name>
+          <value>default</value>
+        </property>
+        <property>
+          <name>yarn.scheduler.capacity.maximum-applications</name>
+          <value>10000</value>
+        </property>
+        <property>
+          <name>yarn.scheduler.capacity.root.default.capacity</name>
+          <value>100</value>
+        </property>
+      </configuration>
+```
 
 ### PUT Request Examples
 

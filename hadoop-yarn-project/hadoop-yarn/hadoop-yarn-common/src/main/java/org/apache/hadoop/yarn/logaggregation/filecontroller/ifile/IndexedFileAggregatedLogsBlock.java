@@ -87,6 +87,8 @@ public class IndexedFileAggregatedLogsBlock extends LogAggregationHtmlBlock {
     String logEntity = params.getLogEntity();
     long start = params.getStartIndex();
     long end = params.getEndIndex();
+    long startTime = params.getStartTime();
+    long endTime = params.getEndTime();
 
     List<FileStatus> nodeFiles = null;
     try {
@@ -133,7 +135,7 @@ public class IndexedFileAggregatedLogsBlock extends LogAggregationHtmlBlock {
         IndexedLogsMeta indexedLogsMeta = null;
         try {
           indexedLogsMeta = fileController.loadIndexedLogsMeta(
-              thisNodeFile.getPath(), endIndex);
+              thisNodeFile.getPath(), endIndex, appId);
         } catch (Exception ex) {
           // DO NOTHING
           LOG.warn("Can not load log meta from the log file:"
@@ -185,6 +187,10 @@ public class IndexedFileAggregatedLogsBlock extends LogAggregationHtmlBlock {
         FSDataInputStream fsin = fileContext.open(thisNodeFile.getPath());
         int bufferSize = 65536;
         for (IndexedFileLogMeta candidate : candidates) {
+          if (candidate.getLastModifiedTime() < startTime
+              || candidate.getLastModifiedTime() > endTime) {
+            continue;
+          }
           byte[] cbuf = new byte[bufferSize];
           InputStream in = null;
           try {
@@ -199,7 +205,7 @@ public class IndexedFileAggregatedLogsBlock extends LogAggregationHtmlBlock {
             html.pre().__("\n\n").__();
             html.p().__("Log Type: " + candidate.getFileName()).__();
             html.p().__("Log Upload Time: " + Times.format(
-                candidate.getLastModificatedTime())).__();
+                candidate.getLastModifiedTime())).__();
             html.p().__("Log Length: " + Long.toString(
                 logLength)).__();
             long startIndex = start < 0
@@ -217,7 +223,8 @@ public class IndexedFileAggregatedLogsBlock extends LogAggregationHtmlBlock {
               html.p().__("Showing " + toRead + " bytes of " + logLength
                   + " total. Click ").a(url("logs", $(NM_NODENAME),
                       $(CONTAINER_ID), $(ENTITY_STRING), $(APP_OWNER),
-                      candidate.getFileName(), "?start=0"), "here").
+                      candidate.getFileName(), "?start=0&start.time="
+                      + startTime + "&end.time=" + endTime), "here").
                       __(" for the full log.").__();
             }
             long totalSkipped = 0;
