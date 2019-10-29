@@ -407,7 +407,7 @@ public abstract class Server {
       if (range == null || range.isEmpty() || (address.getPort() != 0)) {
         socket.bind(address, backlog);
       } else {
-        for (Integer port : range) {
+        for (Integer port : range) { // 可以给一个范围的端口
           if (socket.isBound()) break;
           try {
             InetSocketAddress temp = new InetSocketAddress(address.getAddress(),
@@ -553,6 +553,11 @@ public abstract class Server {
   }
 
   /** Listens on the socket. Creates jobs for the handler threads*/
+  /**
+   * 1、监听端口，启动 server（Java NIO）
+   * 2、接收客户端连接，并分配一个Reader线程
+   * 3、单线程
+   */
   private class Listener extends Thread {
     
     private ServerSocketChannel acceptChannel = null; //the accept channel
@@ -560,7 +565,7 @@ public abstract class Server {
     private Reader[] readers = null;
     private int currentReader = 0;
     private InetSocketAddress address; //the address we bind at
-    private int backlogLength = conf.getInt(
+    private int backlogLength = conf.getInt( // 半连接队列长度
         CommonConfigurationKeysPublic.IPC_SERVER_LISTEN_QUEUE_SIZE_KEY,
         CommonConfigurationKeysPublic.IPC_SERVER_LISTEN_QUEUE_SIZE_DEFAULT);
     
@@ -571,12 +576,12 @@ public abstract class Server {
       acceptChannel.configureBlocking(false);
 
       // Bind the server socket to the local host and port
-      bind(acceptChannel.socket(), address, backlogLength, conf, portRangeConfig);
+      bind(acceptChannel.socket(), address, backlogLength, conf, portRangeConfig); // 监听端口
       port = acceptChannel.socket().getLocalPort(); //Could be an ephemeral port
       // create a selector;
       selector= Selector.open();
       readers = new Reader[readThreads];
-      for (int i = 0; i < readThreads; i++) {
+      for (int i = 0; i < readThreads; i++) { // 初始化Reader线程
         Reader reader = new Reader(
             "Socket Reader #" + (i + 1) + " for port " + port);
         readers[i] = reader;
@@ -584,7 +589,7 @@ public abstract class Server {
       }
 
       // Register accepts on the server socket with the selector.
-      acceptChannel.register(selector, SelectionKey.OP_ACCEPT);
+      acceptChannel.register(selector, SelectionKey.OP_ACCEPT); // 注册事件
       this.setName("IPC Server listener on " + port);
       this.setDaemon(true);
     }
@@ -675,11 +680,11 @@ public abstract class Server {
     public void run() {
       LOG.info(Thread.currentThread().getName() + ": starting");
       SERVER.set(Server.this);
-      connectionManager.startIdleScan();
+      connectionManager.startIdleScan(); // 启动关闭空闲连接线程
       while (running) {
         SelectionKey key = null;
         try {
-          getSelector().select();
+          getSelector().select(); // 有新连接到来
           Iterator<SelectionKey> iter = getSelector().selectedKeys().iterator();
           while (iter.hasNext()) {
             key = iter.next();
@@ -698,8 +703,8 @@ public abstract class Server {
           // log the event and sleep for a minute and give 
           // some thread(s) a chance to finish
           LOG.warn("Out of Memory in server select", e);
-          closeCurrentConnection(key, e);
-          connectionManager.closeIdle(true);
+          closeCurrentConnection(key, e); // OOM时，关闭当前连接
+          connectionManager.closeIdle(true); // 关闭所有空闲连接
           try { Thread.sleep(60000); } catch (Exception ie) {}
         } catch (Exception e) {
           closeCurrentConnection(key, e);
@@ -2651,10 +2656,15 @@ public abstract class Server {
     int nBytes = initialRemaining - buf.remaining(); 
     return (nBytes > 0) ? nBytes : ret;
   }
-  
+
+  /**
+   * 1、初始化连接
+   * 2、关闭连接
+   * 3、周期扫描，并关闭空闲连接
+   */
   private class ConnectionManager {
     final private AtomicInteger count = new AtomicInteger();    
-    final private Set<Connection> connections;
+    final private Set<Connection> connections; // 连接Set
 
     final private Timer idleScanTimer;
     final private int idleScanThreshold;
@@ -2666,29 +2676,29 @@ public abstract class Server {
     ConnectionManager() {
       this.idleScanTimer = new Timer(
           "IPC Server idle connection scanner for port " + getPort(), true);
-      this.idleScanThreshold = conf.getInt(
+      this.idleScanThreshold = conf.getInt( // 连接数超过此数 才会执行 关闭空闲连接逻辑
           CommonConfigurationKeysPublic.IPC_CLIENT_IDLETHRESHOLD_KEY,
           CommonConfigurationKeysPublic.IPC_CLIENT_IDLETHRESHOLD_DEFAULT);
-      this.idleScanInterval = conf.getInt(
+      this.idleScanInterval = conf.getInt( // 关闭空闲连接 扫描周期
           CommonConfigurationKeys.IPC_CLIENT_CONNECTION_IDLESCANINTERVAL_KEY,
           CommonConfigurationKeys.IPC_CLIENT_CONNECTION_IDLESCANINTERVAL_DEFAULT);
-      this.maxIdleTime = 2 * conf.getInt(
+      this.maxIdleTime = 2 * conf.getInt( // 超过此时间没给server发送过数据
           CommonConfigurationKeysPublic.IPC_CLIENT_CONNECTION_MAXIDLETIME_KEY,
           CommonConfigurationKeysPublic.IPC_CLIENT_CONNECTION_MAXIDLETIME_DEFAULT);
-      this.maxIdleToClose = conf.getInt(
+      this.maxIdleToClose = conf.getInt( // 一次最多关闭多少个空闲连接
           CommonConfigurationKeysPublic.IPC_CLIENT_KILL_MAX_KEY,
           CommonConfigurationKeysPublic.IPC_CLIENT_KILL_MAX_DEFAULT);
-      this.maxConnections = conf.getInt(
+      this.maxConnections = conf.getInt( // 连接数上线，默认无上限
           CommonConfigurationKeysPublic.IPC_SERVER_MAX_CONNECTIONS_KEY,
           CommonConfigurationKeysPublic.IPC_SERVER_MAX_CONNECTIONS_DEFAULT);
       // create a set with concurrency -and- a thread-safe iterator, add 2
       // for listener and idle closer threads
-      this.connections = Collections.newSetFromMap(
+      this.connections = Collections.newSetFromMap( // 连接Set
           new ConcurrentHashMap<Connection,Boolean>(
               maxQueueSize, 0.75f, readThreads+2));
     }
 
-    private boolean add(Connection connection) {
+    private boolean add(Connection connection) { // 添加到 Set
       boolean added = connections.add(connection);
       if (added) {
         count.getAndIncrement();
@@ -2696,7 +2706,7 @@ public abstract class Server {
       return added;
     }
     
-    private boolean remove(Connection connection) {
+    private boolean remove(Connection connection) { // 从 Set 中移除
       boolean removed = connections.remove(connection);
       if (removed) {
         count.getAndDecrement();
@@ -2708,7 +2718,7 @@ public abstract class Server {
       return count.get();
     }
 
-    boolean isFull() {
+    boolean isFull() { // 是否到达连接数上限，默认无上限
       // The check is disabled when maxConnections <= 0.
       return ((maxConnections > 0) && (size() >= maxConnections));
     }
@@ -2717,11 +2727,11 @@ public abstract class Server {
       return connections.toArray(new Connection[0]);
     }
 
-    Connection register(SocketChannel channel) {
-      if (isFull()) {
+    Connection register(SocketChannel channel) { // 初始化一个连接对象，并添加到Set中
+      if (isFull()) { // 达到连接数上限，则添加失败
         return null;
       }
-      Connection connection = new Connection(channel, Time.now());
+      Connection connection = new Connection(channel, Time.now()); // 初始化一个连接对象
       add(connection);
       if (LOG.isDebugEnabled()) {
         LOG.debug("Server connection from " + connection +
@@ -2731,7 +2741,7 @@ public abstract class Server {
       return connection;
     }
     
-    boolean close(Connection connection) {
+    boolean close(Connection connection) { // 从Set中移除，并关闭连接
       boolean exists = remove(connection);
       if (exists) {
         if (LOG.isDebugEnabled()) {
@@ -2748,7 +2758,7 @@ public abstract class Server {
     
     // synch'ed to avoid explicit invocation upon OOM from colliding with
     // timer task firing
-    synchronized void closeIdle(boolean scanAll) {
+    synchronized void closeIdle(boolean scanAll) { // 关闭空闲连接
       long minLastContact = Time.now() - maxIdleTime;
       // concurrent iterator might miss new connections added
       // during the iteration, but that's ok because they won't
@@ -2756,20 +2766,20 @@ public abstract class Server {
       int closed = 0;
       for (Connection connection : connections) {
         // stop if connections dropped below threshold unless scanning all
-        if (!scanAll && size() < idleScanThreshold) {
+        if (!scanAll && size() < idleScanThreshold) { // 超过4000个连接时，才会关闭空闲连接
           break;
         }
         // stop if not scanning all and max connections are closed
         if (connection.isIdle() &&
-            connection.getLastContact() < minLastContact &&
+            connection.getLastContact() < minLastContact && // 长时间没和server发送过数据
             close(connection) &&
-            !scanAll && (++closed == maxIdleToClose)) {
+            !scanAll && (++closed == maxIdleToClose)) { // 一次最多关闭10个空闲连接
           break;
         }
       }
     }
     
-    void closeAll() {
+    void closeAll() { // 关闭所有连接
       // use a copy of the connections to be absolutely sure the concurrent
       // iterator doesn't miss a connection
       for (Connection connection : toArray()) {
@@ -2777,7 +2787,7 @@ public abstract class Server {
       }
     }
     
-    void startIdleScan() {
+    void startIdleScan() { // 启动关闭空闲连接线程
       scheduleIdleScanTask();
     }
     
@@ -2785,7 +2795,7 @@ public abstract class Server {
       idleScanTimer.cancel();
     }
     
-    private void scheduleIdleScanTask() {
+    private void scheduleIdleScanTask() { // 启动关闭空闲连接线程
       if (!running) {
         return;
       }
