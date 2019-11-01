@@ -114,7 +114,7 @@ public abstract class ProtoUtil {
     return result.build();
   }
   
-  public static UserGroupInformation getUgi(IpcConnectionContextProto context) {
+  public static UserGroupInformation getUgi(IpcConnectionContextProto context) { // 构造客户端ugi信息
     if (context.hasUserInfo()) {
       UserInformationProto userInfo = context.getUserInfo();
         return getUgi(userInfo);
@@ -125,15 +125,15 @@ public abstract class ProtoUtil {
   
   public static UserGroupInformation getUgi(UserInformationProto userInfo) {
     UserGroupInformation ugi = null;
-    String effectiveUser = userInfo.hasEffectiveUser() ? userInfo
+    String effectiveUser = userInfo.hasEffectiveUser() ? userInfo // 被代理的用户
         .getEffectiveUser() : null;
-    String realUser = userInfo.hasRealUser() ? userInfo.getRealUser() : null;
+    String realUser = userInfo.hasRealUser() ? userInfo.getRealUser() : null; // 实际用户
     if (effectiveUser != null) {
       if (realUser != null) {
         UserGroupInformation realUserUgi = UserGroupInformation
             .createRemoteUser(realUser);
         ugi = UserGroupInformation
-            .createProxyUser(effectiveUser, realUserUgi);
+            .createProxyUser(effectiveUser, realUserUgi); // 创建代理ugi
       } else {
         ugi = org.apache.hadoop.security.UserGroupInformation
             .createRemoteUser(effectiveUser);

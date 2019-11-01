@@ -502,12 +502,12 @@ public abstract class Server {
   public static class Call implements Schedulable {
     private final int callId;             // the client's call id
     private final int retryCount;        // the retry count of the call
-    private final Writable rpcRequest;    // Serialized Rpc request from client
-    private final Connection connection;  // connection to client
+    private final Writable rpcRequest;    // 请求 Serialized Rpc request from client
+    private final Connection connection;  // 连接 connection to client
     private long timestamp;               // time received when response is null
                                           // time served when response is not null
-    private ByteBuffer rpcResponse;       // the response for this call
-    private final RPC.RpcKind rpcKind;
+    private ByteBuffer rpcResponse;       // 响应 the response for this call
+    private final RPC.RpcKind rpcKind;    // 序列化方式
     private final byte[] clientId;
     private final Span traceSpan; // the tracing span on the server side
 
@@ -581,7 +581,7 @@ public abstract class Server {
       // create a selector;
       selector= Selector.open();
       readers = new Reader[readThreads];
-      for (int i = 0; i < readThreads; i++) { // 初始化Reader线程
+      for (int i = 0; i < readThreads; i++) { // 初始化Reader线程，默认1个
         Reader reader = new Reader(
             "Socket Reader #" + (i + 1) + " for port " + port);
         readers[i] = reader;
@@ -602,7 +602,7 @@ public abstract class Server {
         super(name);
 
         this.pendingConnections =
-            new LinkedBlockingQueue<Connection>(readerPendingConnectionQueue);
+            new LinkedBlockingQueue<Connection>(readerPendingConnectionQueue); // 默认容量100
         this.readSelector = Selector.open();
       }
       
@@ -629,9 +629,9 @@ public abstract class Server {
             int size = pendingConnections.size();
             for (int i=size; i>0; i--) {
               Connection conn = pendingConnections.take();
-              conn.channel.register(readSelector, SelectionKey.OP_READ, conn);
+              conn.channel.register(readSelector, SelectionKey.OP_READ, conn); // 注册连接的读事件
             }
-            readSelector.select();
+            readSelector.select(); // 读事件到来
 
             Iterator<SelectionKey> iter = readSelector.selectedKeys().iterator();
             while (iter.hasNext()) {
@@ -639,7 +639,7 @@ public abstract class Server {
               iter.remove();
               if (key.isValid()) {
                 if (key.isReadable()) {
-                  doRead(key);
+                  doRead(key); // 读数据
                 }
               }
               key = null;
@@ -659,12 +659,12 @@ public abstract class Server {
        * so the connection must be queued.  The reader will drain the queue
        * and update its readSelector before performing the next select
        */
-      public void addConnection(Connection conn) throws InterruptedException {
+      public void addConnection(Connection conn) throws InterruptedException { // 添加连接到队列
         pendingConnections.put(conn);
         readSelector.wakeup();
       }
 
-      void shutdown() {
+      void shutdown() { // 中断线程
         assert !running;
         readSelector.wakeup();
         try {
@@ -771,7 +771,7 @@ public abstract class Server {
       if (c == null) {
         return;  
       }
-      c.setLastContact(Time.now());
+      c.setLastContact(Time.now()); // 避免连接idle
       
       try {
         // 读取请求并封装为Call对象
@@ -789,7 +789,7 @@ public abstract class Server {
             (e instanceof WrappedRpcServerException) ? null : e);
         count = -1; //so that the (count < 0) block is executed
       }
-      if (count < 0) {
+      if (count < 0) { // 有异常的时候，关闭连接
         closeConnection(c);
         c = null;
       }
@@ -1464,7 +1464,7 @@ public abstract class Server {
       }
     }
 
-    private void checkDataLength(int dataLength) throws IOException {
+    private void checkDataLength(int dataLength) throws IOException { // 检查消息是否超长
       if (dataLength < 0) {
         String error = "Unexpected data length " + dataLength +
                        "!! from " + getHostAddress();
@@ -1485,65 +1485,65 @@ public abstract class Server {
         /* Read at most one RPC. If the header is not read completely yet
          * then iterate until we read first RPC or until there is no data left.
          */    
-        int count = -1;
-        if (dataLengthBuffer.remaining() > 0) {
-          count = channelRead(channel, dataLengthBuffer);       
-          if (count < 0 || dataLengthBuffer.remaining() > 0) 
+        int count = -1; // 读取到的字节数
+        if (dataLengthBuffer.remaining() > 0) { // 先读4字节，hadoop连接标记：hrpc
+          count = channelRead(channel, dataLengthBuffer); // 从channel读数据到dataLengthBuffer
+          if (count < 0 || dataLengthBuffer.remaining() > 0) // 没读到或没读全
             return count;
         }
         
-        if (!connectionHeaderRead) {
+        if (!connectionHeaderRead) { // 是否已经读取过连接头
           //Every connection is expected to send the header.
           if (connectionHeaderBuf == null) {
             connectionHeaderBuf = ByteBuffer.allocate(3);
           }
-          count = channelRead(channel, connectionHeaderBuf);
-          if (count < 0 || connectionHeaderBuf.remaining() > 0) {
+          count = channelRead(channel, connectionHeaderBuf); // 从channel读数据到connectionHeaderBuf
+          if (count < 0 || connectionHeaderBuf.remaining() > 0) { // 没读到或没读全
             return count;
           }
           int version = connectionHeaderBuf.get(0);
           // TODO we should add handler for service class later
           this.setServiceClass(connectionHeaderBuf.get(1));
-          dataLengthBuffer.flip();
+          dataLengthBuffer.flip(); // 把limit设为当前position，把position设为0，开始从dataLengthBuffer中读数据。
           
           // Check if it looks like the user is hitting an IPC port
           // with an HTTP GET - this is a common error, so we can
           // send back a simple string indicating as much.
-          if (HTTP_GET_BYTES.equals(dataLengthBuffer)) {
-            setupHttpRequestOnIpcPortResponse();
+          if (HTTP_GET_BYTES.equals(dataLengthBuffer)) { // 检查是否是一个http请求
+            setupHttpRequestOnIpcPortResponse(); // 返一个报错给客户端
             return -1;
           }
           
           if (!RpcConstants.HEADER.equals(dataLengthBuffer)
-              || version != CURRENT_VERSION) {
+              || version != CURRENT_VERSION) { // 标记或者版本不对
             //Warning is ok since this is not supposed to happen.
             LOG.warn("Incorrect header or version mismatch from " + 
                      hostAddress + ":" + remotePort +
                      " got version " + version + 
                      " expected version " + CURRENT_VERSION);
-            setupBadVersionResponse(version);
+            setupBadVersionResponse(version); // 构造并发送响应
             return -1;
           }
           
           // this may switch us into SIMPLE
-          authProtocol = initializeAuthContext(connectionHeaderBuf.get(2));          
+          authProtocol = initializeAuthContext(connectionHeaderBuf.get(2)); // 认证方式
           
-          dataLengthBuffer.clear();
+          dataLengthBuffer.clear(); // 把position设为0，把limit设为capacity，开始写数据到dataLengthBuffer
           connectionHeaderBuf = null;
           connectionHeaderRead = true;
-          continue;
+          continue; // 回到循环开始处，开始读消息体
         }
         
         if (data == null) {
-          dataLengthBuffer.flip();
+          dataLengthBuffer.flip(); // 本次 dataLengthBuffer 4字节，存储的是消息体的长度
           dataLength = dataLengthBuffer.getInt();
-          checkDataLength(dataLength);
+          checkDataLength(dataLength); // 检查消息是否超长
           data = ByteBuffer.allocate(dataLength);
         }
         
-        count = channelRead(channel, data);
+        count = channelRead(channel, data); // 从channel读数据到data
         
-        if (data.remaining() == 0) {
+        if (data.remaining() == 0) { // 读到一个完整的消息
           dataLengthBuffer.clear();
           data.flip();
           boolean isHeaderRead = connectionContextRead;
@@ -1559,7 +1559,7 @@ public abstract class Server {
 
     private AuthProtocol initializeAuthContext(int authType)
         throws IOException {
-      AuthProtocol authProtocol = AuthProtocol.valueOf(authType);
+      AuthProtocol authProtocol = AuthProtocol.valueOf(authType); // 认证方式
       if (authProtocol == null) {
         IOException ioe = new IpcException("Unknown auth protocol:" + authType);
         doSaslReply(ioe);
@@ -1569,11 +1569,11 @@ public abstract class Server {
       switch (authProtocol) {
         case NONE: {
           // don't reply if client is simple and server is insecure
-          if (!isSimpleEnabled) {
+          if (!isSimpleEnabled) { // 是否支持简单认证方式
             IOException ioe = new AccessControlException(
                 "SIMPLE authentication is not enabled."
                     + "  Available:" + enabledAuthMethods);
-            doSaslReply(ioe);
+            doSaslReply(ioe); // 构造并发送响应
             throw ioe;
           }
           break;
@@ -1629,8 +1629,8 @@ public abstract class Server {
             this);
         setupResponse(buffer, fakeCall, 
             RpcStatusProto.FATAL, RpcErrorCodeProto.FATAL_VERSION_MISMATCH,
-            null, VersionMismatch.class.getName(), errMsg);
-        responder.doRespond(fakeCall);
+            null, VersionMismatch.class.getName(), errMsg); // 构造响应
+        responder.doRespond(fakeCall); // 发送
       } else if (clientVersion >= 3) {
         Call fakeCall = new Call(-1, RpcConstants.INVALID_RETRY_COUNT, null,
             this);
@@ -1653,7 +1653,7 @@ public abstract class Server {
       }
     }
     
-    private void setupHttpRequestOnIpcPortResponse() throws IOException {
+    private void setupHttpRequestOnIpcPortResponse() throws IOException { // 返一个报错给客户端
       Call fakeCall = new Call(0, RpcConstants.INVALID_RETRY_COUNT, null, this);
       fakeCall.setResponse(ByteBuffer.wrap(
           RECEIVED_HTTP_REQ_RESPONSE.getBytes(Charsets.UTF_8)));
@@ -1665,7 +1665,7 @@ public abstract class Server {
      * @throws WrappedRpcServerException - if the header cannot be
      *         deserialized, or the user is not authorized
      */ 
-    private void processConnectionContext(DataInputStream dis)
+    private void processConnectionContext(DataInputStream dis) // 构造客户端ugi，并认证
         throws WrappedRpcServerException {
       // allow only one connection context during a session
       if (connectionContextRead) {
@@ -1678,7 +1678,7 @@ public abstract class Server {
       protocolName = connectionContext.hasProtocol() ? connectionContext
           .getProtocol() : null;
 
-      UserGroupInformation protocolUser = ProtoUtil.getUgi(connectionContext);
+      UserGroupInformation protocolUser = ProtoUtil.getUgi(connectionContext); // 构造客户端ugi信息
       if (saslServer == null) {
         user = protocolUser;
       } else {
@@ -1689,7 +1689,7 @@ public abstract class Server {
         //this is not allowed if user authenticated with DIGEST.
         if ((protocolUser != null)
             && (!protocolUser.getUserName().equals(user.getUserName()))) {
-          if (authMethod == AuthMethod.TOKEN) {
+          if (authMethod == AuthMethod.TOKEN) { // TOKEN认证方式，不能代理其他用户
             // Not allowed to doAs if token authentication is used
             throw new WrappedRpcServerException(
                 RpcErrorCodeProto.FATAL_UNAUTHORIZED,
@@ -1706,7 +1706,7 @@ public abstract class Server {
           }
         }
       }
-      authorizeConnection();
+      authorizeConnection(); // TODOWXY: 认证连接
       // don't set until after authz because connection isn't established
       connectionContextRead = true;
     }
@@ -1781,10 +1781,10 @@ public abstract class Server {
         if (LOG.isDebugEnabled()) {
           LOG.debug(" got #" + callId);
         }
-        checkRpcHeaders(header);
+        checkRpcHeaders(header); // 检查header字段
         
         if (callId < 0) { // callIds typically used during connection setup
-          processRpcOutOfBandRequest(header, dis);
+          processRpcOutOfBandRequest(header, dis); // 处理带外请求：认证、SASL等
         } else if (!connectionContextRead) {
           throw new WrappedRpcServerException(
               RpcErrorCodeProto.FATAL_INVALID_RPC_HEADER,
@@ -1811,7 +1811,7 @@ public abstract class Server {
      * @throws WrappedRpcServerException - header contains invalid values 
      */
     private void checkRpcHeaders(RpcRequestHeaderProto header)
-        throws WrappedRpcServerException {
+        throws WrappedRpcServerException { // 检查header字段
       if (!header.hasRpcOp()) {
         String err = " IPC Server: No rpc op in rpcRequestHeader";
         throw new WrappedRpcServerException(
@@ -1848,7 +1848,7 @@ public abstract class Server {
         DataInputStream dis) throws WrappedRpcServerException,
         InterruptedException {
       Class<? extends Writable> rpcRequestClass = 
-          getRpcRequestWrapper(header.getRpcKind());
+          getRpcRequestWrapper(header.getRpcKind()); // 不同的序列化方法，有不同的序列化class
       if (rpcRequestClass == null) {
         LOG.warn("Unknown rpc kind "  + header.getRpcKind() + 
             " from client " + getHostAddress());
@@ -1860,7 +1860,7 @@ public abstract class Server {
       Writable rpcRequest;
       try { //Read the rpc request
         rpcRequest = ReflectionUtils.newInstance(rpcRequestClass, conf);
-        rpcRequest.readFields(dis);
+        rpcRequest.readFields(dis); // 反序列化请求
       } catch (Throwable t) { // includes runtime exception from newInstance
         LOG.warn("Unable to read call parameters for client " +
                  getHostAddress() + "on connection protocol " +
@@ -1870,7 +1870,7 @@ public abstract class Server {
             RpcErrorCodeProto.FATAL_DESERIALIZING_REQUEST, err);
       }
         
-      Span traceSpan = null;
+      Span traceSpan = null; // trace 信息
       if (header.hasTraceInfo()) {
         // If the incoming RPC included tracing info, always continue the trace
         TraceInfo parentSpan = new TraceInfo(header.getTraceInfo().getTraceId(),
@@ -1883,7 +1883,8 @@ public abstract class Server {
           rpcRequest, this, ProtoUtil.convert(header.getRpcKind()),
           header.getClientId().toByteArray(), traceSpan);
 
-      callQueue.put(call);              // queue the call; maybe blocked here
+      // 放入callQueue
+      callQueue.put(call); // queue the call; maybe blocked here
       incRpcCount();  // Increment the rpc count
     }
 
@@ -1911,7 +1912,7 @@ public abstract class Server {
               "Connection header sent during SASL negotiation");
         }
         // read and authorize the user
-        processConnectionContext(dis);
+        processConnectionContext(dis); // 构造客户端ugi，并认证
       } else if (callId == AuthProtocol.SASL.callId) {
         // if client was switched to simple, ignore first SASL message
         if (authProtocol != AuthProtocol.SASL) {
@@ -1919,7 +1920,7 @@ public abstract class Server {
               RpcErrorCodeProto.FATAL_INVALID_RPC_HEADER,
               "SASL protocol not requested by client");
         }
-        saslReadAndProcess(dis);
+        saslReadAndProcess(dis); // TODOWXY
       } else if (callId == PING_CALL_ID) {
         LOG.debug("Received ping message");
       } else {
@@ -2594,7 +2595,7 @@ public abstract class Server {
                            ByteBuffer buffer) throws IOException {
     
     int count =  (buffer.remaining() <= NIO_BUFFER_LIMIT) ?
-                 channel.write(buffer) : channelIO(null, channel, buffer);
+                 channel.write(buffer) : channelIO(null, channel, buffer); // 写buffer数据到channel
     if (count > 0) {
       rpcMetrics.incrSentBytes(count);
     }
@@ -2614,7 +2615,7 @@ public abstract class Server {
                           ByteBuffer buffer) throws IOException {
     
     int count = (buffer.remaining() <= NIO_BUFFER_LIMIT) ?
-                channel.read(buffer) : channelIO(channel, null, buffer);
+                channel.read(buffer) : channelIO(channel, null, buffer); // 从channel读数据到buffer
     if (count > 0) {
       rpcMetrics.incrReceivedBytes(count);
     }
@@ -2632,7 +2633,7 @@ public abstract class Server {
   private static int channelIO(ReadableByteChannel readCh, 
                                WritableByteChannel writeCh,
                                ByteBuffer buf) throws IOException {
-    
+    // ByteBuffer limit：当写数据到buffer中时，limit一般和capacity相等，当读数据时，limit代表buffer中有效数据的长度
     int originalLimit = buf.limit();
     int initialRemaining = buf.remaining();
     int ret = 0;
@@ -2640,21 +2641,21 @@ public abstract class Server {
     while (buf.remaining() > 0) {
       try {
         int ioSize = Math.min(buf.remaining(), NIO_BUFFER_LIMIT);
-        buf.limit(buf.position() + ioSize);
+        buf.limit(buf.position() + ioSize); // 扩大有效数据区域
         
-        ret = (readCh == null) ? writeCh.write(buf) : readCh.read(buf); 
+        ret = (readCh == null) ? writeCh.write(buf) : readCh.read(buf);  // 读或写数据到buf
         
         if (ret < ioSize) {
           break;
         }
 
       } finally {
-        buf.limit(originalLimit);        
+        buf.limit(originalLimit); // 恢复有效数据区域
       }
     }
 
     int nBytes = initialRemaining - buf.remaining(); 
-    return (nBytes > 0) ? nBytes : ret;
+    return (nBytes > 0) ? nBytes : ret; // 返回读取到的字节数
   }
 
   /**
