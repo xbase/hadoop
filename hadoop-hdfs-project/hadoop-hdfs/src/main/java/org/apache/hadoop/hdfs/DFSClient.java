@@ -1816,7 +1816,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
       LastBlockWithStatus blkWithStatus = namenode.append(src, clientName,
           new EnumSetWritable<>(flag, CreateFlag.class));
       HdfsFileStatus status = blkWithStatus.getFileStatus();
-      if (status == null) {
+      if (status == null) { // 老版NN，需要请求两次
         DFSClient.LOG.debug("NameNode is on an older version, request file " +
             "info with additional RPC call for file: " + src);
         status = getFileInfo(src);

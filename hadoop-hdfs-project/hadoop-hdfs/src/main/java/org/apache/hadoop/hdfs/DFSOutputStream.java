@@ -287,6 +287,14 @@ public class DFSOutputStream extends FSOutputSummer
      * @param bytesPerChecksum number of bytes per checksum
      * @throws IOException if error occurs
      */
+    /**
+     * append：优先把最后一个不完整的block写满
+     *
+     * @param lastBlock
+     * @param stat
+     * @param bytesPerChecksum
+     * @throws IOException
+     */
     private DataStreamer(LocatedBlock lastBlock, HdfsFileStatus stat,
         int bytesPerChecksum) throws IOException {
       isAppend = true;
@@ -295,12 +303,12 @@ public class DFSOutputStream extends FSOutputSummer
       bytesSent = block.getNumBytes();
       accessToken = lastBlock.getBlockToken();
       isLazyPersistFile = isLazyPersist(stat);
-      long usedInLastBlock = stat.getLen() % blockSize;
-      int freeInLastBlock = (int)(blockSize - usedInLastBlock);
+      long usedInLastBlock = stat.getLen() % blockSize; // 最后一个块，已经写的长度
+      int freeInLastBlock = (int)(blockSize - usedInLastBlock); // 最后一个块，还剩多少写满
 
       // calculate the amount of free space in the pre-existing 
       // last crc chunk
-      int usedInCksum = (int)(stat.getLen() % bytesPerChecksum); // 最后一个chunk的数据长度
+      int usedInCksum = (int)(stat.getLen() % bytesPerChecksum); // 最后一个chunk，已经写的数据长度
       int freeInCksum = bytesPerChecksum - usedInCksum; // 填满最后一个chunk所需的数据
 
       // if there is space in the last block, then we have to 
@@ -310,15 +318,16 @@ public class DFSOutputStream extends FSOutputSummer
             src + " is full.");
       }
 
-      if (usedInCksum > 0 && freeInCksum > 0) {
+      if (usedInCksum > 0 && freeInCksum > 0) { // 最后一个chunk没有写满的情况
         // if there is space in the last partial chunk, then 
         // setup in such a way that the next packet will have only 
         // one chunk that fills up the partial chunk.
         //
-        computePacketChunkSize(0, freeInCksum); // 如果最后一个block的最后一个chunk中还有空间，则先填满这个chunk
+        // 如果最后一个block的最后一个chunk没有写满，则下个packet将只有一个chunk，用来填满最后一个不完整的chunk
+        computePacketChunkSize(0, freeInCksum);
         setChecksumBufSize(freeInCksum);
         appendChunk = true;
-      } else {
+      } else { // 最后一个chunk写满的情况
         // if the remaining space in the block is smaller than 
         // that expected size of of a packet, then create 
         // smaller size packet.
@@ -445,7 +454,8 @@ public class DFSOutputStream extends FSOutputSummer
           }
 
           // get new block from namenode.
-          // step 4: 如果pipeline处于初始状态，则向NN申请block，并建立pipeline
+          // step 4: 如果pipeline处于PIPELINE_SETUP_CREATE，则向NN申请block，并建立pipeline
+          //         如果pipeline处于PIPELINE_SETUP_APPEND，则向NN申请block，并建立pipeline
           if (stage == BlockConstructionStage.PIPELINE_SETUP_CREATE) {
             if(DFSClient.LOG.isDebugEnabled()) {
               DFSClient.LOG.debug("Allocating new block");
@@ -1081,7 +1091,17 @@ public class DFSOutputStream extends FSOutputSummer
      * This happens when a file is appended or data streaming fails
      * It keeps on trying until a pipeline is setup
      */
-    // pipeline recovery逻辑
+    /**
+     * pipeline recovery逻辑，正常情况下：
+     * 追加写文件时，会调用step 4和step 5 ?
+     * pipeline出错时，会调用所有的step
+     *
+     * step 1: 等待重启的DN，仅仅是sleep了一会儿
+     * step 2: 处理出错的DN，把出错的DN从pipeline DN数组中移除？
+     * step 3: 如果满足替换条件，则添加一个新的DN节点到pipeline中
+     * step 4: 向NN获取新的block时间戳和access token，由于生成了新的时间戳，异常节点上的过期block将会被删除
+     * step 5: pipe recovery成功，更新NN数据块信息
+     */
     private boolean setupPipelineForAppendOrRecovery() throws IOException {
       // check number of datanodes
       if (nodes == null || nodes.length == 0) { // pipeline中没有DN，直接关闭streamer
@@ -1618,7 +1638,7 @@ public class DFSOutputStream extends FSOutputSummer
   }
  
   private DFSOutputStream(DFSClient dfsClient, String src, Progressable progress,
-      HdfsFileStatus stat, DataChecksum checksum) throws IOException {
+      HdfsFileStatus stat, DataChecksum checksum) throws IOException { // 初始化一些变量
     super(getChecksum4Compute(checksum, stat));
     this.dfsClient = dfsClient;
     this.src = src;
@@ -1733,11 +1753,11 @@ public class DFSOutputStream extends FSOutputSummer
     boolean toNewBlock = flags.contains(CreateFlag.NEW_BLOCK);
 
     // The last partial block of the file has to be filled.
-    if (!toNewBlock && lastBlock != null) {
+    if (!toNewBlock && lastBlock != null) { // 最后一个block没有写满
       // indicate that we are appending to an existing block
       bytesCurBlock = lastBlock.getBlockSize();
       streamer = new DataStreamer(lastBlock, stat, bytesPerChecksum);
-    } else {
+    } else { // 最后一个block写满了，则走普通写流程
       computePacketChunkSize(dfsClient.getConf().writePacketSize,
           bytesPerChecksum);
       streamer = new DataStreamer(stat,

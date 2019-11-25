@@ -2204,7 +2204,7 @@ public abstract class FileSystem extends Configured implements Closeable {
   /**
    * See {@link FileContext#fixRelativePart}
    */
-  protected Path fixRelativePart(Path p) {
+  protected Path fixRelativePart(Path p) { // 相对路径 转为 绝对路径
     if (p.isUriPathAbsolute()) {
       return p;
     } else {
