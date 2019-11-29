@@ -2653,17 +2653,17 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    */
   private LocatedBlock appendFileInternal(FSPermissionChecker pc,
       INodesInPath iip, String holder, String clientMachine, boolean newBlock,
-      boolean logRetryCache) throws IOException {
+      boolean logRetryCache) throws IOException { // 如果最后一个块没写满，则返回最后一个块，否则返回null
     assert hasWriteLock();
     // Verify that the destination does not exist as a directory already.
     final INode inode = iip.getLastINode();
     final String src = iip.getPath();
-    if (inode != null && inode.isDirectory()) {
+    if (inode != null && inode.isDirectory()) { // append的是一个目录
       throw new FileAlreadyExistsException("Cannot append to directory " + src
           + "; already exists as a directory.");
     }
     if (isPermissionEnabled) {
-      dir.checkPathAccess(pc, iip, FsAction.WRITE);
+      dir.checkPathAccess(pc, iip, FsAction.WRITE); // 权限检查
     }
 
     try {
@@ -2675,13 +2675,13 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       final BlockStoragePolicy lpPolicy =
           blockManager.getStoragePolicy("LAZY_PERSIST");
       if (lpPolicy != null &&
-          lpPolicy.getId() == myFile.getStoragePolicyID()) {
+          lpPolicy.getId() == myFile.getStoragePolicyID()) { // LAZY_PERSIST存储策略的文件，不能append
         throw new UnsupportedOperationException(
             "Cannot append to lazy persist file " + src);
       }
       // Opening an existing file for append - may need to recover lease.
       recoverLeaseInternal(RecoverLeaseOp.APPEND_FILE,
-          iip, src, holder, clientMachine, false);
+          iip, src, holder, clientMachine, false); // 可能触发recover lease
       
       final BlockInfoContiguous lastBlock = myFile.getLastBlock();
       // Check that the block has at least minimum replication.
@@ -2712,34 +2712,40 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * @return the last block locations if the block is partial or null otherwise
    * @throws UnresolvedLinkException
    * @throws IOException
+  */
+  /**
+   * step 1: 检查quota
+   * step 2: 添加租约
+   * step 3: file转为构建状态，获取最后一个未写满的块
+   * step 4: 写 editlog
    */
   LocatedBlock prepareFileForAppend(String src, INodesInPath iip,
       String leaseHolder, String clientMachine, boolean newBlock,
       boolean writeToEditLog, boolean logRetryCache) throws IOException {
     final INodeFile file = iip.getLastINode().asFile();
-    final QuotaCounts delta = verifyQuotaForUCBlock(file, iip);
+    final QuotaCounts delta = verifyQuotaForUCBlock(file, iip); // step 1: 检查quota
 
-    file.recordModification(iip.getLatestSnapshotId());
-    file.toUnderConstruction(leaseHolder, clientMachine);
+    file.recordModification(iip.getLatestSnapshotId()); // snapshot相关
+    file.toUnderConstruction(leaseHolder, clientMachine); // file转为构建状态
 
     leaseManager.addLease(
-        file.getFileUnderConstructionFeature().getClientName(), src);
+        file.getFileUnderConstructionFeature().getClientName(), src); // step 2: 添加租约
 
     LocatedBlock ret = null;
     if (!newBlock) {
-      ret = blockManager.convertLastBlockToUnderConstruction(file, 0);
+      ret = blockManager.convertLastBlockToUnderConstruction(file, 0); // step 3: file转为构建状态，获取最后一个未写满的块
       if (ret != null && delta != null) {
         Preconditions.checkState(delta.getStorageSpace() >= 0,
             "appending to a block with size larger than the preferred block size");
         dir.writeLock();
         try {
-          dir.updateCountNoQuotaCheck(iip, iip.length() - 1, delta);
+          dir.updateCountNoQuotaCheck(iip, iip.length() - 1, delta); // 更新quota
         } finally {
           dir.writeUnlock();
         }
       }
-    } else {
-      BlockInfoContiguous lastBlock = file.getLastBlock();
+    } else { // 写新块
+      BlockInfoContiguous lastBlock = file.getLastBlock(); // 直接获取最后一个块
       if (lastBlock != null) {
         ExtendedBlock blk = new ExtendedBlock(this.getBlockPoolId(), lastBlock);
         ret = new LocatedBlock(blk, new DatanodeInfo[0]);
@@ -2747,7 +2753,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     }
 
     if (writeToEditLog) {
-      getEditLog().logAppendFile(src, file, newBlock, logRetryCache);
+      getEditLog().logAppendFile(src, file, newBlock, logRetryCache); // step 4: 写editlog
     }
     return ret;
   }
@@ -2760,7 +2766,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    *         update quota usage later
    */
   private QuotaCounts verifyQuotaForUCBlock(INodeFile file, INodesInPath iip)
-      throws QuotaExceededException {
+      throws QuotaExceededException { // 检查quota
     if (!isImageLoaded() || dir.shouldSkipQuotaChecks()) {
       // Do not check quota if editlog is still being processed
       return null;
@@ -2942,6 +2948,10 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
   /**
    * Append to an existing file in the namespace.
+   * 核心逻辑：
+   * step 1: 添加租约
+   * step 2: file转为构建状态，获取最后一个未写满的块
+   * step 3: 写 editlog
    */
   LastBlockWithStatus appendFile(String src, String holder,
       String clientMachine, EnumSet<CreateFlag> flag, boolean logRetryCache)
@@ -2971,14 +2981,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
     LocatedBlock lb = null;
     HdfsFileStatus stat = null;
-    FSPermissionChecker pc = getPermissionChecker();
-    byte[][] pathComponents = FSDirectory.getPathComponentsForReservedPath(src);
+    FSPermissionChecker pc = getPermissionChecker(); // 权限检查器
+    byte[][] pathComponents = FSDirectory.getPathComponentsForReservedPath(src); // 把保留目录，按 / 拆分
     writeLock();
     try {
-      checkOperation(OperationCategory.WRITE);
+      checkOperation(OperationCategory.WRITE); // 主备检查
       checkNameNodeSafeMode("Cannot append to file" + src);
-      src = dir.resolvePath(pc, src, pathComponents);
-      final INodesInPath iip = dir.getINodesInPath4Write(src);
+      src = dir.resolvePath(pc, src, pathComponents); // 解析出真实path，特殊处理一下/.reserved目录
+      final INodesInPath iip = dir.getINodesInPath4Write(src); // path数组 转为 inode数组
       lb = appendFileInternal(pc, iip, holder, clientMachine, newBlock,
           logRetryCache);
       stat = FSDirStatAndListingOp.getFileInfo(dir, src, false,

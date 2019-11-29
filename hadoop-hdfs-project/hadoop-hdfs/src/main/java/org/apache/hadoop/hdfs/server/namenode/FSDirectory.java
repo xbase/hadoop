@@ -569,7 +569,7 @@ public class FSDirectory implements Closeable {
   String resolvePath(FSPermissionChecker pc, String path, byte[][] pathComponents)
       throws FileNotFoundException, AccessControlException {
     if (isReservedRawName(path) && isPermissionEnabled) {
-      pc.checkSuperuserPrivilege();
+      pc.checkSuperuserPrivilege(); // /.reserved/raw 目录需要超级用户权限
     }
     return resolvePath(path, pathComponents, this);
   }
@@ -1443,7 +1443,7 @@ public class FSDirectory implements Closeable {
   /**
    * @return path components for reserved path, else null.
    */
-  static byte[][] getPathComponentsForReservedPath(String src) {
+  static byte[][] getPathComponentsForReservedPath(String src) { // 把保留目录，按 / 拆分
     return !isReservedName(src) ? null : INode.getPathComponents(src);
   }
 
@@ -1454,7 +1454,7 @@ public class FSDirectory implements Closeable {
   }
 
   /** Check if a given path is reserved */
-  public static boolean isReservedName(String src) {
+  public static boolean isReservedName(String src) { // 是否是保留目录 /.reserved/
     return src.startsWith(DOT_RESERVED_PATH_PREFIX + Path.SEPARATOR);
   }
 
@@ -1491,25 +1491,25 @@ public class FSDirectory implements Closeable {
    * @throws FileNotFoundException if inodeid is invalid
    */
   static String resolvePath(String src, byte[][] pathComponents,
-      FSDirectory fsd) throws FileNotFoundException {
+      FSDirectory fsd) throws FileNotFoundException { // 解析出真实path
     final int nComponents = (pathComponents == null) ?
         0 : pathComponents.length;
     if (nComponents <= 2) {
-      return src;
+      return src; // 普通目录或 /.reserved下的非保留目录，直接返回
     }
-    if (!Arrays.equals(DOT_RESERVED, pathComponents[1])) {
+    if (!Arrays.equals(DOT_RESERVED, pathComponents[1])) { // byte数组的比较效率更好，为何不用String.equals()方法？
       /* This is not a /.reserved/ path so do nothing. */
-      return src;
+      return src; // 普通目录，直接返回
     }
 
-    if (Arrays.equals(DOT_INODES, pathComponents[2])) {
+    if (Arrays.equals(DOT_INODES, pathComponents[2])) { // /.reserved/.inodes/
       /* It's a /.reserved/.inodes path. */
       if (nComponents > 3) {
-        return resolveDotInodesPath(src, pathComponents, fsd);
+        return resolveDotInodesPath(src, pathComponents, fsd); // 通过inodeId查找文件路径
       } else {
         return src;
       }
-    } else if (Arrays.equals(RAW, pathComponents[2])) {
+    } else if (Arrays.equals(RAW, pathComponents[2])) { // /.reserved/raw
       /* It's /.reserved/raw so strip off the /.reserved/raw prefix. */
       if (nComponents == 3) {
         return Path.SEPARATOR;
@@ -1640,9 +1640,9 @@ public class FSDirectory implements Closeable {
    */
   INodesInPath getINodesInPath4Write(String src, boolean resolveLink)
           throws UnresolvedLinkException, SnapshotAccessControlException {
-    final byte[][] components = INode.getPathComponents(src);
+    final byte[][] components = INode.getPathComponents(src); // 根据 / 切分path，每个部分用byte数组表示
     INodesInPath inodesInPath = INodesInPath.resolve(rootDir, components,
-        resolveLink);
+        resolveLink); // path数组 转为 inode数组
     if (inodesInPath.isSnapshot()) {
       throw new SnapshotAccessControlException(
               "Modification on a read-only snapshot is disallowed");

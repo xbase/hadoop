@@ -641,9 +641,9 @@ class NameNodeRpcServer implements NamenodeProtocols {
       stateChangeLog.debug("*DIR* NameNode.append: file "
           +src+" for "+clientName+" at "+clientMachine);
     }
-    namesystem.checkOperation(OperationCategory.WRITE);
+    namesystem.checkOperation(OperationCategory.WRITE); // 主备服务的操作检查
     CacheEntryWithPayload cacheEntry = RetryCache.waitForCompletion(retryCache,
-        null);
+        null); // TODOWXY
     if (cacheEntry != null && cacheEntry.isSuccess()) {
       return (LastBlockWithStatus) cacheEntry.getPayload();
     }
@@ -1533,7 +1533,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
     }
   }
 
-  private static String getClientMachine() {
+  private static String getClientMachine() { // 获取客户端hostname
     String clientMachine = NamenodeWebHdfsMethods.getRemoteAddress();
     if (clientMachine == null) { //not a web client
       clientMachine = Server.getRemoteAddress();
@@ -1899,7 +1899,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
     }
   }
 
-  private void checkNNStartup() throws IOException {
+  private void checkNNStartup() throws IOException { // 检查NN是否启动完成
     if (!this.nn.isStarted()) {
       throw new RetriableException(this.nn.getRole() + " still not started");
     }

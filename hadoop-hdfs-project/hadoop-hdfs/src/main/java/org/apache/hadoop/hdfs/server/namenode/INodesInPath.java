@@ -120,7 +120,7 @@ public class INodesInPath {
    */
   static INodesInPath resolve(final INodeDirectory startingDir,
       final byte[][] components, final boolean resolveLink)
-      throws UnresolvedLinkException {
+      throws UnresolvedLinkException { // path数组 转为 inode数组
     Preconditions.checkArgument(startingDir.compareTo(components[0]) == 0);
 
     INode curNode = startingDir;
@@ -131,12 +131,12 @@ public class INodesInPath {
     int snapshotId = CURRENT_STATE_ID;
 
     while (count < components.length && curNode != null) {
-      final boolean lastComp = (count == components.length - 1);
+      final boolean lastComp = (count == components.length - 1); // 是否是最后一级目录
       inodes[inodeNum++] = curNode;
       final boolean isRef = curNode.isReference();
       final boolean isDir = curNode.isDirectory();
       final INodeDirectory dir = isDir? curNode.asDirectory(): null;
-      if (!isRef && isDir && dir.isWithSnapshot()) {
+      if (!isRef && isDir && dir.isWithSnapshot()) { // snapshot目录
         //if the path is a non-snapshot path, update the latest snapshot.
         if (!isSnapshot && shouldUpdateLatestId(
             dir.getDirectoryWithSnapshotFeature().getLastSnapshotId(),

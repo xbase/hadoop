@@ -317,7 +317,7 @@ public class INodeFile extends INodeWithAdditionalFields
     recordModification(latestSnapshotId, false);
   }
 
-  public void recordModification(final int latestSnapshotId, boolean withBlocks) {
+  public void recordModification(final int latestSnapshotId, boolean withBlocks) { // snapshot相关
     if (isInLatestSnapshot(latestSnapshotId)
         && !shouldRecordInSrcSnapshot(latestSnapshotId)) {
       // the file is in snapshot, create a snapshot feature if it does not have

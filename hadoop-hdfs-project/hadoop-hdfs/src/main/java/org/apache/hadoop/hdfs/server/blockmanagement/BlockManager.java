@@ -709,29 +709,29 @@ public class BlockManager {
    * @return the last block locations if the block is partial or null otherwise
    */
   public LocatedBlock convertLastBlockToUnderConstruction(
-      BlockCollection bc, long bytesToRemove) throws IOException {
+      BlockCollection bc, long bytesToRemove) throws IOException { // 如果最后一个块没写满，则返回最后一个块，否则返回null
     BlockInfoContiguous oldBlock = bc.getLastBlock();
     if(oldBlock == null ||
-       bc.getPreferredBlockSize() == oldBlock.getNumBytes() - bytesToRemove)
+       bc.getPreferredBlockSize() == oldBlock.getNumBytes() - bytesToRemove) // 说明最后一个块写满了？
       return null;
     assert oldBlock == getStoredBlock(oldBlock) :
       "last block of the file is not in blocksMap";
 
-    DatanodeStorageInfo[] targets = getStorages(oldBlock);
+    DatanodeStorageInfo[] targets = getStorages(oldBlock); // 获取所有副本信息
 
     BlockInfoContiguousUnderConstruction ucBlock =
         bc.setLastBlock(oldBlock, targets);
-    blocksMap.replaceBlock(ucBlock);
+    blocksMap.replaceBlock(ucBlock); // 更新
 
     // Remove block from replication queue.
-    NumberReplicas replicas = countNodes(ucBlock);
+    NumberReplicas replicas = countNodes(ucBlock); // 计算副本状态
     neededReplications.remove(ucBlock, replicas.liveReplicas(),
-        replicas.decommissionedReplicas(), getReplication(ucBlock));
-    pendingReplications.remove(ucBlock);
+        replicas.decommissionedReplicas(), getReplication(ucBlock));  // 从 需要补充副本 队列中移除
+    pendingReplications.remove(ucBlock); // 从 等待复制 队列中移除
 
     // remove this block from the list of pending blocks to be deleted. 
     for (DatanodeStorageInfo storage : targets) {
-      invalidateBlocks.remove(storage.getDatanodeDescriptor(), oldBlock);
+      invalidateBlocks.remove(storage.getDatanodeDescriptor(), oldBlock); // 从 等待删除 队列中移除
     }
     
     // Adjust safe-mode totals, since under-construction blocks don't
@@ -742,8 +742,8 @@ public class BlockManager {
         // always decrement total blocks
         -1);
 
-    final long fileLength = bc.computeContentSummary(getStoragePolicySuite()).getLength();
-    final long pos = fileLength - ucBlock.getNumBytes();
+    final long fileLength = bc.computeContentSummary(getStoragePolicySuite()).getLength(); // 文件的长度
+    final long pos = fileLength - ucBlock.getNumBytes(); // 从pos位置开始，追加写文件
     return createLocatedBlock(ucBlock, pos, AccessMode.WRITE);
   }
 
@@ -3268,20 +3268,20 @@ public class BlockManager {
     for(DatanodeStorageInfo storage : blocksMap.getStorages(b, State.NORMAL)) {
       final DatanodeDescriptor node = storage.getDatanodeDescriptor();
       if ((nodesCorrupt != null) && (nodesCorrupt.contains(node))) {
-        corrupt++;
+        corrupt++; // 损坏的副本数
       } else if (node.isDecommissionInProgress() || node.isDecommissioned()) {
-        decommissioned++;
+        decommissioned++; // decommission的副本数
       } else {
         LightWeightLinkedSet<Block> blocksExcess = excessReplicateMap.get(node
             .getDatanodeUuid());
         if (blocksExcess != null && blocksExcess.contains(b)) {
-          excess++;
+          excess++; // 多余的副本数
         } else {
-          live++;
+          live++; // 正常的副本数
         }
       }
       if (storage.areBlockContentsStale()) {
-        stale++;
+        stale++; // 副本所在的节点有多少是stale状态
       }
     }
     return new NumberReplicas(live, decommissioned, corrupt, excess, stale);

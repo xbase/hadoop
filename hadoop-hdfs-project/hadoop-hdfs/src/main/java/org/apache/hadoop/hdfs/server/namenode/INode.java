@@ -736,18 +736,18 @@ public abstract class INode implements INodeAttributes, Diff.Element<byte[]> {
    * a single path component.
    */
   @VisibleForTesting
-  public static byte[][] getPathComponents(String path) {
+  public static byte[][] getPathComponents(String path) { // 根据 / 切分path，每个部分用byte数组表示
     return getPathComponents(getPathNames(path));
   }
 
   /** Convert strings to byte arrays for path components. */
-  static byte[][] getPathComponents(String[] strings) {
+  static byte[][] getPathComponents(String[] strings) { // 根据 / 切分path，每个部分用byte数组表示
     if (strings.length == 0) {
       return new byte[][]{null};
     }
     byte[][] bytes = new byte[strings.length][];
     for (int i = 0; i < strings.length; i++)
-      bytes[i] = DFSUtil.string2Bytes(strings[i]);
+      bytes[i] = DFSUtil.string2Bytes(strings[i]); // 字符串转byte数组
     return bytes;
   }
 
@@ -756,7 +756,7 @@ public abstract class INode implements INodeAttributes, Diff.Element<byte[]> {
    * @throws AssertionError if the given path is invalid.
    * @return array of path components.
    */
-  public static String[] getPathNames(String path) {
+  public static String[] getPathNames(String path) { // 根据 / 切分path
     if (path == null || !path.startsWith(Path.SEPARATOR)) {
       throw new AssertionError("Absolute path required");
     }

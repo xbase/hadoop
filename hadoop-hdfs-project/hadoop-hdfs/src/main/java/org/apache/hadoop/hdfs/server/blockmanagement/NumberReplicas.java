@@ -22,11 +22,11 @@ package org.apache.hadoop.hdfs.server.blockmanagement;
  * the number of decommissined Replicas.
  */
 public class NumberReplicas {
-  private int liveReplicas;
-  private int decommissionedReplicas;
-  private int corruptReplicas;
-  private int excessReplicas;
-  private int replicasOnStaleNodes;
+  private int liveReplicas; // 正常的副本数
+  private int decommissionedReplicas; // decommission的副本数
+  private int corruptReplicas; // 损坏的副本数
+  private int excessReplicas; // 多余的副本数
+  private int replicasOnStaleNodes; // 副本所在的节点有多少是stale状态
 
   NumberReplicas() {
     initialize(0, 0, 0, 0, 0);
