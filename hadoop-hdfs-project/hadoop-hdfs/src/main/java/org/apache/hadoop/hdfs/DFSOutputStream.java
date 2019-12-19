@@ -422,6 +422,7 @@ public class DFSOutputStream extends FSOutputSummer
                 (stage != BlockConstructionStage.DATA_STREAMING || 
                  stage == BlockConstructionStage.DATA_STREAMING && 
                  now - lastPacket < dfsClient.getConf().socketTimeout/2)) || doSleep ) {
+              // dfsClient.getConf().socketTimeout 默认为 60s
               long timeout = dfsClient.getConf().socketTimeout/2 - (now-lastPacket);
               timeout = timeout <= 0 ? 1000 : timeout;
               timeout = (stage == BlockConstructionStage.DATA_STREAMING)?
@@ -455,7 +456,7 @@ public class DFSOutputStream extends FSOutputSummer
 
           // get new block from namenode.
           // step 4: 如果pipeline处于PIPELINE_SETUP_CREATE，则向NN申请block，并建立pipeline
-          //         如果pipeline处于PIPELINE_SETUP_APPEND，则向NN申请block，并建立pipeline
+          //         如果pipeline处于PIPELINE_SETUP_APPEND，则进入pipeline recovery逻辑
           if (stage == BlockConstructionStage.PIPELINE_SETUP_CREATE) {
             if(DFSClient.LOG.isDebugEnabled()) {
               DFSClient.LOG.debug("Allocating new block");
@@ -505,7 +506,7 @@ public class DFSOutputStream extends FSOutputSummer
           // 先把packet添加到ackQueue，再发送
           synchronized (dataQueue) {
             // move packet from dataQueue to ackQueue
-            if (!one.isHeartbeatPacket()) {
+            if (!one.isHeartbeatPacket()) { // 心跳包不会放到ackQueue中
               span = scope.detach();
               one.setTraceSpan(span);
               dataQueue.removeFirst();
@@ -789,7 +790,7 @@ public class DFSOutputStream extends FSOutputSummer
             
             assert seqno != PipelineAck.UNKOWN_SEQNO : 
               "Ack for unknown seqno should be a failed ack: " + ack;
-            if (seqno == DFSPacket.HEART_BEAT_SEQNO) {  // a heartbeat ack
+            if (seqno == DFSPacket.HEART_BEAT_SEQNO) {  // a heartbeat ack 心跳包也需要ack
               continue;
             }
 
