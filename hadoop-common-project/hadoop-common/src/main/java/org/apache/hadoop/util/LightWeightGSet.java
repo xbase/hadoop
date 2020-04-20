@@ -44,6 +44,8 @@ import com.google.common.annotations.VisibleForTesting;
  *       (1) a subclass of K, and
  *       (2) implementing {@link LinkedElement} interface.
  */
+// LightWeightGSet 相比于Set，更像是一个Map，但Value是Key的子类，
+// 容量固定为：总内存的2%，且不会触发rehash
 @InterfaceAudience.Private
 public class LightWeightGSet<K, E extends K> implements GSet<K, E> {
   /**
@@ -103,7 +105,7 @@ public class LightWeightGSet<K, E extends K> implements GSet<K, E> {
     return size;
   }
 
-  private int getIndex(final K key) {
+  private int getIndex(final K key) { // 计算数组下标
     return key.hashCode() & hash_mask;
   }
 
@@ -121,8 +123,8 @@ public class LightWeightGSet<K, E extends K> implements GSet<K, E> {
     }
 
     //find element
-    final int index = getIndex(key);
-    for(LinkedElement e = entries[index]; e != null; e = e.getNext()) {
+    final int index = getIndex(key); // 数组下标
+    for(LinkedElement e = entries[index]; e != null; e = e.getNext()) { // 遍历链表
       if (e.equals(key)) {
         return convert(e);
       }
@@ -150,7 +152,7 @@ public class LightWeightGSet<K, E extends K> implements GSet<K, E> {
     final LinkedElement e = (LinkedElement)element;
 
     //find index
-    final int index = getIndex(element);
+    final int index = getIndex(element); // 数组下标
 
     //remove if it already exists
     final E existing = remove(index, element);
@@ -158,7 +160,7 @@ public class LightWeightGSet<K, E extends K> implements GSet<K, E> {
     //insert the element to the head of the linked list
     modification++;
     size++;
-    e.setNext(entries[index]);
+    e.setNext(entries[index]); // 插入到链表头
     entries[index] = e;
 
     return existing;
@@ -174,7 +176,7 @@ public class LightWeightGSet<K, E extends K> implements GSet<K, E> {
   private E remove(final int index, final K key) {
     if (entries[index] == null) {
       return null;
-    } else if (entries[index].equals(key)) {
+    } else if (entries[index].equals(key)) { // 通过index找到链表，如果链表头等于key，删除
       //remove the head of the linked list
       modification++;
       size--;
@@ -186,7 +188,7 @@ public class LightWeightGSet<K, E extends K> implements GSet<K, E> {
       //head != null and key is not equal to head
       //search the element
       LinkedElement prev = entries[index];
-      for(LinkedElement curr = prev.getNext(); curr != null; ) {
+      for(LinkedElement curr = prev.getNext(); curr != null; ) { // 通过index找到链表，链表头不等于key，遍历链表并删除
         if (curr.equals(key)) {
           //found the element, remove it
           modification++;
