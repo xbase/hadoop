@@ -240,14 +240,18 @@ public final class HdfsServerConstants {
    */
   static public enum ReplicaState {
     /** Replica is finalized. The state when replica is not modified. */
-    FINALIZED(0),
+    FINALIZED(0), // 已经写好完整的副本块，放置于finalized目录下
     /** Replica is being written to. */
-    RBW(1),
+    RBW(1), // 正在写的副本块，放置于rbw目录下
     /** Replica is waiting to be recovered. */
+    // DataNode 重启后，其上处于 RBW 状态的 replica 将被变更为 RWR 状态，
+    // 这个状态说明其数据需要恢复，因为在 DataNode 挂掉期间其上的数据可能过时了。
     RWR(2),
     /** Replica is under recovery. */
-    RUR(3),
+    RUR(3), // 正在恢复（正在block recovery？）
     /** Temporary replica: created for replication and relocation only. */
+    // 因为复制或者balance而创建，若复制失败或其所在的 DataNode 发生重启，所有临时状态的 replica 会被删除。
+    // 临时态的 replica 对外部 Client 来说是不可见的。
     TEMPORARY(4);
 
     private static final ReplicaState[] cachedValues = ReplicaState.values();
@@ -280,6 +284,7 @@ public final class HdfsServerConstants {
   /**
    * States, which a block can go through while it is under construction.
    */
+  // 块状态的正常转换流程：UNDER_CONSTRUCTION -> COMMITTED -> COMPLETE
   static public enum BlockUCState {
     /**
      * Block construction completed.<br>
@@ -289,19 +294,19 @@ public final class HdfsServerConstants {
      * NOTE, in some special cases, a block may be forced to COMPLETE state,
      * even if it doesn't have required minimal replications.
      */
-    COMPLETE,
+    COMPLETE, // 收到了最小副本数的 FINALIZED状态的块汇报
     /**
      * The block is under construction.<br>
      * It has been recently allocated for write or append.
      */
-    UNDER_CONSTRUCTION,
+    UNDER_CONSTRUCTION, // Block的初始状态（刚被分配或被append）
     /**
      * The block is under recovery.<br>
      * When a file lease expires its last block may not be {@link #COMPLETE}
      * and needs to go through a recovery procedure, 
      * which synchronizes the existing replicas contents.
      */
-    UNDER_RECOVERY,
+    UNDER_RECOVERY, // 处于block recovery状态
     /**
      * The block is committed.<br>
      * The client reported that all bytes are written to data-nodes
@@ -309,7 +314,7 @@ public final class HdfsServerConstants {
      * {@link ReplicaState#FINALIZED} 
      * replicas has yet been reported by data-nodes themselves.
      */
-    COMMITTED;
+    COMMITTED; // Block被client提交（addBlock或者closeFile），但还没有收到 FINALIZED状态的块汇报
   }
   
   public static final String NAMENODE_LEASE_HOLDER = "HDFS_NameNode";
