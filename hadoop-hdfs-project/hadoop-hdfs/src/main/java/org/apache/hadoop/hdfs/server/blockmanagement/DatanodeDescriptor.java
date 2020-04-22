@@ -232,7 +232,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
    * in case of errors (e.g. datanode does not report if an error occurs
    * while writing the block).
    */
-  private EnumCounters<StorageType> currApproxBlocksScheduled
+  private EnumCounters<StorageType> currApproxBlocksScheduled // 将要写到此DN上的块数量
       = new EnumCounters<StorageType>(StorageType.class);
   private EnumCounters<StorageType> prevApproxBlocksScheduled
       = new EnumCounters<StorageType>(StorageType.class);
@@ -704,7 +704,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
   }
   
   /** Decrement the number of blocks scheduled. */
-  void decrementBlocksScheduled(StorageType t) {
+  void decrementBlocksScheduled(StorageType t) { // 减少将要写到此DN上的Block数量
     if (prevApproxBlocksScheduled.get(t) > 0) {
       prevApproxBlocksScheduled.subtract(t, 1);
     } else if (currApproxBlocksScheduled.get(t) > 0) {

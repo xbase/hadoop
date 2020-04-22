@@ -43,6 +43,7 @@ import org.slf4j.Logger;
  *     that never made it.
  *
  ***************************************************/
+// 已经生成复制请求的数据块
 class PendingReplicationBlocks {
   private static final Logger LOG = BlockManager.LOG;
 
@@ -95,16 +96,16 @@ class PendingReplicationBlocks {
    * 
    * @param The DataNode that finishes the replication
    */
-  void decrement(Block block, DatanodeDescriptor dn) {
+  void decrement(Block block, DatanodeDescriptor dn) { // Block复制成功，维护复制请求
     synchronized (pendingReplications) {
       PendingBlockInfo found = pendingReplications.get(block);
       if (found != null) {
         if(LOG.isDebugEnabled()) {
           LOG.debug("Removing pending replication for " + block);
         }
-        found.decrementReplicas(dn);
-        if (found.getNumReplicas() <= 0) {
-          pendingReplications.remove(block);
+        found.decrementReplicas(dn); // 减少一个复制目标
+        if (found.getNumReplicas() <= 0) { // 说明此Block的所有目标都复制成功
+          pendingReplications.remove(block); // 移除此复制请求
         }
       }
     }

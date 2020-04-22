@@ -23,8 +23,8 @@ package org.apache.hadoop.hdfs.server.protocol;
  * storage.
  */
 public class StorageReceivedDeletedBlocks {
-  final DatanodeStorage storage;
-  private final ReceivedDeletedBlockInfo[] blocks;
+  final DatanodeStorage storage; // DN一个存储目录
+  private final ReceivedDeletedBlockInfo[] blocks; // 增量汇报的块信息
 
   @Deprecated
   public String getStorageID() {

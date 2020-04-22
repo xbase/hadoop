@@ -201,7 +201,7 @@ public class BlockManager {
   public final UnderReplicatedBlocks neededReplications = new UnderReplicatedBlocks();
 
   @VisibleForTesting
-  final PendingReplicationBlocks pendingReplications;
+  final PendingReplicationBlocks pendingReplications; // 已经生成复制请求的数据块
 
   /** The maximum number of replicas allowed for a block */
   public final short maxReplication;
@@ -3130,7 +3130,8 @@ public class BlockManager {
     // Decrement number of blocks scheduled to this datanode.
     // for a retry request (of DatanodeProtocol#blockReceivedAndDeleted with 
     // RECEIVED_BLOCK), we currently also decrease the approximate number.
-    // 减少Scheduled任务计数
+    // 减少将要写到此DN上的Block数量
+    // 申请新块时，也会考虑此变量？
     node.decrementBlocksScheduled(storageInfo.getStorageType());
 
     // get the deletion hint node
@@ -3146,7 +3147,7 @@ public class BlockManager {
     //
     // Modify the blocks->datanode map and node's map.
     //
-    pendingReplications.decrement(block, node);
+    pendingReplications.decrement(block, node); // 移除复制请求
     processAndHandleReportedBlock(storageInfo, block, ReplicaState.FINALIZED,
         delHintNode);
   }
@@ -3205,7 +3206,7 @@ public class BlockManager {
     int deleted = 0;
     int receiving = 0;
     final DatanodeDescriptor node = datanodeManager.getDatanode(nodeID);
-    if (node == null || !node.isAlive) {
+    if (node == null || !node.isAlive) { // 判断正在增量汇报的DN是否注册过
       blockLog.warn("BLOCK* processIncrementalBlockReport"
               + " is received from dead or unregistered node {}", nodeID);
       throw new IOException(
@@ -3225,15 +3226,15 @@ public class BlockManager {
 
     for (ReceivedDeletedBlockInfo rdbi : srdb.getBlocks()) {
       switch (rdbi.getStatus()) {
-      case DELETED_BLOCK:
+      case DELETED_BLOCK: // DN已经删除的Block
         removeStoredBlock(storageInfo, rdbi.getBlock(), node);
         deleted++;
         break;
-      case RECEIVED_BLOCK:
+      case RECEIVED_BLOCK: // DN已经接收完成的Block（Finalize状态）？
         addBlock(storageInfo, rdbi.getBlock(), rdbi.getDelHints());
         received++;
         break;
-      case RECEIVING_BLOCK:
+      case RECEIVING_BLOCK: // DN正在接收的Block（RBW状态）？
         receiving++;
         processAndHandleReportedBlock(storageInfo, rdbi.getBlock(),
                                       ReplicaState.RBW, null);

@@ -24,6 +24,7 @@ import java.util.UUID;
 /**
  * Class captures information of a storage in Datanode.
  */
+// 描述一个存储目录
 public class DatanodeStorage {
   /** The state of the storage. */
   public enum State {

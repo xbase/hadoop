@@ -34,6 +34,7 @@ import com.google.common.annotations.VisibleForTesting;
  * {@link DatanodeID#getXferAddr()} here. Helpers are defined below
  * for each context in which a DatanodeID is used.
  */
+// 描述一个DN的基本信息
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
 public class DatanodeID implements Comparable<DatanodeID> {
