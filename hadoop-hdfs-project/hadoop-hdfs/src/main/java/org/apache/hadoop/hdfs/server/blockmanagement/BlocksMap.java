@@ -191,8 +191,9 @@ class BlocksMap {
       return false;
 
     // remove block from the data-node list and the node from the block info
-    boolean removed = node.removeBlock(info);
+    boolean removed = node.removeBlock(info); // 从DN移除此副本信息（NN内存里）
 
+    // 所有的副本都被移除，直接移除这个Block
     if (info.getDatanode(0) == null     // no datanodes left
               && info.getBlockCollection() == null) {  // does not belong to a file
       blocks.remove(b);  // remove block from the map

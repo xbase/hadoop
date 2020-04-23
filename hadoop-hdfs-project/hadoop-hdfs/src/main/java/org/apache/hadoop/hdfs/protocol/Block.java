@@ -45,9 +45,9 @@ public class Block implements Writable, Comparable<Block> {
        });
   }
 
-  public static final Pattern blockFilePattern = Pattern
+  public static final Pattern blockFilePattern = Pattern // block文件名：blk_1073799245
       .compile(BLOCK_FILE_PREFIX + "(-??\\d++)$");
-  public static final Pattern metaFilePattern = Pattern
+  public static final Pattern metaFilePattern = Pattern // meta文件名：blk_1073799245_58534.meta
       .compile(BLOCK_FILE_PREFIX + "(-??\\d++)_(\\d++)\\" + METADATA_EXTENSION
           + "$");
   public static final Pattern metaOrBlockFilePattern = Pattern
@@ -59,7 +59,7 @@ public class Block implements Writable, Comparable<Block> {
     return blockFilePattern.matcher(name).matches();
   }
 
-  public static long filename2id(String name) {
+  public static long filename2id(String name) { // 从文件名中获取BlockId
     Matcher m = blockFilePattern.matcher(name);
     return m.matches() ? Long.parseLong(m.group(1)) : 0;
   }
@@ -68,7 +68,7 @@ public class Block implements Writable, Comparable<Block> {
     return metaFilePattern.matcher(name).matches();
   }
 
-  public static File metaToBlockFile(File metaFile) {
+  public static File metaToBlockFile(File metaFile) { // 从meta文件获取block文件
     return new File(metaFile.getParent(), metaFile.getName().substring(
         0, metaFile.getName().lastIndexOf('_')));
   }
@@ -76,7 +76,7 @@ public class Block implements Writable, Comparable<Block> {
   /**
    * Get generation stamp from the name of the metafile name
    */
-  public static long getGenerationStamp(String metaFile) {
+  public static long getGenerationStamp(String metaFile) { // 从meta文件名中获取GS
     Matcher m = metaFilePattern.matcher(metaFile);
     return m.matches() ? Long.parseLong(m.group(2))
         : GenerationStamp.GRANDFATHER_GENERATION_STAMP;
@@ -85,13 +85,13 @@ public class Block implements Writable, Comparable<Block> {
   /**
    * Get the blockId from the name of the meta or block file
    */
-  public static long getBlockId(String metaOrBlockFile) {
+  public static long getBlockId(String metaOrBlockFile) { // 从block或者meta文件名中获取BlockId
     Matcher m = metaOrBlockFilePattern.matcher(metaOrBlockFile);
     return m.matches() ? Long.parseLong(m.group(1)) : 0;
   }
 
   private long blockId;
-  private long numBytes;
+  private long numBytes; // 块大小
   private long generationStamp;
 
   public Block() {this(0, 0, 0);}
@@ -229,7 +229,7 @@ public class Block implements Writable, Comparable<Block> {
    * @return true if the two blocks have the same block ID and the same
    * generation stamp, or if both blocks are null.
    */
-  public static boolean matchingIdAndGenStamp(Block a, Block b) {
+  public static boolean matchingIdAndGenStamp(Block a, Block b) { // 判断两个Block的id和GS是否相同
     if (a == b) return true; // same block, or both null
     if (a == null || b == null) return false; // only one null
     return a.blockId == b.blockId &&

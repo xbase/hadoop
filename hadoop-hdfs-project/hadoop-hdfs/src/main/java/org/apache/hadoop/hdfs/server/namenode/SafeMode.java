@@ -40,7 +40,7 @@ public interface SafeMode {
   public boolean isInStartupSafeMode();
 
   /** Check whether replication queues are being populated. */
-  public boolean isPopulatingReplQueues();
+  public boolean isPopulatingReplQueues(); // 是否可以维护副本集合，只有ActiveNN可以维护
     
   /**
    * Increment number of blocks that reached minimal replication.

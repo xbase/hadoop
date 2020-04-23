@@ -228,6 +228,7 @@ public class DatanodeStorageInfo {
     return blockPoolUsed;
   }
 
+  // 添加此副本信息到block和DN中
   public AddBlockResult addBlock(BlockInfoContiguous b) {
     // First check whether the block belongs to a different storage
     // on the same DN.
@@ -236,7 +237,7 @@ public class DatanodeStorageInfo {
         b.findStorageInfo(getDatanodeDescriptor());
 
     if (otherStorage != null) {
-      if (otherStorage != this) {
+      if (otherStorage != this) { // NN记录此block在其他目录里，先移除，再添加
         // The block belongs to a different storage. Remove it first.
         otherStorage.removeBlock(b);
         result = AddBlockResult.REPLACED;

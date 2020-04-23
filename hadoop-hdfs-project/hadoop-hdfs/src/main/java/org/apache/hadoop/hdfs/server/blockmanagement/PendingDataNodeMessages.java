@@ -33,7 +33,7 @@ import com.google.common.collect.Maps;
  * they have an outdated state in the namespace. In those cases,
  * we queue those block-related messages in this structure.
  * */  
-class PendingDataNodeMessages {
+class PendingDataNodeMessages { // Standby节点在没有收到edit信息之前，先收到了DN的块汇报，放到此集合，延迟处理
   
   final Map<Block, Queue<ReportedBlockInfo>> queueByBlockId =
     Maps.newHashMap();

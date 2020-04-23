@@ -39,7 +39,7 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    * Block replicas as assigned when the block was allocated.
    * This defines the pipeline order.
    */
-  private List<ReplicaUnderConstruction> replicas;
+  private List<ReplicaUnderConstruction> replicas; // 此Block的所有副本
 
   /**
    * Index of the primary data node doing the recovery. Useful for log
@@ -331,6 +331,8 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
     }
   }
 
+  // 如果副本存放的位置和NN记录的一致，只更新GS
+  // 如果不一致，全部以DN汇报的为准
   void addReplicaIfNotPresent(DatanodeStorageInfo storage,
                      Block block,
                      ReplicaState rState) {

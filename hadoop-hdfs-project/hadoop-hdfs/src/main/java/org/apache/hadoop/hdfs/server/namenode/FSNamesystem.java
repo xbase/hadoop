@@ -7261,7 +7261,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   }
   
   @Override
-  public boolean isGenStampInFuture(Block block) {
+  public boolean isGenStampInFuture(Block block) { // 此block的GS大于当前NN的GS
     return blockIdManager.isGenStampInFuture(block);
   }
 

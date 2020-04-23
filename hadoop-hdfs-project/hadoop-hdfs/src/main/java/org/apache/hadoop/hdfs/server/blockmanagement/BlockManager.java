@@ -638,6 +638,7 @@ public class BlockManager {
    * @throws IOException if the block does not have at least a minimal number
    * of replicas reported from data-nodes.
    */
+  // complete 一个 block
   private BlockInfoContiguous completeBlock(final BlockCollection bc,
       final int blkIndex, boolean force) throws IOException {
     if(blkIndex < 0)
@@ -1082,7 +1083,7 @@ public class BlockManager {
     if (!namesystem.isPopulatingReplQueues()) {
       return;
     }
-    invalidateBlocks.add(block, datanode, true);
+    invalidateBlocks.add(block, datanode, true); // 添加到待删除集合
   }
 
   /**
@@ -1156,15 +1157,16 @@ public class BlockManager {
    * @param storageInfo storage that contains the block, if known. null otherwise.
    * @throws IOException
    */
+  // 当发现损坏副本的时候，需要先复制，再删除
   private void markBlockAsCorrupt(BlockToMarkCorrupt b,
       DatanodeStorageInfo storageInfo,
       DatanodeDescriptor node) throws IOException {
 
     BlockCollection bc = b.corrupted.getBlockCollection();
-    if (bc == null) {
+    if (bc == null) { // inode == null，说明此block不属于任何文件
       blockLog.info("BLOCK markBlockAsCorrupt: {} cannot be marked as" +
           " corrupt as it does not belong to any file", b);
-      addToInvalidates(b.corrupted, node);
+      addToInvalidates(b.corrupted, node); // 添加到待删除队列
       return;
     } 
 
@@ -1175,9 +1177,9 @@ public class BlockManager {
 
     // Add this replica to corruptReplicas Map
     corruptReplicas.addToCorruptReplicasMap(b.corrupted, node, b.reason,
-        b.reasonCode);
+        b.reasonCode); // 添加到corruptReplicas集合中
 
-    NumberReplicas numberOfReplicas = countNodes(b.stored);
+    NumberReplicas numberOfReplicas = countNodes(b.stored); // 统计各种情况的副本个数
     boolean hasEnoughLiveReplicas = numberOfReplicas.liveReplicas() >= bc
         .getBlockReplication();
     boolean minReplicationSatisfied =
@@ -1185,7 +1187,7 @@ public class BlockManager {
     boolean hasMoreCorruptReplicas = minReplicationSatisfied &&
         (numberOfReplicas.liveReplicas() + numberOfReplicas.corruptReplicas()) >
         bc.getBlockReplication();
-    boolean corruptedDuringWrite = minReplicationSatisfied &&
+    boolean corruptedDuringWrite = minReplicationSatisfied && // 发现 正在写的副本 是损坏的
         (b.stored.getGenerationStamp() > b.corrupted.getGenerationStamp());
     // case 1: have enough number of live replicas
     // case 2: corrupted replicas + live replicas > Replication factor
@@ -1193,13 +1195,14 @@ public class BlockManager {
     //         case genstamp will be different than that of valid block.
     // In all these cases we can delete the replica.
     // In case of 3, rbw block will be deleted and valid block can be replicated
+    // 下面的逻辑说明：当发现损坏副本的时候，需要先复制，再删除
     if (hasEnoughLiveReplicas || hasMoreCorruptReplicas
         || corruptedDuringWrite) {
       // the block is over-replicated so invalidate the replicas immediately
-      invalidateBlock(b, node);
+      invalidateBlock(b, node); // 副本数充足，添加到待删除集合
     } else if (namesystem.isPopulatingReplQueues()) {
       // add the block to neededReplication
-      updateNeededReplications(b.stored, -1, 0);
+      updateNeededReplications(b.stored, -1, 0); // 添加到待复制集合
     }
   }
 
@@ -1224,16 +1227,16 @@ public class BlockManager {
           "invalidation of {} on {} because {} replica(s) are located on " +
           "nodes with potentially out-of-date block reports", b, dn,
           nr.replicasOnStaleNodes());
-      postponeBlock(b.corrupted);
+      postponeBlock(b.corrupted); // 如果有在过期节点上的副本，那么延迟处理损坏块
       return false;
     } else if (nr.liveReplicas() >= 1) {
       // If we have at least one copy on a live node, then we can delete it.
-      addToInvalidates(b.corrupted, dn);
+      addToInvalidates(b.corrupted, dn); // 添加到待删除集合
       removeStoredBlock(b.stored, node);
       blockLog.debug("BLOCK* invalidateBlocks: {} on {} listed for deletion.",
           b, dn);
       return true;
-    } else {
+    } else { // 只剩一个副本，就算是坏的，也不能删除
       blockLog.info("BLOCK* invalidateBlocks: {} on {} is the only copy and" +
           " was not deleted", b, dn);
       return false;
@@ -1241,7 +1244,7 @@ public class BlockManager {
   }
 
 
-  public void setPostponeBlocksFromFuture(boolean postpone) {
+  public void setPostponeBlocksFromFuture(boolean postpone) { // StandbyNN为true，ActiveNN为false
     this.shouldPostponeBlocksFromFuture  = postpone;
   }
 
@@ -2192,15 +2195,16 @@ public class BlockManager {
    * @param storageInfo DatanodeStorageInfo that sent the report.
    * @param block reported block replica
    * @param reportedState reported replica state
-   * @param toAdd add to DatanodeDescriptor
-   * @param toInvalidate missing blocks (not in the blocks map)
+   * @param toAdd add to DatanodeDescriptor DN汇报的此副本信息和inode一致，且是Finalize状态且之前未汇报过，添加到NN
+   * @param toInvalidate missing blocks (not in the blocks map) DN汇报的此副本，NN blocksMap没有，从DN删除
    *        should be removed from the data-node
-   * @param toCorrupt replicas with unexpected length or generation stamp;
+   * @param toCorrupt replicas with unexpected length or generation stamp; DN汇报的信息和inode不一致，从DN删除
    *        add to corrupt replicas
-   * @param toUC replicas of blocks currently under construction
+   * @param toUC replicas of blocks currently under construction 此块正在构建中
    * @return the up-to-date stored block, if it should be kept.
    *         Otherwise, null.
    */
+  // 判断副本状态，并添加到不同的集合中
   private BlockInfoContiguous processReportedBlock(
       final DatanodeStorageInfo storageInfo,
       final Block block, final ReplicaState reportedState, 
@@ -2218,7 +2222,7 @@ public class BlockManager {
     }
   
     if (shouldPostponeBlocksFromFuture &&
-        namesystem.isGenStampInFuture(block)) {
+        namesystem.isGenStampInFuture(block)) { // Standby节点在没有收到edit信息之前，先收到了DN的块汇报
       queueReportedBlock(storageInfo, block, reportedState,
           QUEUE_REASON_FUTURE_GENSTAMP);
       return null;
@@ -2227,13 +2231,14 @@ public class BlockManager {
     // find block by blockId
     BlockInfoContiguous storedBlock = blocksMap.getStoredBlock(block);
     if(storedBlock == null) {
-      // DN有，NN没有
+      // NN blocksMap没有，加入到toInvalidate中
+      // 此操作说明申请块的时候，NN就会把块信息放入到blocksMap中
       // If blocksMap does not contain reported block id,
       // the replica should be removed from the data-node.
       toInvalidate.add(new Block(block));
       return null;
     }
-    BlockUCState ucState = storedBlock.getBlockUCState();
+    BlockUCState ucState = storedBlock.getBlockUCState(); // 获取块状态
     
     // Block is on the NN
     if(LOG.isDebugEnabled()) {
@@ -2241,7 +2246,7 @@ public class BlockManager {
     }
 
     // Ignore replicas already scheduled to be removed from the DN
-    if(invalidateBlocks.contains(dn, block)) {
+    if(invalidateBlocks.contains(dn, block)) { // 已经在待删除队列中
       /*
        * TODO: following assertion is incorrect, see HDFS-2668 assert
        * storedBlock.findDatanode(dn) < 0 : "Block " + block +
@@ -2251,7 +2256,7 @@ public class BlockManager {
     }
 
     BlockToMarkCorrupt c = checkReplicaCorrupt(
-        block, reportedState, storedBlock, ucState, dn);
+        block, reportedState, storedBlock, ucState, dn); // 根据GS和长度，判断此副本是否损坏
     if (c != null) {
       if (shouldPostponeBlocksFromFuture) {
         // If the block is an out-of-date generation stamp or state,
@@ -2263,15 +2268,16 @@ public class BlockManager {
         queueReportedBlock(storageInfo, storedBlock, reportedState,
             QUEUE_REASON_CORRUPT_STATE);
       } else {
-        toCorrupt.add(c);
+        toCorrupt.add(c); // 损坏的副本，加入到toInvalidate中
       }
       return storedBlock;
     }
 
+    // 判断此Block，是否处于UC状态
     if (isBlockUnderConstruction(storedBlock, ucState, reportedState)) {
       toUC.add(new StatefulBlockInfo(
           (BlockInfoContiguousUnderConstruction) storedBlock,
-          new Block(block), reportedState));
+          new Block(block), reportedState)); // 添加到toUC中
       return storedBlock;
     }
 
@@ -2280,7 +2286,7 @@ public class BlockManager {
     if (reportedState == ReplicaState.FINALIZED
         && (storedBlock.findStorageInfo(storageInfo) == -1 ||      // 之前未收到这个节点的这个副本汇报
             corruptReplicas.isReplicaCorrupt(storedBlock, dn))) {  // 之前这个节点上的这个副本损坏
-      toAdd.add(storedBlock);
+      toAdd.add(storedBlock); // FINALIZED状态的副本，加入到toAdd中
     }
     return storedBlock;
   }
@@ -2290,6 +2296,7 @@ public class BlockManager {
    * standby node. @see PendingDataNodeMessages.
    * @param reason a textual reason to report in the debug logs
    */
+  // Standby节点在没有收到edit信息之前，先收到了DN的块汇报，放到此集合，延迟处理
   private void queueReportedBlock(DatanodeStorageInfo storageInfo, Block block,
       ReplicaState reportedState, String reason) {
     assert shouldPostponeBlocksFromFuture;
@@ -2363,23 +2370,25 @@ public class BlockManager {
    * 
    * @return a BlockToMarkCorrupt object, or null if the replica is not corrupt
    */
-  //根据状态，对比副本版本号和长度
+  // 根据GS和长度，判断此副本是否损坏
   private BlockToMarkCorrupt checkReplicaCorrupt(
       Block reported, ReplicaState reportedState, 
       BlockInfoContiguous storedBlock, BlockUCState ucState,
       DatanodeDescriptor dn) {
-    switch(reportedState) {
+    switch(reportedState) { // 汇报的副本状态
     case FINALIZED:
-      switch(ucState) {
+      switch(ucState) { // 块状态
       case COMPLETE:
       case COMMITTED:
         if (storedBlock.getGenerationStamp() != reported.getGenerationStamp()) {
+          // DN汇报的GS和NN记录的不一致
           final long reportedGS = reported.getGenerationStamp();
           return new BlockToMarkCorrupt(storedBlock, reportedGS,
               "block is " + ucState + " and reported genstamp " + reportedGS
               + " does not match genstamp in block map "
               + storedBlock.getGenerationStamp(), Reason.GENSTAMP_MISMATCH);
         } else if (storedBlock.getNumBytes() != reported.getNumBytes()) {
+          // DN汇报的长度和NN记录的不一致
           return new BlockToMarkCorrupt(storedBlock,
               "block is " + ucState + " and reported length " +
               reported.getNumBytes() + " does not match " +
@@ -2390,6 +2399,8 @@ public class BlockManager {
         }
       case UNDER_CONSTRUCTION:
         if (storedBlock.getGenerationStamp() > reported.getGenerationStamp()) {
+          // 块在UC状态时，副本 reported.GS > storedBlock.GS 是正常的？
+          // 可能的一种情况是：pipeline recovery 成功之后，才会向NN更像GS
           final long reportedGS = reported.getGenerationStamp();
           return new BlockToMarkCorrupt(storedBlock, reportedGS, "block is "
               + ucState + " and reported state " + reportedState
@@ -2440,7 +2451,7 @@ public class BlockManager {
   }
 
   private boolean isBlockUnderConstruction(BlockInfoContiguous storedBlock,
-      BlockUCState ucState, ReplicaState reportedState) {
+      BlockUCState ucState, ReplicaState reportedState) { // 判断此Block，是否处于UC状态
     switch(reportedState) {
     case FINALIZED:
       switch(ucState) {
@@ -2464,10 +2475,11 @@ public class BlockManager {
       DatanodeStorageInfo storageInfo) throws IOException {
     BlockInfoContiguousUnderConstruction block = ucBlock.storedBlock;
     block.addReplicaIfNotPresent(
-        storageInfo, ucBlock.reportedBlock, ucBlock.reportedState);
+        storageInfo, ucBlock.reportedBlock, ucBlock.reportedState); // 更新此副本信息
 
     if (ucBlock.reportedState == ReplicaState.FINALIZED &&
-        !block.findDatanode(storageInfo.getDatanodeDescriptor())) {
+        !block.findDatanode(storageInfo.getDatanodeDescriptor())) { // 此副本已经完成，并且没有汇报过
+      // 添加此副本信息到block和DN中
       addStoredBlock(block, storageInfo, null, true);
     }
   } 
@@ -2515,6 +2527,7 @@ public class BlockManager {
    * needed replications if this takes care of the problem.
    * @return the block that is stored in blockMap.
    */
+  // 添加此副本信息到block和DN中
   private Block addStoredBlock(final BlockInfoContiguous block,
                                DatanodeStorageInfo storageInfo,
                                DatanodeDescriptor delNodeHint,
@@ -2529,7 +2542,7 @@ public class BlockManager {
     } else {
       storedBlock = block;
     }
-    if (storedBlock == null || storedBlock.getBlockCollection() == null) {
+    if (storedBlock == null || storedBlock.getBlockCollection() == null) { // 说明此block已经被删除
       // If this block does not belong to anyfile, then we are done.
       blockLog.info("BLOCK* addStoredBlock: {} on {} size {} but it does not" +
           " belong to any file", block, node, block.getNumBytes());
@@ -2542,7 +2555,7 @@ public class BlockManager {
     assert bc != null : "Block must belong to a file";
 
     // add block to the datanode
-    AddBlockResult result = storageInfo.addBlock(storedBlock);
+    AddBlockResult result = storageInfo.addBlock(storedBlock); // 添加此副本信息到block和DN中
 
     int curReplicaDelta;
     if (result == AddBlockResult.ADDED) {
@@ -2573,7 +2586,7 @@ public class BlockManager {
       + pendingReplications.getNumReplicas(storedBlock);
 
     if(storedBlock.getBlockUCState() == BlockUCState.COMMITTED &&
-        numLiveReplicas >= minReplication) {
+        numLiveReplicas >= minReplication) { // 达到最小副本数，complete block
       storedBlock = completeBlock(bc, storedBlock, false);
     } else if (storedBlock.isComplete() && result == AddBlockResult.ADDED) {
       // check whether safe replication is reached for the block
@@ -2581,7 +2594,7 @@ public class BlockManager {
       // Is no-op if not in safe mode.
       // In the case that the block just became complete above, completeBlock()
       // handles the safe block count maintenance.
-      namesystem.incrementSafeBlockCount(numCurrentReplica);
+      namesystem.incrementSafeBlockCount(numCurrentReplica); // 检查是否可以退出安全模式
     }
     
     // if file is under construction, then done for now
@@ -3040,7 +3053,7 @@ public class BlockManager {
   private void removeStoredBlock(DatanodeStorageInfo storageInfo, Block block,
       DatanodeDescriptor node) {
     if (shouldPostponeBlocksFromFuture &&
-        namesystem.isGenStampInFuture(block)) {
+        namesystem.isGenStampInFuture(block)) { // 延迟处理
       queueReportedBlock(storageInfo, block, null,
           QUEUE_REASON_FUTURE_GENSTAMP);
       return;
@@ -3056,7 +3069,7 @@ public class BlockManager {
     blockLog.debug("BLOCK* removeStoredBlock: {} from {}", block, node);
     assert (namesystem.hasWriteLock());
     {
-      if (!blocksMap.removeNode(block, node)) {
+      if (!blocksMap.removeNode(block, node)) { // 移除此副本信息
         blockLog.debug("BLOCK* removeStoredBlock: {} has already been" +
             " removed from node {}", block, node);
         return;
@@ -3070,14 +3083,15 @@ public class BlockManager {
       //
       BlockCollection bc = blocksMap.getBlockCollection(block);
       if (bc != null) {
-        namesystem.decrementSafeBlockCount(block);
-        updateNeededReplications(block, -1, 0);
+        namesystem.decrementSafeBlockCount(block); // 维护安全模式
+        updateNeededReplications(block, -1, 0); // 更新少副本集合
       }
 
       //
       // We've removed a block from a node, so it's definitely no longer
       // in "excess" there.
       //
+      // 从多副本集合移除
       LightWeightLinkedSet<Block> excessBlocks = excessReplicateMap.get(node
           .getDatanodeUuid());
       if (excessBlocks != null) {
@@ -3092,6 +3106,7 @@ public class BlockManager {
       }
 
       // Remove the replica from corruptReplicas
+      // 从损坏副本集合移除
       corruptReplicas.removeFromCorruptReplicasMap(block, node);
     }
   }
@@ -3131,7 +3146,7 @@ public class BlockManager {
     // for a retry request (of DatanodeProtocol#blockReceivedAndDeleted with 
     // RECEIVED_BLOCK), we currently also decrease the approximate number.
     // 减少将要写到此DN上的Block数量
-    // 申请新块时，也会考虑此变量？
+    // TODOWXY: 申请新块时，也会考虑此变量？
     node.decrementBlocksScheduled(storageInfo.getStorageType());
 
     // get the deletion hint node
@@ -3154,8 +3169,9 @@ public class BlockManager {
   
   private void processAndHandleReportedBlock(
       DatanodeStorageInfo storageInfo, Block block,
-      ReplicaState reportedState, DatanodeDescriptor delHintNode)
+      ReplicaState reportedState, DatanodeDescriptor delHintNode) // delHintNode 用来干什么？
       throws IOException {
+    // 每次只处理一个Block为何要初始化这么多Collection？
     // blockReceived reports a finalized block
     Collection<BlockInfoContiguous> toAdd = new LinkedList<BlockInfoContiguous>();
     Collection<Block> toInvalidate = new LinkedList<Block>();
@@ -3163,18 +3179,21 @@ public class BlockManager {
     Collection<StatefulBlockInfo> toUC = new LinkedList<StatefulBlockInfo>();
     final DatanodeDescriptor node = storageInfo.getDatanodeDescriptor();
 
+    // 判断副本状态
     processReportedBlock(storageInfo, block, reportedState,
                               toAdd, toInvalidate, toCorrupt, toUC);
     // the block is only in one of the to-do lists
     // if it is in none then data-node already has it
-    assert toUC.size() + toAdd.size() + toInvalidate.size() + toCorrupt.size() <= 1
+    assert toUC.size() + toAdd.size() + toInvalidate.size() + toCorrupt.size() <= 1 // 此副本最多只能添加到一个集合中
       : "The block should be only in one of the lists.";
 
-    for (StatefulBlockInfo b : toUC) { 
+    for (StatefulBlockInfo b : toUC) {
+      // 更新此副本信息
       addStoredBlockUnderConstruction(b, storageInfo);
     }
     long numBlocksLogged = 0;
     for (BlockInfoContiguous b : toAdd) {
+      // 添加此副本信息到block和DN中
       addStoredBlock(b, storageInfo, delHintNode, numBlocksLogged < maxNumBlocksToLog);
       numBlocksLogged++;
     }
@@ -3182,13 +3201,13 @@ public class BlockManager {
       blockLog.info("BLOCK* addBlock: logged info for {} of {} reported.",
           maxNumBlocksToLog, numBlocksLogged);
     }
-    for (Block b : toInvalidate) {
+    for (Block b : toInvalidate) { // NN blocksMap中没有，但是DN有
       blockLog.info("BLOCK* addBlock: block {} on node {} size {} does not " +
           "belong to any file", b, node, b.getNumBytes());
-      addToInvalidates(b, node);
+      addToInvalidates(b, node); // 添加到待删除集合
     }
-    for (BlockToMarkCorrupt b : toCorrupt) {
-      markBlockAsCorrupt(b, storageInfo, node);
+    for (BlockToMarkCorrupt b : toCorrupt) { // GS或长度 和NN记录的不一致
+      markBlockAsCorrupt(b, storageInfo, node); // 处理损坏的副本
     }
   }
 
@@ -3226,15 +3245,15 @@ public class BlockManager {
 
     for (ReceivedDeletedBlockInfo rdbi : srdb.getBlocks()) {
       switch (rdbi.getStatus()) {
-      case DELETED_BLOCK: // DN已经删除的Block
+      case DELETED_BLOCK: // DN已经删除的replica
         removeStoredBlock(storageInfo, rdbi.getBlock(), node);
         deleted++;
         break;
-      case RECEIVED_BLOCK: // DN已经接收完成的Block（Finalize状态）？
+      case RECEIVED_BLOCK: // DN已经接收完成的replica（Finalize状态）？
         addBlock(storageInfo, rdbi.getBlock(), rdbi.getDelHints());
         received++;
         break;
-      case RECEIVING_BLOCK: // DN正在接收的Block（RBW状态）？
+      case RECEIVING_BLOCK: // DN正在接收的replica（RBW状态）？
         receiving++;
         processAndHandleReportedBlock(storageInfo, rdbi.getBlock(),
                                       ReplicaState.RBW, null);
@@ -3259,6 +3278,7 @@ public class BlockManager {
    * Return the number of nodes hosting a given block, grouped
    * by the state of those replicas.
    */
+  // 统计各种情况的副本个数
   public NumberReplicas countNodes(Block b) {
     int decommissioned = 0;
     int live = 0;
@@ -3268,9 +3288,9 @@ public class BlockManager {
     Collection<DatanodeDescriptor> nodesCorrupt = corruptReplicas.getNodes(b);
     for(DatanodeStorageInfo storage : blocksMap.getStorages(b, State.NORMAL)) {
       final DatanodeDescriptor node = storage.getDatanodeDescriptor();
-      if ((nodesCorrupt != null) && (nodesCorrupt.contains(node))) {
+      if ((nodesCorrupt != null) && (nodesCorrupt.contains(node))) { // 记录在损坏集合中，说明此副本损坏
         corrupt++; // 损坏的副本数
-      } else if (node.isDecommissionInProgress() || node.isDecommissioned()) {
+      } else if (node.isDecommissionInProgress() || node.isDecommissioned()) { // 节点正在decommission
         decommissioned++; // decommission的副本数
       } else {
         LightWeightLinkedSet<Block> blocksExcess = excessReplicateMap.get(node
@@ -3278,7 +3298,7 @@ public class BlockManager {
         if (blocksExcess != null && blocksExcess.contains(b)) {
           excess++; // 多余的副本数
         } else {
-          live++; // 正常的副本数
+          live++; // 正常的副本数（并不区分副本状态）
         }
       }
       if (storage.areBlockContentsStale()) {
@@ -3411,6 +3431,7 @@ public class BlockManager {
   }
 
   /** updates a block in under replication queue */
+  // 更新少副本集合
   private void updateNeededReplications(final Block block,
       final int curReplicasDelta, int expectedReplicasDelta) {
     namesystem.writeLock();
