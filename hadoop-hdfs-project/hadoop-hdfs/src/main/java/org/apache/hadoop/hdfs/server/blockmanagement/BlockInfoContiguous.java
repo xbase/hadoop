@@ -33,7 +33,7 @@ import org.apache.hadoop.util.LightWeightGSet;
  * the block are stored.
  */
 @InterfaceAudience.Private
-public class BlockInfoContiguous extends Block
+public class BlockInfoContiguous extends Block // 代表一个完成的Block
     implements LightWeightGSet.LinkedElement {
   public static final BlockInfoContiguous[] EMPTY_ARRAY = {};
 
@@ -93,12 +93,13 @@ public class BlockInfoContiguous extends Block
     this.bc = bc;
   }
 
+  // 获取此block指定下标副本的存储DN
   public DatanodeDescriptor getDatanode(int index) {
     DatanodeStorageInfo storage = getStorageInfo(index);
     return storage == null ? null : storage.getDatanodeDescriptor();
   }
 
-  // 获取指定下标的存储目录
+  // 获取此block指定下标副本的存储目录
   DatanodeStorageInfo getStorageInfo(int index) {
     assert this.triplets != null : "BlockInfo is not initialized";
     assert index >= 0 && index*3 < triplets.length : "Index is out of bound";
@@ -127,6 +128,7 @@ public class BlockInfoContiguous extends Block
     return info;
   }
 
+  // 设置此block指定副本的存储位置
   private void setStorageInfo(int index, DatanodeStorageInfo storage) {
     assert this.triplets != null : "BlockInfo is not initialized";
     assert index >= 0 && index*3 < triplets.length : "Index is out of bound";
@@ -142,6 +144,7 @@ public class BlockInfoContiguous extends Block
    * @return current previous block on the list of blocks
    */
   // 设置同存储目录链表的前一个block为to，并且返回设置前的block
+  // 设置下标为index副本的前驱为to
   private BlockInfoContiguous setPrevious(int index, BlockInfoContiguous to) {
     assert this.triplets != null : "BlockInfo is not initialized";
     assert index >= 0 && index*3+1 < triplets.length : "Index is out of bound";
@@ -167,7 +170,7 @@ public class BlockInfoContiguous extends Block
     return info;
   }
 
-  public int getCapacity() {
+  public int getCapacity() { // 期望的副本数
     assert this.triplets != null : "BlockInfo is not initialized";
     assert triplets.length % 3 == 0 : "Malformed BlockInfo";
     return triplets.length / 3;
@@ -177,11 +180,12 @@ public class BlockInfoContiguous extends Block
    * Ensure that there is enough  space to include num more triplets.
    * @return first free triplet index.
    */
-  private int ensureCapacity(int num) {
+  // 如果triplets数组空间不足，则扩充
+  private int ensureCapacity(int num) { // num 需要增加的副本数
     assert this.triplets != null : "BlockInfo is not initialized";
-    int last = numNodes();
+    int last = numNodes(); // 最后一个副本下标
     if(triplets.length >= (last+num)*3)
-      return last;
+      return last; // 空间充足，无需扩充
     /* Not enough space left. Create a new array. Should normally 
      * happen only when replication is manually increased by the user. */
     Object[] old = triplets;
@@ -193,7 +197,7 @@ public class BlockInfoContiguous extends Block
   /**
    * Count the number of data-nodes the block belongs to.
    */
-  public int numNodes() {
+  public int numNodes() { // 实际副本数
     assert this.triplets != null : "BlockInfo is not initialized";
     assert triplets.length % 3 == 0 : "Malformed BlockInfo";
     for(int idx = getCapacity()-1; idx >= 0; idx--) {
@@ -206,7 +210,7 @@ public class BlockInfoContiguous extends Block
   /**
    * Add a {@link DatanodeStorageInfo} location for a block
    */
-  boolean addStorage(DatanodeStorageInfo storage) {
+  boolean addStorage(DatanodeStorageInfo storage) { // 添加一个副本
     // find the last null node
     int lastNode = ensureCapacity(1);
     setStorageInfo(lastNode, storage);
@@ -218,7 +222,7 @@ public class BlockInfoContiguous extends Block
   /**
    * Remove {@link DatanodeStorageInfo} location for a block
    */
-  // 从当前block中删除这个副本（从triplets数组中，删除这个存储目录）
+  // 从当前block中删除一个副本（从triplets数组中，删除这个存储目录）
   boolean removeStorage(DatanodeStorageInfo storage) {
     // 当前存储目录的下标
     int dnIndex = findStorageInfo(storage);
@@ -228,11 +232,11 @@ public class BlockInfoContiguous extends Block
       "Block is still in the list and must be removed first.";
     // find the last not null node
     int lastNode = numNodes()-1; 
-    // replace current node triplet by the lastNode one 
+    // replace current node triplet by the lastNode one 用最后一个副本，替换当前副本
     setStorageInfo(dnIndex, getStorageInfo(lastNode));
     setNext(dnIndex, getNext(lastNode)); 
     setPrevious(dnIndex, getPrevious(lastNode)); 
-    // set the last triplet to null
+    // set the last triplet to null 设置最后一个副本为null
     setStorageInfo(lastNode, null);
     setNext(lastNode, null); 
     setPrevious(lastNode, null); 
@@ -243,7 +247,7 @@ public class BlockInfoContiguous extends Block
    * Find specified DatanodeDescriptor.
    * @return index or -1 if not found.
    */
-  boolean findDatanode(DatanodeDescriptor dn) {
+  boolean findDatanode(DatanodeDescriptor dn) { // 是否有副本，存储在此DN
     int len = getCapacity();
     for(int idx = 0; idx < len; idx++) {
       DatanodeDescriptor cur = getDatanode(idx);
@@ -261,7 +265,7 @@ public class BlockInfoContiguous extends Block
    * Find specified DatanodeStorageInfo.
    * @return DatanodeStorageInfo or null if not found.
    */
-  DatanodeStorageInfo findStorageInfo(DatanodeDescriptor dn) {
+  DatanodeStorageInfo findStorageInfo(DatanodeDescriptor dn) { // 副本在此DN的那个目录存储
     int len = getCapacity();
     for(int idx = 0; idx < len; idx++) {
       DatanodeStorageInfo cur = getStorageInfo(idx);
@@ -277,7 +281,7 @@ public class BlockInfoContiguous extends Block
    * Find specified DatanodeStorageInfo.
    * @return index or -1 if not found.
    */
-  int findStorageInfo(DatanodeStorageInfo storageInfo) {
+  int findStorageInfo(DatanodeStorageInfo storageInfo) { // 是否有副本，存储在此目录，找到则返回数组下标
     int len = getCapacity();
     for(int idx = 0; idx < len; idx++) {
       DatanodeStorageInfo cur = getStorageInfo(idx);
@@ -297,6 +301,8 @@ public class BlockInfoContiguous extends Block
    * If the head is null then form a new list.
    * @return current block as the new head of the list.
    */
+  // 在DN存储目录中添加一个block（添加到链表的头）
+  // head：此存储目录的第一个block
   BlockInfoContiguous listInsert(BlockInfoContiguous head,
       DatanodeStorageInfo storage) {
     int dnIndex = this.findStorageInfo(storage);
@@ -319,6 +325,7 @@ public class BlockInfoContiguous extends Block
    * empy after deletion.
    */
   // 在DN存储目录中删除当前block
+  // head：此存储目录的第一个block
   BlockInfoContiguous listRemove(BlockInfoContiguous head,
       DatanodeStorageInfo storage) {
     if(head == null)
@@ -348,15 +355,17 @@ public class BlockInfoContiguous extends Block
    *
    * @return the new head of the list.
    */
+  // 把当前节点移动到列表头
   public BlockInfoContiguous moveBlockToHead(BlockInfoContiguous head,
       DatanodeStorageInfo storage, int curIndex, int headIndex) {
     if (head == this) {
       return this;
     }
+    // 把当前节点移动到列表头
     BlockInfoContiguous next = this.setNext(curIndex, head);
     BlockInfoContiguous prev = this.setPrevious(curIndex, null);
-
     head.setPrevious(headIndex, this);
+    // 把当前节点从之前的位置移除
     prev.setNext(prev.findStorageInfo(storage), next);
     if (next != null) {
       next.setPrevious(next.findStorageInfo(storage), prev);
@@ -387,9 +396,11 @@ public class BlockInfoContiguous extends Block
    * Convert a complete block to an under construction block.
    * @return BlockInfoUnderConstruction -  an under construction block.
    */
+  // 如果Block当前为Complete状态，则转换为UC
+  // 如果已经是UC状态，则更新一下副本信息
   public BlockInfoContiguousUnderConstruction convertToBlockUnderConstruction(
       BlockUCState s, DatanodeStorageInfo[] targets) {
-    if(isComplete()) {
+    if(isComplete()) { // Block的状态从complete转换为UC
       BlockInfoContiguousUnderConstruction ucBlock =
           new BlockInfoContiguousUnderConstruction(this,
           getBlockCollection().getBlockReplication(), s, targets);
@@ -397,6 +408,7 @@ public class BlockInfoContiguous extends Block
       return ucBlock;
     }
     // the block is already under construction
+    // 当前Block就是UC状态，更新一下副本信息
     BlockInfoContiguousUnderConstruction ucBlock =
         (BlockInfoContiguousUnderConstruction)this;
     ucBlock.setBlockUCState(s);

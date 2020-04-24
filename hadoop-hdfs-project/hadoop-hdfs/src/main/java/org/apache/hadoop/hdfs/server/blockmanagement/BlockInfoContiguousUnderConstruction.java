@@ -31,6 +31,7 @@ import org.apache.hadoop.hdfs.server.namenode.NameNode;
  * Represents a block that is currently being constructed.<br>
  * This is usually the last block of a file opened for write or append.
  */
+// 一个正在构建中的Block
 public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
   /** Block state. See {@link BlockUCState} */
   private BlockUCState blockUCState;

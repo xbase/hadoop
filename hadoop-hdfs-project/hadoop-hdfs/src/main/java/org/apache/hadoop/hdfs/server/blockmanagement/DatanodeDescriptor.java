@@ -61,7 +61,7 @@ import com.google.common.annotations.VisibleForTesting;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
-public class DatanodeDescriptor extends DatanodeInfo {
+public class DatanodeDescriptor extends DatanodeInfo { // 描述一个DN
   public static final Log LOG = LogFactory.getLog(DatanodeDescriptor.class);
   public static final DatanodeDescriptor[] EMPTY_ARRAY = {};
 

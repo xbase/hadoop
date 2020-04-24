@@ -41,7 +41,7 @@ import static org.apache.hadoop.hdfs.DFSUtil.percent2String;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
-public class DatanodeInfo extends DatanodeID implements Node {
+public class DatanodeInfo extends DatanodeID implements Node { // 描述一个DN
   private long capacity;
   private long dfsUsed;
   private long remaining;

@@ -27,7 +27,7 @@ import org.apache.hadoop.fs.ContentSummary;
  * few characteristics of a collection of Block/BlockUnderConstruction.
  */
 @InterfaceAudience.Private
-public interface BlockCollection {
+public interface BlockCollection { // Block列表（一个文件的block列表？）
   /**
    * Get the last block of the collection.
    */

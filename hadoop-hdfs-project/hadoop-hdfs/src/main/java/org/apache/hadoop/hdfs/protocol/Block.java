@@ -92,7 +92,7 @@ public class Block implements Writable, Comparable<Block> {
 
   private long blockId;
   private long numBytes; // 块大小
-  private long generationStamp;
+  private long generationStamp; // 版本号
 
   public Block() {this(0, 0, 0);}
 
