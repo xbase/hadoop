@@ -254,6 +254,9 @@ public class DatanodeStorageInfo {
     return result;
   }
 
+  // 移除一个Replica：
+  // 1、从DN block list中移除
+  // 2、从block中移除此Replica
   public boolean removeBlock(BlockInfoContiguous b) {
     blockList = b.listRemove(blockList, this);
     if (b.removeStorage(this)) {

@@ -314,7 +314,7 @@ public final class HdfsServerConstants {
      * {@link ReplicaState#FINALIZED} 
      * replicas has yet been reported by data-nodes themselves.
      */
-    COMMITTED; // Block被client提交（addBlock或者closeFile），但还没有收到 FINALIZED状态的块汇报
+    COMMITTED; // Block被client提交（addBlock或者closeFile），此状态的Block有GS和size
   }
   
   public static final String NAMENODE_LEASE_HOLDER = "HDFS_NameNode";

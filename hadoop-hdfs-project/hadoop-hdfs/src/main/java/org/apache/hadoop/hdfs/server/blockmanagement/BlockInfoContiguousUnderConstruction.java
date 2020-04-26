@@ -31,7 +31,7 @@ import org.apache.hadoop.hdfs.server.namenode.NameNode;
  * Represents a block that is currently being constructed.<br>
  * This is usually the last block of a file opened for write or append.
  */
-// 一个正在构建中的Block
+// 代表一个正在构建状态的Block
 public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
   /** Block state. See {@link BlockUCState} */
   private BlockUCState blockUCState;
@@ -68,10 +68,11 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    * It is not guaranteed, but expected, that data-nodes actually have
    * corresponding replicas.
    */
+  // 正在构建中的Replica
   static class ReplicaUnderConstruction extends Block {
-    private final DatanodeStorageInfo expectedLocation;
-    private ReplicaState state;
-    private boolean chosenAsPrimary;
+    private final DatanodeStorageInfo expectedLocation; // 期望的存储位置（NN分配的，但DN可能不遵守？）
+    private ReplicaState state; // 副本状态
+    private boolean chosenAsPrimary; // block recovery时，是否以此Replica为主
 
     ReplicaUnderConstruction(Block block,
                              DatanodeStorageInfo target,
@@ -183,6 +184,7 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    * the client or it does not have at least a minimal number of replicas 
    * reported from data-nodes. 
    */
+  // 转为Complete状态
   BlockInfoContiguous convertToCompleteBlock() throws IOException {
     assert getBlockUCState() != BlockUCState.COMPLETE :
       "Trying to convert a COMPLETE block";
@@ -247,6 +249,7 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    * pipeline recovery sort out bad replicas.
    * @param genStamp  The final generation stamp for the block.
    */
+  // 设置GS，并移除GS不匹配的Replica
   public void setGenerationStampAndVerifyReplicas(long genStamp) {
     // Set the generation stamp for the block.
     setGenerationStamp(genStamp);
@@ -270,6 +273,7 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    * @param block - contains client reported block length and generation 
    * @throws IOException if block ids are inconsistent.
    */
+  // 客户端commit一个Block
   void commitBlock(Block block) throws IOException {
     if(getBlockId() != block.getBlockId())
       throw new IOException("Trying to commit inconsistent block: id = "
@@ -285,6 +289,10 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    * Find the first alive data-node starting from the previous primary and
    * make it primary.
    */
+  // block recovery初始化：
+  // 1、设置block的状态为UNDER_RECOVERY
+  // 2、设置blockRecoveryId
+  // 3、选以哪个Replica为主（标准）
   public void initializeBlockRecovery(long recoveryId) {
     setBlockUCState(BlockUCState.UNDER_RECOVERY);
     blockRecoveryId = recoveryId;
@@ -293,6 +301,7 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
         + " BlockInfoUnderConstruction.initLeaseRecovery:"
         + " No blocks found, lease removed.");
     }
+    // 所有的副本均成为过primary，则全部恢复为false
     boolean allLiveReplicasTriedAsPrimary = true;
     for (int i = 0; i < replicas.size(); i++) {
       // Check if all replicas have been tried or not.
@@ -310,15 +319,17 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
     long mostRecentLastUpdate = 0;
     ReplicaUnderConstruction primary = null;
     primaryNodeIndex = -1;
+    // 选择最新和NN通信的DN上面的那个副本作为主
     for(int i = 0; i < replicas.size(); i++) {
       // Skip alive replicas which have been chosen for recovery.
       if (!(replicas.get(i).isAlive() && !replicas.get(i).getChosenAsPrimary())) {
+        // 跳过挂掉的DN 和 已经选为primary的副本
         continue;
       }
       final ReplicaUnderConstruction ruc = replicas.get(i);
       final long lastUpdate = ruc.getExpectedStorageLocation()
           .getDatanodeDescriptor().getLastUpdateMonotonic();
-      if (lastUpdate > mostRecentLastUpdate) {
+      if (lastUpdate > mostRecentLastUpdate) { // 最近和NN通信的DN
         primaryNodeIndex = i;
         primary = ruc;
         mostRecentLastUpdate = lastUpdate;

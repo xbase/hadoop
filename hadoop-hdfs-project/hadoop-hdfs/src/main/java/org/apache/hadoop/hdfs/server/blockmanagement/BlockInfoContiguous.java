@@ -32,8 +32,10 @@ import org.apache.hadoop.util.LightWeightGSet;
  * the {@link BlockCollection} it is part of and datanodes where the replicas of 
  * the block are stored.
  */
+// 代表一个COMPLETE状态的Block
+// 此类大部分方法，都和管理Replica相关
 @InterfaceAudience.Private
-public class BlockInfoContiguous extends Block // 代表一个完成的Block
+public class BlockInfoContiguous extends Block
     implements LightWeightGSet.LinkedElement {
   public static final BlockInfoContiguous[] EMPTY_ARRAY = {};
 
