@@ -267,7 +267,7 @@ public class BlockInfoContiguous extends Block
    * Find specified DatanodeStorageInfo.
    * @return DatanodeStorageInfo or null if not found.
    */
-  DatanodeStorageInfo findStorageInfo(DatanodeDescriptor dn) { // 副本在此DN的那个目录存储
+  DatanodeStorageInfo findStorageInfo(DatanodeDescriptor dn) { // 副本在此DN的哪个目录存储
     int len = getCapacity();
     for(int idx = 0; idx < len; idx++) {
       DatanodeStorageInfo cur = getStorageInfo(idx);

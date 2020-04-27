@@ -224,17 +224,15 @@ public class DatanodeStorageInfo {
     return remaining;
   }
 
-  long getBlockPoolUsed() {
-    return blockPoolUsed;
-  }
-
-  // 添加此副本信息到block和DN中
+  // 添加一个Replica：
+  // 1、在block中添加此Replica
+  // 2、添加到DN block list head
   public AddBlockResult addBlock(BlockInfoContiguous b) {
     // First check whether the block belongs to a different storage
     // on the same DN.
     AddBlockResult result = AddBlockResult.ADDED;
     DatanodeStorageInfo otherStorage =
-        b.findStorageInfo(getDatanodeDescriptor());
+            b.findStorageInfo(getDatanodeDescriptor());
 
     if (otherStorage != null) {
       if (otherStorage != this) { // NN记录此block在其他目录里，先移除，再添加
@@ -248,10 +246,14 @@ public class DatanodeStorageInfo {
     }
 
     // add to the head of the data-node list
-    b.addStorage(this);
-    blockList = b.listInsert(blockList, this);
+    b.addStorage(this); // 先为此Block添加一个Replica
+    blockList = b.listInsert(blockList, this); // 再把此Replica添加到DN的head
     numBlocks++;
     return result;
+  }
+
+  long getBlockPoolUsed() {
+    return blockPoolUsed;
   }
 
   // 移除一个Replica：

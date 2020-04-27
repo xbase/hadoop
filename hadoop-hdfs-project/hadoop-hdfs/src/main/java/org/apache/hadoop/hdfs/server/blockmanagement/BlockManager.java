@@ -113,7 +113,7 @@ public class BlockManager {
   private final BlockTokenSecretManager blockTokenSecretManager;
 
   private final PendingDataNodeMessages pendingDNMessages =
-    new PendingDataNodeMessages();
+    new PendingDataNodeMessages(); //Standby节点在没有收到edit信息之前，先收到了DN的块汇报，把这些块存到此集合中
 
   private volatile long pendingReplicationBlocksCount = 0L;
   private volatile long corruptReplicaBlocksCount = 0L;
@@ -173,10 +173,10 @@ public class BlockManager {
   final Daemon replicationThread = new Daemon(new ReplicationMonitor());
   
   /** Store blocks -> datanodedescriptor(s) map of corrupt replicas */
-  final CorruptReplicasMap corruptReplicas = new CorruptReplicasMap();
+  final CorruptReplicasMap corruptReplicas = new CorruptReplicasMap(); // 损坏的副本集合
 
   /** Blocks to be invalidated. */
-  private final InvalidateBlocks invalidateBlocks;
+  private final InvalidateBlocks invalidateBlocks; // 等待删除副本集合
   
   /**
    * After a failover, over-replicated blocks may not be handled
@@ -192,12 +192,13 @@ public class BlockManager {
    * DataNode. We'll eventually remove these extras.
    */
   public final Map<String, LightWeightLinkedSet<Block>> excessReplicateMap =
-    new TreeMap<String, LightWeightLinkedSet<Block>>();
+    new TreeMap<String, LightWeightLinkedSet<Block>>(); // 副本数多于期望值
 
   /**
    * Store set of Blocks that need to be replicated 1 or more times.
    * We also store pending replication-orders.
    */
+  // 副本数少于期望值，待复制集合
   public final UnderReplicatedBlocks neededReplications = new UnderReplicatedBlocks();
 
   @VisibleForTesting
@@ -644,8 +645,11 @@ public class BlockManager {
     if(blkIndex < 0)
       return null;
     BlockInfoContiguous curBlock = bc.getBlocks()[blkIndex];
-    if(curBlock.isComplete())
+    if(curBlock.isComplete()) //如果已经complete，直接返回
       return curBlock;
+    // 检查是否满足complete条件：
+    // 1、满足最小副本数
+    // 2、block状态为COMMITTED
     BlockInfoContiguousUnderConstruction ucBlock =
         (BlockInfoContiguousUnderConstruction) curBlock;
     int numNodes = ucBlock.numNodes();
@@ -665,12 +669,12 @@ public class BlockManager {
     // count. (We may not have the minimum replica count yet if this is
     // a "forced" completion when a file is getting closed by an
     // OP_CLOSE edit on the standby).
-    namesystem.adjustSafeModeBlockTotals(0, 1);
+    namesystem.adjustSafeModeBlockTotals(0, 1); // TODOWXY: 安全模式相关
     namesystem.incrementSafeBlockCount(
         Math.min(numNodes, minReplication));
     
     // replace block in the blocksMap
-    return blocksMap.replaceBlock(completeBlock);
+    return blocksMap.replaceBlock(completeBlock); // 更新此Block信息
   }
 
   private BlockInfoContiguous completeBlock(final BlockCollection bc,
@@ -2527,7 +2531,7 @@ public class BlockManager {
    * needed replications if this takes care of the problem.
    * @return the block that is stored in blockMap.
    */
-  // 添加此副本信息到block和DN中
+  // 添加此副本信息到block和DN中，并且维护相应集合
   private Block addStoredBlock(final BlockInfoContiguous block,
                                DatanodeStorageInfo storageInfo,
                                DatanodeDescriptor delNodeHint,
@@ -2594,7 +2598,7 @@ public class BlockManager {
       // Is no-op if not in safe mode.
       // In the case that the block just became complete above, completeBlock()
       // handles the safe block count maintenance.
-      namesystem.incrementSafeBlockCount(numCurrentReplica); // 检查是否可以退出安全模式
+      namesystem.incrementSafeBlockCount(numCurrentReplica); // TODOWXY: 安全模式相关
     }
     
     // if file is under construction, then done for now
@@ -2611,12 +2615,15 @@ public class BlockManager {
     short fileReplication = bc.getBlockReplication();
     // 副本数是否达到期望
     if (!isNeededReplication(storedBlock, fileReplication, numCurrentReplica)) {
+      // 副本数充足，则不需要复制副本
       neededReplications.remove(storedBlock, numCurrentReplica,
           num.decommissionedReplicas(), fileReplication);
     } else {
+      // 副本数不足
       updateNeededReplications(storedBlock, curReplicaDelta, 0);
     }
     if (numCurrentReplica > fileReplication) {
+      // 副本数高于期望值
       processOverReplicatedBlock(storedBlock, fileReplication, node, delNodeHint);
     }
     // If the file replication has reached desired value
@@ -2629,7 +2636,7 @@ public class BlockManager {
           " but corrupt replicas map has " + corruptReplicasCount);
     }
     if ((corruptReplicasCount > 0) && (numLiveReplicas >= fileReplication)) {
-      // 副本数足够才执行
+      // 副本数足够才执行删除副本
       invalidateCorruptReplicas(storedBlock);
     }
     return storedBlock;
@@ -2901,6 +2908,7 @@ public class BlockManager {
    * If there are any extras, call chooseExcessReplicates() to
    * mark them in the excessReplicateMap.
    */
+  // 副本数高于期望值
   private void processOverReplicatedBlock(final Block block,
       final short replication, final DatanodeDescriptor addedNode,
       DatanodeDescriptor delNodeHint) {
@@ -3065,6 +3073,7 @@ public class BlockManager {
    * Modify (block-->datanode) map. Possibly generate replication tasks, if the
    * removed block is still valid.
    */
+  // 移除此副本信息，并且维护相应集合
   public void removeStoredBlock(Block block, DatanodeDescriptor node) {
     blockLog.debug("BLOCK* removeStoredBlock: {} from {}", block, node);
     assert (namesystem.hasWriteLock());

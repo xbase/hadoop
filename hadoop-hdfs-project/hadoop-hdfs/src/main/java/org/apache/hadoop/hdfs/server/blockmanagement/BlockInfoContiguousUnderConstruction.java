@@ -345,6 +345,7 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
 
   // 如果副本存放的位置和NN记录的一致，只更新GS
   // 如果不一致，全部以DN汇报的为准
+  // 如果之前不存在，则添加一个副本
   void addReplicaIfNotPresent(DatanodeStorageInfo storage,
                      Block block,
                      ReplicaState rState) {

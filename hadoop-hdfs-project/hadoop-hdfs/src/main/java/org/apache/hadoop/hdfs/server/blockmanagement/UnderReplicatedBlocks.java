@@ -66,6 +66,7 @@ import org.apache.hadoop.hdfs.server.namenode.NameNode;
  *   blocks that are not corrupt higher priority.</li>
  * </ol>
  */
+// 副本数少于期望值，待复制集合
 class UnderReplicatedBlocks implements Iterable<Block> {
   /** The total number of queues : {@value} */
   static final int LEVEL = 5;

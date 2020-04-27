@@ -191,7 +191,7 @@ class BlocksMap {
       return false;
 
     // remove block from the data-node list and the node from the block info
-    boolean removed = node.removeBlock(info); // 从DN移除此副本信息（NN内存里）
+    boolean removed = node.removeBlock(info); // 移除此副本信息（NN内存里）
 
     // 所有的副本都被移除，直接移除这个Block
     if (info.getDatanode(0) == null     // no datanodes left
@@ -220,6 +220,10 @@ class BlocksMap {
    * @param newBlock - block for replacement
    * @return new block
    */
+  // 替换Block，从下面3个位置：
+  // 1、blocksMap
+  // 2、Block副本信息
+  // 3、DN block list
   BlockInfoContiguous replaceBlock(BlockInfoContiguous newBlock) {
     BlockInfoContiguous currentBlock = blocks.get(newBlock);
     assert currentBlock != null : "the block if not in blocksMap";
@@ -227,11 +231,11 @@ class BlocksMap {
     for (int i = currentBlock.numNodes() - 1; i >= 0; i--) {
       final DatanodeDescriptor dn = currentBlock.getDatanode(i);
       final DatanodeStorageInfo storage = currentBlock.findStorageInfo(dn);
-      // 从DN存储目录移除old block
+      // 移除old block
       final boolean removed = storage.removeBlock(currentBlock);
       Preconditions.checkState(removed, "currentBlock not found.");
 
-      // 添加new block到DN存储目录
+      // 添加new block
       final AddBlockResult result = storage.addBlock(newBlock);
       Preconditions.checkState(result == AddBlockResult.ADDED,
           "newBlock already exists.");
