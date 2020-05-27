@@ -90,7 +90,7 @@ public class ZKFCRpcServer implements ZKFCProtocol {
 
   @Override
   public void gracefulFailover() throws IOException, AccessControlException {
-    zkfc.checkRpcAdminAccess();
+    zkfc.checkRpcAdminAccess(); // 只有管理员可以执行
     zkfc.gracefulFailoverToYou();
   }
 

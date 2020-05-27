@@ -186,7 +186,7 @@ public class DFSZKFailoverController extends ZKFailoverController {
   }
 
   @Override
-  protected void checkRpcAdminAccess() throws IOException, AccessControlException {
+  protected void checkRpcAdminAccess() throws IOException, AccessControlException { // 检查是否是管理员
     UserGroupInformation ugi = UserGroupInformation.getCurrentUser();
     UserGroupInformation zkfcUgi = UserGroupInformation.getLoginUser();
     if (adminAcl.isUserAllowed(ugi) ||

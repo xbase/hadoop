@@ -547,7 +547,7 @@ public abstract class ZKFailoverController {
       UserGroupInformation.getLoginUser().doAs(new PrivilegedExceptionAction<Void>() {
         @Override
         public Void run() throws Exception {
-          doCedeActive(millisToCede);
+          doCedeActive(millisToCede); // 放弃active角色
           return null;
         }
       });
@@ -555,7 +555,9 @@ public abstract class ZKFailoverController {
       throw new IOException(e);
     }
   }
-  
+
+  // Step 1: 通知本地NN转换为Standby
+  // Step 2: 如果 Step 1 成功，则删除ZK节点；如果失败，则需要fence
   private void doCedeActive(int millisToCede) 
       throws AccessControlException, ServiceFailedException, IOException {
     int timeout = FailoverController.getGracefulFenceTimeout(conf);
@@ -565,7 +567,7 @@ public abstract class ZKFailoverController {
       synchronized (this) {
         if (millisToCede <= 0) {
           delayJoiningUntilNanotime = 0;
-          recheckElectability();
+          recheckElectability(); // 根据本地NN状态，决定是否参与选主
           return;
         }
   
@@ -573,7 +575,7 @@ public abstract class ZKFailoverController {
             " at " + Server.getRemoteAddress() + " to cede active role.");
         boolean needFence = false;
         try {
-          localTarget.getProxy(conf, timeout).transitionToStandby(createReqInfo());
+          localTarget.getProxy(conf, timeout).transitionToStandby(createReqInfo()); // 通知本地NN转换为Standby
           LOG.info("Successfully ensured local node is in standby mode");
         } catch (IOException ioe) {
           LOG.warn("Unable to transition local node to standby: " +
@@ -584,7 +586,7 @@ public abstract class ZKFailoverController {
         }
         delayJoiningUntilNanotime = System.nanoTime() +
             TimeUnit.MILLISECONDS.toNanos(millisToCede);
-        elector.quitElection(needFence);
+        elector.quitElection(needFence); // 删除ZK节点（当前Active NN信息）
         serviceState = HAServiceState.INITIALIZING;
       }
     }
@@ -617,7 +619,7 @@ public abstract class ZKFailoverController {
    * thus a candidate for failover.
    * 2) Determine the current active node. If it is the local node, no
    * need to failover - return success.
-   * 3) Ask that node to yield from the election for a number of seconds.
+   * 3) Ask that node to yield from the election for a number of seconds. 要求该节点从选举中退出数秒。
    * 4) Allow the normal election path to run in other threads. Wait until
    * we either become unhealthy or we see an election attempt recorded by
    * the normal code path.
@@ -629,11 +631,11 @@ public abstract class ZKFailoverController {
     int timeout = FailoverController.getGracefulFenceTimeout(conf) * 2;
     
     // Phase 1: pre-flight checks
-    checkEligibleForFailover();
+    checkEligibleForFailover(); // 确保NN状态为健康
     
     // Phase 2: determine old/current active node. Check that we're not
     // ourselves active, etc.
-    HAServiceTarget oldActive = getCurrentActive();
+    HAServiceTarget oldActive = getCurrentActive(); // 获取当前active NN
     if (oldActive == null) {
       // No node is currently active. So, if we aren't already
       // active ourselves by means of a normal election, then there's
@@ -642,7 +644,7 @@ public abstract class ZKFailoverController {
           "No other node is currently active.");
     }
     
-    if (oldActive.getAddress().equals(localTarget.getAddress())) {
+    if (oldActive.getAddress().equals(localTarget.getAddress())) { // 如果当前节点是active，什么都不干
       LOG.info("Local node " + localTarget + " is already active. " +
           "No need to failover. Returning success.");
       return;
@@ -652,7 +654,7 @@ public abstract class ZKFailoverController {
     LOG.info("Asking " + oldActive + " to cede its active state for " +
         timeout + "ms");
     ZKFCProtocol oldZkfc = oldActive.getZKFCProxy(conf, timeout);
-    oldZkfc.cedeActive(timeout);
+    oldZkfc.cedeActive(timeout); // 先让老Active转换为Standby
 
     // Phase 4: wait for the normal election to make the local node
     // active.
@@ -694,7 +696,7 @@ public abstract class ZKFailoverController {
   private synchronized void checkEligibleForFailover()
       throws ServiceFailedException {
     // Check health
-    if (this.getLastHealthState() != State.SERVICE_HEALTHY) {
+    if (this.getLastHealthState() != State.SERVICE_HEALTHY) { // 确保本地NN最后一次检查时是健康的
       throw new ServiceFailedException(
           localTarget + " is not currently healthy. " +
           "Cannot be failover target");
@@ -708,7 +710,7 @@ public abstract class ZKFailoverController {
    * @throws InterruptedException if thread is interrupted 
    */
   private HAServiceTarget getCurrentActive()
-      throws IOException, InterruptedException {
+      throws IOException, InterruptedException { // 通过ZK获取当前active NN信息
     synchronized (elector) {
       synchronized (this) {
         byte[] activeData;
@@ -731,7 +733,7 @@ public abstract class ZKFailoverController {
    * Check the current state of the service, and join the election
    * if it should be in the election.
    */
-  private void recheckElectability() {
+  private void recheckElectability() { // 根据本地NN状态，决定是否参与选主
     // Maintain lock ordering of elector -> ZKFC
     synchronized (elector) {
       synchronized (this) {
@@ -748,7 +750,7 @@ public abstract class ZKFailoverController {
           return;
         }
     
-        switch (lastHealthState) {
+        switch (lastHealthState) { // 根据本地NN状态，决定是否参与选主
         case SERVICE_HEALTHY:
           elector.joinElection(targetToData(localTarget));
           if (quitElectionOnBadState) {
