@@ -274,17 +274,23 @@ public class TestDistributedFileSystemWithECFile {
 
     // verify stats are correct
     Long totalBytesRead = 0L;
+    Long ecBytesRead = 0L;
     for (FileSystem.Statistics stat : FileSystem.getAllStatistics()) {
       totalBytesRead += stat.getBytesRead();
+      ecBytesRead += stat.getBytesReadErasureCoded();
     }
     assertEquals(Long.valueOf(size), totalBytesRead);
+    assertEquals(Long.valueOf(size), ecBytesRead);
 
     // verify thread local stats are correct
     Long totalBytesReadThread = 0L;
+    Long ecBytesReadThread = 0L;
     for (FileSystem.Statistics stat : FileSystem.getAllStatistics()) {
       FileSystem.Statistics.StatisticsData data = stat.getThreadStatistics();
       totalBytesReadThread += data.getBytesRead();
+      ecBytesReadThread += data.getBytesReadErasureCoded();
     }
     assertEquals(Long.valueOf(size), totalBytesReadThread);
+    assertEquals(Long.valueOf(size), ecBytesReadThread);
   }
 }

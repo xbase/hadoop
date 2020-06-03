@@ -68,6 +68,11 @@ public interface HdfsClientConfigKeys {
   String PREFIX = "dfs.client.";
   String  DFS_NAMESERVICES = "dfs.nameservices";
   String DFS_NAMENODE_RPC_ADDRESS_KEY = "dfs.namenode.rpc-address";
+
+  String DFS_NAMENODE_RPC_ADDRESS_AUXILIARY_SUFFIX = "auxiliary-ports";
+  String DFS_NAMENODE_RPC_ADDRESS_AUXILIARY_KEY = DFS_NAMENODE_RPC_ADDRESS_KEY
+      + "." + DFS_NAMENODE_RPC_ADDRESS_AUXILIARY_SUFFIX;
+
   int     DFS_NAMENODE_HTTP_PORT_DEFAULT = 9870;
   String  DFS_NAMENODE_HTTP_ADDRESS_KEY = "dfs.namenode.http-address";
   int     DFS_NAMENODE_HTTPS_PORT_DEFAULT = 9871;
@@ -103,6 +108,9 @@ public interface HdfsClientConfigKeys {
   String  DFS_CLIENT_USE_LEGACY_BLOCKREADERLOCAL =
       "dfs.client.use.legacy.blockreader.local";
   boolean DFS_CLIENT_USE_LEGACY_BLOCKREADERLOCAL_DEFAULT = false;
+  String DFS_CLIENT_READ_USE_CACHE_PRIORITY =
+      "dfs.client.read.use.cache.priority";
+  boolean DFS_CLIENT_READ_USE_CACHE_PRIORITY_DEFAULT = false;
   String  DFS_CLIENT_DATANODE_RESTART_TIMEOUT_KEY =
       "dfs.client.datanode-restart.timeout";
   long    DFS_CLIENT_DATANODE_RESTART_TIMEOUT_DEFAULT = 30;
@@ -136,6 +144,8 @@ public interface HdfsClientConfigKeys {
       "dfs.short.circuit.shared.memory.watcher.interrupt.check.ms";
   int     DFS_SHORT_CIRCUIT_SHARED_MEMORY_WATCHER_INTERRUPT_CHECK_MS_DEFAULT =
       60000;
+  String DFS_CLIENT_SHORT_CIRCUIT_NUM = "dfs.client.short.circuit.num";
+  int DFS_CLIENT_SHORT_CIRCUIT_NUM_DEFAULT = 1;
   String  DFS_CLIENT_SLOW_IO_WARNING_THRESHOLD_KEY =
       "dfs.client.slow.io.warning.threshold.ms";
   long    DFS_CLIENT_SLOW_IO_WARNING_THRESHOLD_DEFAULT = 30000;
@@ -143,6 +153,53 @@ public interface HdfsClientConfigKeys {
           "dfs.client.key.provider.cache.expiry";
   long    DFS_CLIENT_KEY_PROVIDER_CACHE_EXPIRY_DEFAULT =
               TimeUnit.DAYS.toMillis(10); // 10 days
+  String DFS_CLIENT_BLOCK_READER_REMOTE_BUFFER_SIZE_KEY =
+      "dfs.client.block.reader.remote.buffer.size";
+  int DFS_CLIENT_BLOCK_READER_REMOTE_BUFFER_SIZE_DEFAULT = 512;
+
+  String DFS_CLIENT_DEAD_NODE_DETECTION_ENABLED_KEY =
+          "dfs.client.deadnode.detection.enabled";
+  boolean DFS_CLIENT_DEAD_NODE_DETECTION_ENABLED_DEFAULT = false;
+
+  String DFS_CLIENT_DEAD_NODE_DETECTION_DEAD_NODE_QUEUE_MAX_KEY =
+      "dfs.client.deadnode.detection.deadnode.queue.max";
+  int DFS_CLIENT_DEAD_NODE_DETECTION_DEAD_NODE_QUEUE_MAX_DEFAULT = 100;
+
+  String DFS_CLIENT_DEAD_NODE_DETECTION_SUSPECT_NODE_QUEUE_MAX_KEY =
+      "dfs.client.deadnode.detection.suspectnode.queue.max";
+  int DFS_CLIENT_DEAD_NODE_DETECTION_SUSPECT_NODE_QUEUE_MAX_DEFAULT = 1000;
+
+  String DFS_CLIENT_DEAD_NODE_DETECTION_PROBE_CONNECTION_TIMEOUT_MS_KEY =
+      "dfs.client.deadnode.detection.probe.connection.timeout.ms";
+  long DFS_CLIENT_DEAD_NODE_DETECTION_PROBE_CONNECTION_TIMEOUT_MS_DEFAULT =
+      20000;
+
+  String DFS_CLIENT_DEAD_NODE_DETECTION_PROBE_DEAD_NODE_THREADS_KEY =
+      "dfs.client.deadnode.detection.probe.deadnode.threads";
+  int DFS_CLIENT_DEAD_NODE_DETECTION_PROBE_DEAD_NODE_THREADS_DEFAULT = 10;
+
+  String DFS_CLIENT_DEAD_NODE_DETECTION_PROBE_SUSPECT_NODE_THREADS_KEY =
+      "dfs.client.deadnode.detection.probe.suspectnode.threads";
+  int DFS_CLIENT_DEAD_NODE_DETECTION_PROBE_SUSPECT_NODE_THREADS_DEFAULT = 10;
+
+  String DFS_CLIENT_DEAD_NODE_DETECTION_RPC_THREADS_KEY =
+      "dfs.client.deadnode.detection.rpc.threads";
+  int DFS_CLIENT_DEAD_NODE_DETECTION_RPC_THREADS_DEFAULT = 20;
+
+  String DFS_CLIENT_DEAD_NODE_DETECTION_PROBE_DEAD_NODE_INTERVAL_MS_KEY =
+      "dfs.client.deadnode.detection.probe.deadnode.interval.ms";
+  long DFS_CLIENT_DEAD_NODE_DETECTION_PROBE_DEAD_NODE_INTERVAL_MS_DEFAULT =
+      60 * 1000; // 60s
+
+  String DFS_CLIENT_DEAD_NODE_DETECTION_PROBE_SUSPECT_NODE_INTERVAL_MS_KEY =
+      "dfs.client.deadnode.detection.probe.suspectnode.interval.ms";
+  long DFS_CLIENT_DEAD_NODE_DETECTION_PROBE_SUSPECT_NODE_INTERVAL_MS_DEFAULT =
+      300; // 300ms
+
+  // refreshing LocatedBlocks period. A value of 0 disables the feature.
+  String  DFS_CLIENT_REFRESH_READ_BLOCK_LOCATIONS_MS_KEY =
+      "dfs.client.refresh.read-block-locations.ms";
+  long DFS_CLIENT_REFRESH_READ_BLOCK_LOCATIONS_MS_DEFAULT = 0L;
 
   String  DFS_DATANODE_KERBEROS_PRINCIPAL_KEY =
       "dfs.datanode.kerberos.principal";
@@ -151,6 +208,9 @@ public interface HdfsClientConfigKeys {
 
   String DFS_ENCRYPT_DATA_TRANSFER_CIPHER_SUITES_KEY =
       "dfs.encrypt.data.transfer.cipher.suites";
+
+  String DFS_ENCRYPT_DATA_OVERWRITE_DOWNSTREAM_NEW_QOP_KEY =
+      "dfs.encrypt.data.overwrite.downstream.new.qop";
 
   String DFS_DATA_TRANSFER_PROTECTION_KEY = "dfs.data.transfer.protection";
   String DFS_DATA_TRANSFER_PROTECTION_DEFAULT = "";
@@ -183,6 +243,12 @@ public interface HdfsClientConfigKeys {
   String DFS_NAMENODE_SNAPSHOT_CAPTURE_OPENFILES =
       "dfs.namenode.snapshot.capture.openfiles";
   boolean DFS_NAMENODE_SNAPSHOT_CAPTURE_OPENFILES_DEFAULT = false;
+
+  String DFS_PROVIDED_ALIASMAP_INMEMORY_RPC_ADDRESS =
+      "dfs.provided.aliasmap.inmemory.dnrpc-address";
+
+  String DFS_LEASE_HARDLIMIT_KEY = "dfs.namenode.lease-hard-limit-sec";
+  long DFS_LEASE_HARDLIMIT_DEFAULT = 20 * 60;
 
   /**
    * These are deprecated config keys to client code.
@@ -279,7 +345,12 @@ public interface HdfsClientConfigKeys {
         PREFIX + "connection.retries.on.timeouts";
     int     CONNECTION_RETRIES_ON_SOCKET_TIMEOUTS_DEFAULT = 0;
     String  RANDOM_ORDER = PREFIX + "random.order";
-    boolean RANDOM_ORDER_DEFAULT = false;
+    boolean RANDOM_ORDER_DEFAULT = true;
+    String  RESOLVE_ADDRESS_NEEDED_KEY = PREFIX + "resolve-needed";
+    boolean RESOLVE_ADDRESS_NEEDED_DEFAULT = false;
+    String RESOLVE_SERVICE_KEY = PREFIX + "resolver.impl";
+    String  RESOLVE_ADDRESS_TO_FQDN = PREFIX + "resolver.useFQDN";
+    boolean RESOLVE_ADDRESS_TO_FQDN_DEFAULT = true;
   }
 
   /** dfs.client.write configuration properties */
@@ -319,6 +390,9 @@ public interface HdfsClientConfigKeys {
     String  LOCATEFOLLOWINGBLOCK_INITIAL_DELAY_MS_KEY =
         PREFIX + "locateFollowingBlock.initial.delay.ms";
     int     LOCATEFOLLOWINGBLOCK_INITIAL_DELAY_MS_DEFAULT = 400;
+    String  LOCATEFOLLOWINGBLOCK_MAX_DELAY_MS_KEY =
+        PREFIX + "locateFollowingBlock.max.delay.ms";
+    int     LOCATEFOLLOWINGBLOCK_MAX_DELAY_MS_DEFAULT = 60000;
 
     interface ReplaceDatanodeOnFailure {
       String PREFIX = BlockWrite.PREFIX + "replace-datanode-on-failure.";

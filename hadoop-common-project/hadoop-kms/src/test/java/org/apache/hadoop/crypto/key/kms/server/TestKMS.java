@@ -38,6 +38,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.MultipleIOException;
 import org.apache.hadoop.minikdc.MiniKdc;
+import org.apache.hadoop.security.AuthenticationFilterInitializer;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -48,6 +49,7 @@ import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
 import org.apache.hadoop.security.token.delegation.web.DelegationTokenIdentifier;
 import org.apache.hadoop.test.GenericTestUtils;
+import org.apache.hadoop.test.Whitebox;
 import org.apache.hadoop.util.Time;
 import org.apache.http.client.utils.URIBuilder;
 import org.junit.After;
@@ -57,7 +59,6 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
 import org.mockito.Mockito;
-import org.mockito.internal.util.reflection.Whitebox;
 import org.slf4j.event.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -614,7 +615,18 @@ public class TestKMS {
 
   @Test
   public void testStartStopHttpPseudo() throws Exception {
-    testStartStop(false, false);
+    // Make sure bogus errors don't get emitted.
+    GenericTestUtils.LogCapturer logs =
+        GenericTestUtils.LogCapturer.captureLogs(LoggerFactory.getLogger(
+            "com.sun.jersey.server.wadl.generators.AbstractWadlGeneratorGrammarGenerator"));
+    try {
+      testStartStop(false, false);
+    } finally {
+      logs.stopCapturing();
+    }
+    assertFalse(logs.getOutput().contains(
+        "Couldn't find grammar element for class"));
+
   }
 
   @Test
@@ -2115,6 +2127,70 @@ public class TestKMS {
     });
   }
 
+  @Test
+  public void testGetDelegationTokenByProxyUser() throws Exception {
+    Configuration conf = new Configuration();
+    conf.set("hadoop.security.auth_to_local.mechanism", "mit");
+    conf.set("hadoop.security.authentication", "kerberos");
+    UserGroupInformation.setConfiguration(conf);
+    final File testDir = getTestDir();
+
+    conf = createBaseKMSConf(testDir, conf);
+    conf.set("hadoop.kms.authentication.type", "kerberos");
+    conf.set("hadoop.kms.authentication.kerberos.keytab",
+            keytab.getAbsolutePath());
+    conf.set("hadoop.kms.authentication.kerberos.principal", "HTTP/localhost");
+    conf.set("hadoop.kms.proxyuser.client.users", "foo/localhost");
+    conf.set("hadoop.kms.proxyuser.client.hosts", "localhost");
+    conf.set(KeyAuthorizationKeyProvider.KEY_ACL + "kcc.ALL",
+        "foo/localhost");
+
+    writeConf(testDir, conf);
+
+    runServer(null, null, testDir, new KMSCallable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        final Configuration conf = new Configuration();
+        final URI uri = createKMSUri(getKMSUrl());
+
+        // proxyuser client using kerberos credentials
+        UserGroupInformation proxyUgi = UserGroupInformation.
+            loginUserFromKeytabAndReturnUGI("client/host", keytab.getAbsolutePath());
+        UserGroupInformation foo = UserGroupInformation.createProxyUser(
+            "foo/localhost", proxyUgi);
+        final Credentials credentials = new Credentials();
+        foo.doAs(new PrivilegedExceptionAction<Void>() {
+          @Override
+          public Void run() throws Exception {
+            final KeyProvider kp = createProvider(uri, conf);
+            KeyProviderDelegationTokenExtension keyProviderDelegationTokenExtension
+                = KeyProviderDelegationTokenExtension
+                    .createKeyProviderDelegationTokenExtension(kp);
+            keyProviderDelegationTokenExtension.addDelegationTokens("client",
+                credentials);
+            Assert.assertNotNull(kp.createKey("kcc",
+                new KeyProvider.Options(conf)));
+            return null;
+          }
+        });
+
+        // current user client using token credentials for proxy user
+        UserGroupInformation nonKerberosUgi
+            = UserGroupInformation.getCurrentUser();
+        nonKerberosUgi.addCredentials(credentials);
+        nonKerberosUgi.doAs(new PrivilegedExceptionAction<Void>() {
+          @Override
+          public Void run() throws Exception {
+            final KeyProvider kp = createProvider(uri, conf);
+            Assert.assertNotNull(kp.getMetadata("kcc"));
+            return null;
+          }
+        });
+        return null;
+      }
+    });
+  }
+
   private Configuration setupConfForKerberos(File confDir) throws Exception {
     final Configuration conf =  createBaseKMSConf(confDir, null);
     conf.set("hadoop.security.authentication", "kerberos");
@@ -3000,6 +3076,47 @@ public class TestKMS {
         }
         LOG.info("jmx returned: " + sb.toString());
         assertTrue(sb.toString().contains("JvmMetrics"));
+        return null;
+      }
+    });
+  }
+
+  @Test
+  public void testFilterInitializer() throws Exception {
+    Configuration conf = new Configuration();
+    File testDir = getTestDir();
+    conf = createBaseKMSConf(testDir, conf);
+    conf.set("hadoop.security.authentication", "kerberos");
+    conf.set("hadoop.kms.authentication.token.validity", "1");
+    conf.set("hadoop.kms.authentication.type", "kerberos");
+    conf.set("hadoop.kms.authentication.kerberos.keytab",
+        keytab.getAbsolutePath());
+    conf.set("hadoop.kms.authentication.kerberos.principal", "HTTP/localhost");
+    conf.set("hadoop.kms.authentication.kerberos.name.rules", "DEFAULT");
+    conf.set("hadoop.http.filter.initializers",
+        AuthenticationFilterInitializer.class.getName());
+    conf.set("hadoop.http.authentication.type", "kerberos");
+    conf.set("hadoop.http.authentication.kerberos.principal", "HTTP/localhost");
+    conf.set("hadoop.http.authentication.kerberos.keytab",
+        keytab.getAbsolutePath());
+
+    writeConf(testDir, conf);
+
+    runServer(null, null, testDir, new KMSCallable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        final Configuration conf = new Configuration();
+        URL url = getKMSUrl();
+        final URI uri = createKMSUri(getKMSUrl());
+
+        doAs("client", new PrivilegedExceptionAction<Void>() {
+          @Override
+          public Void run() throws Exception {
+            final KeyProvider kp = createProvider(uri, conf);
+            Assert.assertTrue(kp.getKeys().isEmpty());
+            return null;
+          }
+        });
         return null;
       }
     });

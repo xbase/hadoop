@@ -17,10 +17,13 @@
  */
 package org.apache.hadoop.yarn.client.cli;
 
+import org.apache.hadoop.yarn.api.records.NodeAttribute;
+import org.apache.hadoop.yarn.api.records.NodeAttributeType;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.isA;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -47,7 +50,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import org.apache.commons.cli.Options;
-import org.apache.commons.lang.time.DateFormatUtils;
+import org.apache.commons.lang3.time.DateFormatUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.api.protocolrecords.UpdateApplicationTimeoutsRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.UpdateApplicationTimeoutsResponse;
@@ -94,11 +97,14 @@ import org.junit.Before;
 import org.junit.Test;
 import org.eclipse.jetty.util.log.Log;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 
 public class TestYarnCLI {
-
+  private static final Logger LOG = LoggerFactory.getLogger(TestYarnCLI.class);
   private YarnClient client = mock(YarnClient.class);
   ByteArrayOutputStream sysOutStream;
   private PrintStream sysOut;
@@ -136,11 +142,12 @@ public class TestYarnCLI {
       ApplicationReport newApplicationReport = ApplicationReport.newInstance(
           applicationId, ApplicationAttemptId.newInstance(applicationId, 1),
           "user", "queue", "appname", "host", 124, null,
-          YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0,
+          YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0, 0,
           FinalApplicationStatus.SUCCEEDED, usageReport, "N/A", 0.53789f, "YARN",
           null, null, false, Priority.newInstance(0), "high-mem", "high-mem");
       newApplicationReport.setLogAggregationStatus(LogAggregationStatus.SUCCEEDED);
       newApplicationReport.setPriority(Priority.newInstance(0));
+      newApplicationReport.setRMClusterId("Cluster1");
       ApplicationTimeout timeout = ApplicationTimeout
           .newInstance(ApplicationTimeoutType.LIFETIME, "UNLIMITED", -1);
       newApplicationReport.setApplicationTimeouts(
@@ -180,6 +187,7 @@ public class TestYarnCLI {
       pw.print("\tTimeoutType : LIFETIME");
       pw.print("\tExpiryTime : UNLIMITED");
       pw.println("\tRemainingTime : -1seconds");
+      pw.println("\tRMClusterId : Cluster1");
       pw.println();
       pw.close();
       String appReportStr = baos.toString("UTF-8");
@@ -275,10 +283,17 @@ public class TestYarnCLI {
     ApplicationAttemptId attemptId = ApplicationAttemptId.newInstance(
         applicationId, 1);
     ContainerId containerId = ContainerId.newContainerId(attemptId, 1);
+    Map<String, List<Map<String, String>>> ports = new HashMap<>();
+    ArrayList<Map<String, String>> list = new ArrayList();
+    HashMap<String, String> map = new HashMap();
+    map.put("abc", "123");
+    list.add(map);
+    ports.put("192.168.0.1", list);
     ContainerReport container = ContainerReport.newInstance(containerId, null,
         NodeId.newInstance("host", 1234), Priority.UNDEFINED, 1234, 5678,
         "diagnosticInfo", "logURL", 0, ContainerState.COMPLETE,
         "http://" + NodeId.newInstance("host", 2345).toString());
+    container.setExposedPorts(ports);
     when(client.getContainerReport(any(ContainerId.class))).thenReturn(
         container);
     int result = cli.run(new String[] { "container", "-status",
@@ -296,9 +311,11 @@ public class TestYarnCLI {
     pw.println("\tLOG-URL : logURL");
     pw.println("\tHost : host:1234");
     pw.println("\tNodeHttpAddress : http://host:2345");
+    pw.println("\tExposedPorts : {\"192.168.0.1\":[{\"abc\":\"123\"}]}");
     pw.println("\tDiagnostics : diagnosticInfo");
     pw.close();
     String appReportStr = baos.toString("UTF-8");
+
     Assert.assertEquals(appReportStr, sysOutStream.toString());
     verify(sysOut, times(1)).println(isA(String.class));
   }
@@ -313,18 +330,22 @@ public class TestYarnCLI {
     ContainerId containerId1 = ContainerId.newContainerId(attemptId, 2);
     ContainerId containerId2 = ContainerId.newContainerId(attemptId, 3);
     long time1=1234,time2=5678;
+    Map<String, List<Map<String, String>>> ports = new HashMap<>();
     ContainerReport container = ContainerReport.newInstance(containerId, null,
         NodeId.newInstance("host", 1234), Priority.UNDEFINED, time1, time2,
         "diagnosticInfo", "logURL", 0, ContainerState.COMPLETE,
         "http://" + NodeId.newInstance("host", 2345).toString());
+    container.setExposedPorts(ports);
     ContainerReport container1 = ContainerReport.newInstance(containerId1, null,
         NodeId.newInstance("host", 1234), Priority.UNDEFINED, time1, time2,
         "diagnosticInfo", "logURL", 0, ContainerState.COMPLETE,
         "http://" + NodeId.newInstance("host", 2345).toString());
+    container1.setExposedPorts(ports);
     ContainerReport container2 = ContainerReport.newInstance(containerId2, null,
         NodeId.newInstance("host", 1234), Priority.UNDEFINED, time1,0,
         "diagnosticInfo", "", 0, ContainerState.RUNNING,
         "http://" + NodeId.newInstance("host", 2345).toString());
+    container2.setExposedPorts(ports);
     List<ContainerReport> reports = new ArrayList<ContainerReport>();
     reports.add(container);
     reports.add(container1);
@@ -384,7 +405,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport = ApplicationReport.newInstance(
         applicationId, ApplicationAttemptId.newInstance(applicationId, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0,
+        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53789f, "YARN", null,
         Sets.newHashSet("tag1", "tag3"), false, Priority.UNDEFINED, "", "");
     List<ApplicationReport> applicationReports =
@@ -395,7 +416,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport2 = ApplicationReport.newInstance(
         applicationId2, ApplicationAttemptId.newInstance(applicationId2, 2),
         "user2", "queue2", "appname2", "host2", 125, null,
-        YarnApplicationState.FINISHED, "diagnostics2", "url2", 2, 2,
+        YarnApplicationState.FINISHED, "diagnostics2", "url2", 2, 2, 2,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.63789f, "NON-YARN", 
         null, Sets.newHashSet("tag2", "tag3"), false, Priority.UNDEFINED,
         "", "");
@@ -405,7 +426,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport3 = ApplicationReport.newInstance(
         applicationId3, ApplicationAttemptId.newInstance(applicationId3, 3),
         "user3", "queue3", "appname3", "host3", 126, null,
-        YarnApplicationState.RUNNING, "diagnostics3", "url3", 3, 3,
+        YarnApplicationState.RUNNING, "diagnostics3", "url3", 3, 3, 3,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.73789f, "MAPREDUCE", 
         null, Sets.newHashSet("tag1", "tag4"), false, Priority.UNDEFINED,
         "", "");
@@ -415,7 +436,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport4 = ApplicationReport.newInstance(
         applicationId4, ApplicationAttemptId.newInstance(applicationId4, 4),
         "user4", "queue4", "appname4", "host4", 127, null,
-        YarnApplicationState.FAILED, "diagnostics4", "url4", 4, 4,
+        YarnApplicationState.FAILED, "diagnostics4", "url4", 4, 4, 4,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.83789f,
         "NON-MAPREDUCE", null, Sets.newHashSet("tag1"), false,
         Priority.UNDEFINED, "", "");
@@ -425,7 +446,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport5 = ApplicationReport.newInstance(
         applicationId5, ApplicationAttemptId.newInstance(applicationId5, 5),
         "user5", "queue5", "appname5", "host5", 128, null,
-        YarnApplicationState.ACCEPTED, "diagnostics5", "url5", 5, 5,
+        YarnApplicationState.ACCEPTED, "diagnostics5", "url5", 5, 5, 5,
         FinalApplicationStatus.KILLED, null, "N/A", 0.93789f, "HIVE", null,
         Sets.newHashSet("tag2", "tag4"), false, Priority.UNDEFINED, "", "");
     applicationReports.add(newApplicationReport5);
@@ -434,7 +455,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport6 = ApplicationReport.newInstance(
         applicationId6, ApplicationAttemptId.newInstance(applicationId6, 6),
         "user6", "queue6", "appname6", "host6", 129, null,
-        YarnApplicationState.SUBMITTED, "diagnostics6", "url6", 6, 6,
+        YarnApplicationState.SUBMITTED, "diagnostics6", "url6", 6, 6, 6,
         FinalApplicationStatus.KILLED, null, "N/A", 0.99789f, "PIG",
         null, new HashSet<String>(), false, Priority.UNDEFINED, "", "");
     applicationReports.add(newApplicationReport6);
@@ -991,10 +1012,7 @@ public class TestYarnCLI {
 
   @Test (timeout = 5000)
   public void testNodesHelpCommand() throws Exception {
-    NodeCLI nodeCLI = new NodeCLI();
-    nodeCLI.setClient(client);
-    nodeCLI.setSysOutPrintStream(sysOut);
-    nodeCLI.setSysErrPrintStream(sysErr);
+    NodeCLI nodeCLI = createAndGetNodeCLI();
     nodeCLI.run(new String[] {});
     Assert.assertEquals(createNodeCLIHelpMessage(),
         sysOutStream.toString());
@@ -1008,7 +1026,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport2 = ApplicationReport.newInstance(
         applicationId, ApplicationAttemptId.newInstance(applicationId, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0,
+        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53789f, "YARN", null);
     when(client.getApplicationReport(any(ApplicationId.class))).thenReturn(
         newApplicationReport2);
@@ -1021,7 +1039,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport = ApplicationReport.newInstance(
         applicationId, ApplicationAttemptId.newInstance(applicationId, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0,
+        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53789f, "YARN", null);
     when(client.getApplicationReport(any(ApplicationId.class))).thenReturn(
         newApplicationReport);
@@ -1060,12 +1078,12 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport1 = ApplicationReport.newInstance(
         applicationId1, ApplicationAttemptId.newInstance(applicationId1, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0,
+        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53789f, "YARN", null);
     ApplicationReport newApplicationReport2 = ApplicationReport.newInstance(
         applicationId2, ApplicationAttemptId.newInstance(applicationId2, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0,
+        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.34344f, "YARN", null);
     when(client.getApplicationReport(applicationId1)).thenReturn(
         newApplicationReport1);
@@ -1085,12 +1103,12 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport3 = ApplicationReport.newInstance(
         applicationId1, ApplicationAttemptId.newInstance(applicationId1, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0,
+        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53789f, "YARN", null);
     ApplicationReport newApplicationReport4 = ApplicationReport.newInstance(
         applicationId2, ApplicationAttemptId.newInstance(applicationId2, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0,
+        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53345f, "YARN", null);
     when(client.getApplicationReport(applicationId1)).thenReturn(
         newApplicationReport3);
@@ -1128,7 +1146,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport5 = ApplicationReport.newInstance(
         applicationId1, ApplicationAttemptId.newInstance(applicationId1, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0,
+        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53345f, "YARN", null);
     when(client.getApplicationReport(applicationId1)).thenReturn(
         newApplicationReport5);
@@ -1155,12 +1173,12 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport5 = ApplicationReport.newInstance(
         applicationId1, ApplicationAttemptId.newInstance(applicationId1, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0,
+        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53789f, "YARN", null);
     ApplicationReport newApplicationReport6 = ApplicationReport.newInstance(
         applicationId2, ApplicationAttemptId.newInstance(applicationId2, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0,
+        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53345f, "YARN", null);
     when(client.getApplicationReport(applicationId1)).thenReturn(
         newApplicationReport5);
@@ -1183,7 +1201,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport2 = ApplicationReport.newInstance(
         applicationId, ApplicationAttemptId.newInstance(applicationId, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0,
+        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53789f, "YARN", null);
     when(client.getApplicationReport(any(ApplicationId.class))).thenReturn(
         newApplicationReport2);
@@ -1198,7 +1216,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport = ApplicationReport.newInstance(
         applicationId, ApplicationAttemptId.newInstance(applicationId, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0,
+        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53789f, "YARN", null);
     when(client.getApplicationReport(any(ApplicationId.class))).thenReturn(
         newApplicationReport);
@@ -1233,7 +1251,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport2 = ApplicationReport.newInstance(
         applicationId, ApplicationAttemptId.newInstance(applicationId, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0,
+        YarnApplicationState.FINISHED, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53789f, "YARN", null);
     when(client.getApplicationReport(any(ApplicationId.class)))
         .thenReturn(newApplicationReport2);
@@ -1248,7 +1266,7 @@ public class TestYarnCLI {
     ApplicationReport newApplicationReport = ApplicationReport.newInstance(
         applicationId, ApplicationAttemptId.newInstance(applicationId, 1),
         "user", "queue", "appname", "host", 124, null,
-        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0,
+        YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0, 0,
         FinalApplicationStatus.SUCCEEDED, null, "N/A", 0.53789f, "YARN", null);
     when(client.getApplicationReport(any(ApplicationId.class)))
         .thenReturn(newApplicationReport);
@@ -1288,9 +1306,7 @@ public class TestYarnCLI {
     nodeReports.addAll(getNodeReports(1, NodeState.REBOOTED));
     nodeReports.addAll(getNodeReports(1, NodeState.LOST));
 
-    NodeCLI cli = new NodeCLI();
-    cli.setClient(client);
-    cli.setSysOutPrintStream(sysOut);
+    NodeCLI cli = createAndGetNodeCLI();
 
     Set<NodeState> nodeStates = new HashSet<NodeState>();
     nodeStates.add(NodeState.NEW);
@@ -1543,12 +1559,9 @@ public class TestYarnCLI {
   @Test
   public void testNodeStatus() throws Exception {
     NodeId nodeId = NodeId.newInstance("host0", 0);
-    NodeCLI cli = new NodeCLI();
-    when(client.getNodeReports()).thenReturn(
-                    getNodeReports(3, NodeState.RUNNING, false));
-    cli.setClient(client);
-    cli.setSysOutPrintStream(sysOut);
-    cli.setSysErrPrintStream(sysErr);
+    when(client.getNodeReports())
+        .thenReturn(getNodeReports(3, NodeState.RUNNING, false, false, false));
+    NodeCLI cli = createAndGetNodeCLI();
     int result = cli.run(new String[] { "-status", nodeId.toString() });
     assertEquals(0, result);
     verify(client).getNodeReports();
@@ -1568,6 +1581,8 @@ public class TestYarnCLI {
     pw.println("\tCPU-Used : 0 vcores");
     pw.println("\tCPU-Capacity : 0 vcores");
     pw.println("\tNode-Labels : a,b,c,x,y,z");
+    pw.println("\tNode Attributes : rm.yarn.io/GPU(STRING)=ARM");
+    pw.println("\t                  rm.yarn.io/CPU(STRING)=ARM");
     pw.println("\tResource Utilization by Node : PMem:2048 MB, VMem:4096 MB, VCores:8.0");
     pw.println("\tResource Utilization by Containers : PMem:1024 MB, VMem:2048 MB, VCores:4.0");
     pw.close();
@@ -1579,12 +1594,9 @@ public class TestYarnCLI {
   @Test
   public void testNodeStatusWithEmptyNodeLabels() throws Exception {
     NodeId nodeId = NodeId.newInstance("host0", 0);
-    NodeCLI cli = new NodeCLI();
     when(client.getNodeReports()).thenReturn(
                     getNodeReports(3, NodeState.RUNNING));
-    cli.setClient(client);
-    cli.setSysOutPrintStream(sysOut);
-    cli.setSysErrPrintStream(sysErr);
+    NodeCLI cli = createAndGetNodeCLI();
     int result = cli.run(new String[] { "-status", nodeId.toString() });
     assertEquals(0, result);
     verify(client).getNodeReports();
@@ -1604,6 +1616,7 @@ public class TestYarnCLI {
     pw.println("\tCPU-Used : 0 vcores");
     pw.println("\tCPU-Capacity : 0 vcores");
     pw.println("\tNode-Labels : ");
+    pw.println("\tNode Attributes : ");
     pw.println("\tResource Utilization by Node : PMem:2048 MB, VMem:4096 MB, VCores:8.0");
     pw.println("\tResource Utilization by Containers : PMem:1024 MB, VMem:2048 MB, VCores:4.0");
     pw.close();
@@ -1615,12 +1628,9 @@ public class TestYarnCLI {
   @Test
   public void testNodeStatusWithEmptyResourceUtilization() throws Exception {
     NodeId nodeId = NodeId.newInstance("host0", 0);
-    NodeCLI cli = new NodeCLI();
-    when(client.getNodeReports()).thenReturn(
-                    getNodeReports(3, NodeState.RUNNING, false, true));
-    cli.setClient(client);
-    cli.setSysOutPrintStream(sysOut);
-    cli.setSysErrPrintStream(sysErr);
+    when(client.getNodeReports())
+        .thenReturn(getNodeReports(3, NodeState.RUNNING, false, true, true));
+    NodeCLI cli = createAndGetNodeCLI();
     int result = cli.run(new String[] { "-status", nodeId.toString() });
     assertEquals(0, result);
     verify(client).getNodeReports();
@@ -1640,6 +1650,7 @@ public class TestYarnCLI {
     pw.println("\tCPU-Used : 0 vcores");
     pw.println("\tCPU-Capacity : 0 vcores");
     pw.println("\tNode-Labels : a,b,c,x,y,z");
+    pw.println("\tNode Attributes : ");
     pw.println("\tResource Utilization by Node : ");
     pw.println("\tResource Utilization by Containers : ");
     pw.close();
@@ -1651,12 +1662,10 @@ public class TestYarnCLI {
   @Test
   public void testAbsentNodeStatus() throws Exception {
     NodeId nodeId = NodeId.newInstance("Absenthost0", 0);
-    NodeCLI cli = new NodeCLI();
+
     when(client.getNodeReports()).thenReturn(
                 getNodeReports(0, NodeState.RUNNING));
-    cli.setClient(client);
-    cli.setSysOutPrintStream(sysOut);
-    cli.setSysErrPrintStream(sysErr);
+    NodeCLI cli = createAndGetNodeCLI();
     int result = cli.run(new String[] { "-status", nodeId.toString() });
     assertEquals(0, result);
     verify(client).getNodeReports();
@@ -1679,29 +1688,26 @@ public class TestYarnCLI {
   public void testMissingArguments() throws Exception {
     ApplicationCLI cli = createAndGetAppCLI();
     int result = cli.run(new String[] { "application", "-status" });
-    Assert.assertEquals(result, -1);
+    assertThat(result).isEqualTo(-1);
     Assert.assertEquals(String.format("Missing argument for options%n%1s",
         createApplicationCLIHelpMessage()), sysOutStream.toString());
 
     sysOutStream.reset();
     result = cli.run(new String[] { "applicationattempt", "-status" });
-    Assert.assertEquals(result, -1);
+    assertThat(result).isEqualTo(-1);
     Assert.assertEquals(String.format("Missing argument for options%n%1s",
         createApplicationAttemptCLIHelpMessage()), sysOutStream.toString());
 
     sysOutStream.reset();
     result = cli.run(new String[] { "container", "-status" });
-    Assert.assertEquals(result, -1);
+    assertThat(result).isEqualTo(-1);
     Assert.assertEquals(String.format("Missing argument for options %1s",
         createContainerCLIHelpMessage()), normalize(sysOutStream.toString()));
 
     sysOutStream.reset();
-    NodeCLI nodeCLI = new NodeCLI();
-    nodeCLI.setClient(client);
-    nodeCLI.setSysOutPrintStream(sysOut);
-    nodeCLI.setSysErrPrintStream(sysErr);
+    NodeCLI nodeCLI = createAndGetNodeCLI();
     result = nodeCLI.run(new String[] { "-status" });
-    Assert.assertEquals(result, -1);
+    assertThat(result).isEqualTo(-1);
     Assert.assertEquals(String.format("Missing argument for options%n%1s",
         createNodeCLIHelpMessage()), sysOutStream.toString());
   }
@@ -1724,9 +1730,9 @@ public class TestYarnCLI {
     pw.println("Queue Information : ");
     pw.println("Queue Name : " + "queueA");
     pw.println("\tState : " + "RUNNING");
-    pw.println("\tCapacity : " + "40.0%");
-    pw.println("\tCurrent Capacity : " + "50.0%");
-    pw.println("\tMaximum Capacity : " + "80.0%");
+    pw.println("\tCapacity : " + "40.00%");
+    pw.println("\tCurrent Capacity : " + "50.00%");
+    pw.println("\tMaximum Capacity : " + "80.00%");
     pw.println("\tDefault Node Label expression : " + "GPU");
     pw.println("\tAccessible Node Labels : " + "JDK_7,GPU");
     pw.println("\tPreemption : " + "enabled");
@@ -1768,10 +1774,7 @@ public class TestYarnCLI {
       yarnClient.init(yarnConf);
       yarnClient.start();
 
-      QueueCLI cli = new QueueCLI();
-      cli.setClient(yarnClient);
-      cli.setSysOutPrintStream(sysOut);
-      cli.setSysErrPrintStream(sysErr);
+      QueueCLI cli = createAndGetQueueCLI(yarnClient);
       sysOutStream.reset();
       // Get status for the root.a queue
       int result = cli.run(new String[] { "-status", "a" });
@@ -1782,10 +1785,7 @@ public class TestYarnCLI {
       // In-queue preemption is disabled at the "root.a" queue level
       Assert.assertTrue(queueStatusOut
           .contains("Intra-queue Preemption : disabled"));
-      cli = new QueueCLI();
-      cli.setClient(yarnClient);
-      cli.setSysOutPrintStream(sysOut);
-      cli.setSysErrPrintStream(sysErr);
+      cli = createAndGetQueueCLI(yarnClient);
       sysOutStream.reset();
       // Get status for the root.a.a1 queue
       result = cli.run(new String[] { "-status", "a1" });
@@ -1830,10 +1830,7 @@ public class TestYarnCLI {
       yarnClient.init(yarnConf);
       yarnClient.start();
 
-      QueueCLI cli = new QueueCLI();
-      cli.setClient(yarnClient);
-      cli.setSysOutPrintStream(sysOut);
-      cli.setSysErrPrintStream(sysErr);
+      QueueCLI cli = createAndGetQueueCLI(yarnClient);
       sysOutStream.reset();
       int result = cli.run(new String[] { "-status", "a1" });
       assertEquals(0, result);
@@ -1874,10 +1871,7 @@ public class TestYarnCLI {
       yarnClient.init(yarnConf);
       yarnClient.start();
 
-      QueueCLI cli = new QueueCLI();
-      cli.setClient(yarnClient);
-      cli.setSysOutPrintStream(sysOut);
-      cli.setSysErrPrintStream(sysErr);
+      QueueCLI cli = createAndGetQueueCLI(yarnClient);
       sysOutStream.reset();
       int result = cli.run(new String[] { "-status", "a1" });
       assertEquals(0, result);
@@ -1903,9 +1897,9 @@ public class TestYarnCLI {
     pw.println("Queue Information : ");
     pw.println("Queue Name : " + "queueA");
     pw.println("\tState : " + "RUNNING");
-    pw.println("\tCapacity : " + "40.0%");
-    pw.println("\tCurrent Capacity : " + "50.0%");
-    pw.println("\tMaximum Capacity : " + "80.0%");
+    pw.println("\tCapacity : " + "40.00%");
+    pw.println("\tCurrent Capacity : " + "50.00%");
+    pw.println("\tMaximum Capacity : " + "80.00%");
     pw.println("\tDefault Node Label expression : "
         + NodeLabel.DEFAULT_NODE_LABEL_PARTITION);
     pw.println("\tAccessible Node Labels : ");
@@ -2016,7 +2010,7 @@ public class TestYarnCLI {
         ApplicationReport.newInstance(applicationId,
             ApplicationAttemptId.newInstance(applicationId, 1), "user",
             "queue", "appname", "host", 124, null,
-            YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0,
+            YarnApplicationState.RUNNING, "diagnostics", "url", 0, 0, 0,
             FinalApplicationStatus.UNDEFINED, null, "N/A", 0.53789f, "YARN",
             null);
     when(client.getApplicationReport(any(ApplicationId.class))).thenReturn(
@@ -2026,7 +2020,7 @@ public class TestYarnCLI {
         cli.run(new String[] { "application", "-appId",
             applicationId.toString(),
         "-updatePriority", "1" });
-    Assert.assertEquals(result, 0);
+    assertThat(result).isEqualTo(0);
     verify(client).updateApplicationPriority(any(ApplicationId.class),
         any(Priority.class));
 
@@ -2035,9 +2029,8 @@ public class TestYarnCLI {
   @Test
   public void testFailApplicationAttempt() throws Exception {
     ApplicationCLI cli = createAndGetAppCLI();
-    int exitCode =
-        cli.run(new String[] { "applicationattempt", "-fail",
-            "appattempt_1444199730803_0003_000001" });
+    int exitCode = cli.run(new String[] {"applicationattempt", "-fail",
+        "appattempt_1444199730803_0003_000001"});
     Assert.assertEquals(0, exitCode);
 
     verify(client).failApplicationAttempt(any(ApplicationAttemptId.class));
@@ -2049,18 +2042,20 @@ public class TestYarnCLI {
     cli.run(new String[] { "application" });
     verify(sysErr).println("Invalid Command Usage : ");
   }
-  
+
   private List<NodeReport> getNodeReports(int noOfNodes, NodeState state) {
-    return getNodeReports(noOfNodes, state, true, false);
+    return getNodeReports(noOfNodes, state, true, false, true);
   }
 
   private List<NodeReport> getNodeReports(int noOfNodes, NodeState state,
-      boolean emptyNodeLabel) {
-    return getNodeReports(noOfNodes, state, emptyNodeLabel, false);
+      boolean emptyNodeLabel, boolean emptyAttributes) {
+    return getNodeReports(noOfNodes, state, emptyNodeLabel, false,
+        emptyAttributes);
   }
 
   private List<NodeReport> getNodeReports(int noOfNodes, NodeState state,
-      boolean emptyNodeLabel, boolean emptyResourceUtilization) {
+      boolean emptyNodeLabel, boolean emptyResourceUtilization,
+      boolean emptyAttributes) {
     List<NodeReport> nodeReports = new ArrayList<NodeReport>();
 
     for (int i = 0; i < noOfNodes; i++) {
@@ -2082,20 +2077,47 @@ public class TestYarnCLI {
         nodeReport.setAggregatedContainersUtilization(containersUtilization);
         nodeReport.setNodeUtilization(nodeUtilization);
       }
+      if (!emptyAttributes) {
+        nodeReport.setNodeAttributes(ImmutableSet.of(NodeAttribute
+                .newInstance("GPU", NodeAttributeType.STRING, "ARM"),
+            NodeAttribute.newInstance("CPU", NodeAttributeType.STRING, "ARM")));
+      }
       nodeReports.add(nodeReport);
     }
     return nodeReports;
   }
 
   private ApplicationCLI createAndGetAppCLI() {
-    ApplicationCLI cli = new ApplicationCLI();
+    ApplicationCLI cli = new ApplicationCLI() {
+      @Override protected void createAndStartYarnClient() {
+      }
+    };
     cli.setClient(client);
     cli.setSysOutPrintStream(sysOut);
+    cli.setSysErrPrintStream(sysErr);
     return cli;
   }
-  
+
   private QueueCLI createAndGetQueueCLI() {
-    QueueCLI cli = new QueueCLI();
+    return createAndGetQueueCLI(client);
+  }
+
+  private QueueCLI createAndGetQueueCLI(YarnClient client) {
+    QueueCLI cli = new QueueCLI() {
+      @Override protected void createAndStartYarnClient() {
+      }
+    };
+    cli.setClient(client);
+    cli.setSysOutPrintStream(sysOut);
+    cli.setSysErrPrintStream(sysErr);
+    return cli;
+  }
+
+  private NodeCLI createAndGetNodeCLI() {
+    NodeCLI cli = new NodeCLI() {
+      @Override protected void createAndStartYarnClient() {
+      }
+    };
     cli.setClient(client);
     cli.setSysOutPrintStream(sysOut);
     cli.setSysErrPrintStream(sysErr);
@@ -2139,6 +2161,9 @@ public class TestYarnCLI {
     pw.println("                                          deprecated, this new command");
     pw.println("                                          'changeQueue' performs same");
     pw.println("                                          functionality.");
+    pw.println(" -clusterId <Cluster ID>                  ClusterId. By default, it will");
+    pw.println("                                          take default cluster id from the");
+    pw.println("                                          RM");
     pw.println(" -component <Component Name> <Count>      Works with -flex option to");
     pw.println("                                          change the number of");
     pw.println("                                          components/containers running");
@@ -2149,6 +2174,15 @@ public class TestYarnCLI {
     pw.println(" -components <Components>                 Works with -upgrade option to");
     pw.println("                                          trigger the upgrade of specified");
     pw.println("                                          components of the application.");
+    pw.println("                                          Multiple components should be");
+    pw.println("                                          separated by commas.");
+    pw.println(" -decommission <Application Name>         Decommissions component");
+    pw.println("                                          instances for an application /");
+    pw.println("                                          long-running service. Requires");
+    pw.println("                                          -instances option. Supports");
+    pw.println("                                          -appTypes option to specify");
+    pw.println("                                          which client implementation to");
+    pw.println("                                          use.");
     pw.println(" -destroy <Application Name>              Destroys a saved application");
     pw.println("                                          specification and removes all");
     pw.println("                                          application data permanently.");
@@ -2190,7 +2224,11 @@ public class TestYarnCLI {
     pw.println(" -instances <Component Instances>         Works with -upgrade option to");
     pw.println("                                          trigger the upgrade of specified");
     pw.println("                                          component instances of the");
-    pw.println("                                          application.");
+    pw.println("                                          application. Also works with");
+    pw.println("                                          -decommission option to");
+    pw.println("                                          decommission specified component");
+    pw.println("                                          instances. Multiple instances");
+    pw.println("                                          should be separated by commas.");
     pw.println(" -kill <Application ID>                   Kills the application. Set of");
     pw.println("                                          applications can be provided");
     pw.println("                                          separated with space");
@@ -2272,6 +2310,8 @@ public class TestYarnCLI {
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
     PrintWriter pw = new PrintWriter(baos);
     pw.println("usage: applicationattempt");
+    pw.println(" -clusterId <Cluster ID>            ClusterId. By default, it will take");
+    pw.println("                                    default cluster id from the RM");
     pw.println(" -fail <Application Attempt ID>     Fails application attempt.");
     pw.println(" -help                              Displays help for all commands.");
     pw.println(" -list <Application ID>             List application attempts for");
@@ -2288,9 +2328,11 @@ public class TestYarnCLI {
     PrintWriter pw = new PrintWriter(baos);
     pw.println("usage: container");
     pw.println(" -appTypes <Types>                Works with -list to specify the app type when application name is provided.");
+    pw.println(" -clusterId <Cluster ID>          ClusterId. By default, it will take default cluster id from the RM ");
     pw.println(" -components <arg>                Works with -list to filter instances based on input comma-separated list of component names.");
     pw.println(" -help                            Displays help for all commands.");
     pw.println(" -list <Application Name or Attempt ID>   List containers for application attempt  when application attempt ID is provided. When application name is provided, then it finds the instances of the application based on app's own implementation, and -appTypes option must be specified unless it is the default yarn-service type. With app name, it supports optional use of -version to filter instances based on app version, -components to filter instances based on component names, -states to filter instances based on instance state.");
+    pw.println(" -shell <Container ID [bash|sh]> Run a shell in the container.");
     pw.println(" -signal <container ID [signal command]> Signal the container.");
     pw.println("The available signal commands are ");
     pw.println(java.util.Arrays.asList(SignalContainerCommand.values()));
@@ -2373,7 +2415,7 @@ public class TestYarnCLI {
 
     int result = cli.run(new String[] { "application", "-appId",
         applicationId.toString(), "-updateLifetime", "10" });
-    Assert.assertEquals(result, 0);
+    assertThat(result).isEqualTo(0);
     verify(client)
         .updateApplicationTimeouts(any(UpdateApplicationTimeoutsRequest.class));
   }

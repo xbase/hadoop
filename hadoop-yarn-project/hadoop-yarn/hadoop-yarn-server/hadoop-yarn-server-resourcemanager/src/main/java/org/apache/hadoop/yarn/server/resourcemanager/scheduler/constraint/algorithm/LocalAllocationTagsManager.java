@@ -17,7 +17,7 @@
  */
 package org.apache.hadoop.yarn.server.resourcemanager.scheduler.constraint.algorithm;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.constraint.AllocationTags;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
@@ -109,9 +109,7 @@ class LocalAllocationTagsManager extends AllocationTagsManager {
         });
       });
       appTempMappings.remove(applicationId);
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Removed TEMP containers of app=" + applicationId);
-      }
+      LOG.debug("Removed TEMP containers of app={}", applicationId);
     }
   }
 

@@ -26,6 +26,7 @@ import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintStream;
@@ -58,6 +59,7 @@ import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.Options;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.hdfs.protocol.DSQuotaExceededException;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.io.SecureIOUtils;
 import org.apache.hadoop.io.Writable;
@@ -545,7 +547,7 @@ public class AggregatedLogFormat {
     }
 
     @Override
-    public void close() {
+    public void close() throws DSQuotaExceededException {
       try {
         if (writer != null) {
           writer.close();
@@ -553,7 +555,16 @@ public class AggregatedLogFormat {
       } catch (Exception e) {
         LOG.warn("Exception closing writer", e);
       } finally {
-        IOUtils.cleanupWithLogger(LOG, this.fsDataOStream);
+        try {
+          this.fsDataOStream.close();
+        } catch (DSQuotaExceededException e) {
+          LOG.error("Exception in closing {}",
+              this.fsDataOStream.getClass(), e);
+          throw e;
+        } catch (Throwable e) {
+          LOG.error("Exception in closing {}",
+              this.fsDataOStream.getClass(), e);
+        }
       }
     }
   }
@@ -568,13 +579,17 @@ public class AggregatedLogFormat {
 
     public LogReader(Configuration conf, Path remoteAppLogFile)
         throws IOException {
-      FileContext fileContext =
-          FileContext.getFileContext(remoteAppLogFile.toUri(), conf);
-      this.fsDataIStream = fileContext.open(remoteAppLogFile);
-      reader =
-          new TFile.Reader(this.fsDataIStream, fileContext.getFileStatus(
-              remoteAppLogFile).getLen(), conf);
-      this.scanner = reader.createScanner();
+      try {
+        FileContext fileContext =
+            FileContext.getFileContext(remoteAppLogFile.toUri(), conf);
+        this.fsDataIStream = fileContext.open(remoteAppLogFile);
+        reader = new TFile.Reader(this.fsDataIStream,
+            fileContext.getFileStatus(remoteAppLogFile).getLen(), conf);
+        this.scanner = reader.createScanner();
+      } catch (IOException ioe) {
+        close();
+        throw new IOException("Error in creating LogReader", ioe);
+      }
     }
 
     private boolean atBeginning = true;
@@ -1003,7 +1018,7 @@ public class AggregatedLogFormat {
   }
 
   @Private
-  public static class ContainerLogsReader {
+  public static class ContainerLogsReader extends InputStream {
     private DataInputStream valueStream;
     private String currentLogType = null;
     private long currentLogLength = 0;

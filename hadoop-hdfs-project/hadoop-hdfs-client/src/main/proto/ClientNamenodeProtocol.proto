@@ -21,7 +21,7 @@
  * Please see http://wiki.apache.org/hadoop/Compatibility
  * for what changes are allowed for a *stable* .proto interface.
  */
-
+syntax="proto2";
 option java_package = "org.apache.hadoop.hdfs.protocol.proto";
 option java_outer_classname = "ClientNamenodeProtocolProtos";
 option java_generic_services = true;
@@ -35,6 +35,7 @@ import "xattr.proto";
 import "encryption.proto";
 import "inotify.proto";
 import "erasurecoding.proto";
+import "HAServiceProtocol.proto";
 
 /**
  * The ClientNamenodeProtocol Service defines the interface between a client 
@@ -82,6 +83,7 @@ message CreateRequestProto {
   repeated CryptoProtocolVersionProto cryptoProtocolVersion = 8;
   optional FsPermissionProto unmasked = 9;
   optional string ecPolicyName = 10;
+  optional string storagePolicy = 11;
 }
 
 message CreateResponseProto {
@@ -283,6 +285,18 @@ message GetListingResponseProto {
   optional DirectoryListingProto dirList = 1;
 }
 
+message GetBatchedListingRequestProto {
+  repeated string paths = 1;
+  required bytes startAfter = 2;
+  required bool needLocation = 3;
+}
+
+message GetBatchedListingResponseProto {
+  repeated BatchedDirectoryListingProto listings = 1;
+  required bool hasMore = 2;
+  required bytes startAfter = 3;
+}
+
 message GetSnapshottableDirListingRequestProto { // no input parameters
 }
 message GetSnapshottableDirListingResponseProto {
@@ -481,7 +495,6 @@ message RollingUpgradeInfoProto {
 message RollingUpgradeResponseProto {
   optional RollingUpgradeInfoProto rollingUpgradeInfo= 1;
 }
-
 message ListCorruptFileBlocksRequestProto {
   required string path = 1;
   optional string cookie = 2;
@@ -831,6 +844,27 @@ message ListOpenFilesResponseProto {
   repeated OpenFilesTypeProto types = 3;
 }
 
+message MsyncRequestProto {
+}
+
+message MsyncResponseProto {
+}
+
+message SatisfyStoragePolicyRequestProto {
+  required string src = 1;
+}
+
+message SatisfyStoragePolicyResponseProto {
+
+}
+
+message HAServiceStateRequestProto {
+}
+
+message HAServiceStateResponseProto {
+  required hadoop.common.HAServiceStateProto state = 1;
+}
+
 service ClientNamenodeProtocol {
   rpc getBlockLocations(GetBlockLocationsRequestProto)
       returns(GetBlockLocationsResponseProto);
@@ -865,6 +899,7 @@ service ClientNamenodeProtocol {
   rpc delete(DeleteRequestProto) returns(DeleteResponseProto);
   rpc mkdirs(MkdirsRequestProto) returns(MkdirsResponseProto);
   rpc getListing(GetListingRequestProto) returns(GetListingResponseProto);
+  rpc getBatchedListing (GetBatchedListingRequestProto) returns (GetBatchedListingResponseProto);
   rpc renewLease(RenewLeaseRequestProto) returns(RenewLeaseResponseProto);
   rpc recoverLease(RecoverLeaseRequestProto)
       returns(RecoverLeaseResponseProto);
@@ -995,6 +1030,8 @@ service ClientNamenodeProtocol {
       returns(SetErasureCodingPolicyResponseProto);
   rpc unsetErasureCodingPolicy(UnsetErasureCodingPolicyRequestProto)
       returns(UnsetErasureCodingPolicyResponseProto);
+  rpc getECTopologyResultForPolicies(GetECTopologyResultForPoliciesRequestProto)
+      returns(GetECTopologyResultForPoliciesResponseProto);
   rpc getCurrentEditLogTxid(GetCurrentEditLogTxidRequestProto)
       returns(GetCurrentEditLogTxidResponseProto);
   rpc getEditsFromTxid(GetEditsFromTxidRequestProto)
@@ -1017,4 +1054,10 @@ service ClientNamenodeProtocol {
       returns(GetQuotaUsageResponseProto);
   rpc listOpenFiles(ListOpenFilesRequestProto)
       returns(ListOpenFilesResponseProto);
+  rpc msync(MsyncRequestProto)
+      returns(MsyncResponseProto);
+  rpc satisfyStoragePolicy(SatisfyStoragePolicyRequestProto)
+      returns(SatisfyStoragePolicyResponseProto);
+  rpc getHAServiceState(HAServiceStateRequestProto)
+      returns(HAServiceStateResponseProto);
 }

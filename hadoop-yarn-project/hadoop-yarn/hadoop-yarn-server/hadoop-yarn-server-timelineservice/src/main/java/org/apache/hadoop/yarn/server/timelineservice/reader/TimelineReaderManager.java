@@ -26,6 +26,7 @@ import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.service.AbstractService;
+import org.apache.hadoop.yarn.api.records.timeline.TimelineHealth;
 import org.apache.hadoop.yarn.api.records.timelineservice.FlowActivityEntity;
 import org.apache.hadoop.yarn.api.records.timelineservice.FlowRunEntity;
 import org.apache.hadoop.yarn.api.records.timelineservice.TimelineEntity;
@@ -205,7 +206,28 @@ public class TimelineReaderManager extends AbstractService {
   public Set<String> getEntityTypes(TimelineReaderContext context)
       throws IOException{
     context.setClusterId(getClusterID(context.getClusterId(), getConfig()));
-    return reader.getEntityTypes(new TimelineReaderContext(context));
+    return reader.getEntityTypes(context);
+  }
+
+  /**
+   * The API to confirm is a User is allowed to read this data.
+   * @param callerUGI UserGroupInformation of the user
+   */
+  public boolean checkAccess(UserGroupInformation callerUGI) {
+    // TODO to be removed or modified once ACL story is played
+    if (!adminACLsManager.areACLsEnabled()) {
+      return true;
+    }
+    return callerUGI != null && adminACLsManager.isAdmin(callerUGI);
+  }
+
+  /**
+   * Check if reader connection is alive.
+   *
+   * @return boolean True if reader connection is alive, false otherwise.
+   */
+  public TimelineHealth getHealthStatus() {
+    return reader.getHealthStatus();
   }
 
   /**

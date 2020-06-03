@@ -18,12 +18,19 @@
 
 package org.apache.hadoop.yarn.server.router.clientrm;
 
+import static org.mockito.Mockito.mock;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import java.util.Map;
+
+import org.apache.hadoop.yarn.MockApps;
 import org.apache.hadoop.yarn.api.protocolrecords.GetApplicationReportRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.GetApplicationReportResponse;
+import org.apache.hadoop.yarn.api.protocolrecords.GetClusterMetricsRequest;
+import org.apache.hadoop.yarn.api.protocolrecords.GetClusterMetricsResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.KillApplicationRequest;
@@ -32,6 +39,8 @@ import org.apache.hadoop.yarn.api.protocolrecords.SubmitApplicationRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.SubmitApplicationResponse;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
+import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
+import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.server.federation.policies.manager.UniformBroadcastPolicyManager;
@@ -39,6 +48,8 @@ import org.apache.hadoop.yarn.server.federation.store.impl.MemoryFederationState
 import org.apache.hadoop.yarn.server.federation.store.records.SubClusterId;
 import org.apache.hadoop.yarn.server.federation.utils.FederationStateStoreFacade;
 import org.apache.hadoop.yarn.server.federation.utils.FederationStateStoreTestUtil;
+import org.apache.hadoop.yarn.server.resourcemanager.ResourceManager;
+import org.apache.hadoop.yarn.util.resource.Resources;
 import org.junit.Assert;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -130,16 +141,15 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
   @Test
   public void testGetNewApplication()
       throws YarnException, IOException, InterruptedException {
-    System.out.println("Test FederationClientInterceptor: Get New Application");
+    LOG.info("Test FederationClientInterceptor: Get New Application");
 
     GetNewApplicationRequest request = GetNewApplicationRequest.newInstance();
     GetNewApplicationResponse response = interceptor.getNewApplication(request);
 
     Assert.assertNotNull(response);
     Assert.assertNotNull(response.getApplicationId());
-    Assert.assertTrue(
-        response.getApplicationId().getClusterTimestamp() < NUM_SUBCLUSTER);
-    Assert.assertTrue(response.getApplicationId().getClusterTimestamp() >= 0);
+    Assert.assertTrue(response.getApplicationId()
+        .getClusterTimestamp() == ResourceManager.getClusterTimeStamp());
   }
 
   /**
@@ -149,14 +159,11 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
   @Test
   public void testSubmitApplication()
       throws YarnException, IOException, InterruptedException {
-    System.out.println("Test FederationClientInterceptor: Submit Application");
+    LOG.info("Test FederationClientInterceptor: Submit Application");
 
-    ApplicationId appId =
-        ApplicationId.newInstance(System.currentTimeMillis(), 1);
-    ApplicationSubmissionContext context = ApplicationSubmissionContext
-        .newInstance(appId, "", "", null, null, false, false, -1, null, null);
-    SubmitApplicationRequest request =
-        SubmitApplicationRequest.newInstance(context);
+    ApplicationId appId = ApplicationId.newInstance(System.currentTimeMillis(),
+        1);
+    SubmitApplicationRequest request = mockSubmitApplicationRequest(appId);
 
     SubmitApplicationResponse response = interceptor.submitApplication(request);
 
@@ -164,6 +171,20 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
     SubClusterId scIdResult = stateStoreUtil.queryApplicationHomeSC(appId);
     Assert.assertNotNull(scIdResult);
     Assert.assertTrue(subClusters.contains(scIdResult));
+  }
+
+  private SubmitApplicationRequest mockSubmitApplicationRequest(
+      ApplicationId appId) {
+    ContainerLaunchContext amContainerSpec = mock(ContainerLaunchContext.class);
+    ApplicationSubmissionContext context = ApplicationSubmissionContext
+        .newInstance(appId, MockApps.newAppName(), "q1",
+            Priority.newInstance(0), amContainerSpec, false, false, -1,
+            Resources.createResource(
+                YarnConfiguration.DEFAULT_RM_SCHEDULER_MINIMUM_ALLOCATION_MB),
+            "MockApp");
+    SubmitApplicationRequest request = SubmitApplicationRequest
+        .newInstance(context);
+    return request;
   }
 
   /**
@@ -174,15 +195,12 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
   @Test
   public void testSubmitApplicationMultipleSubmission()
       throws YarnException, IOException, InterruptedException {
-    System.out.println(
+    LOG.info(
         "Test FederationClientInterceptor: Submit Application - Multiple");
 
     ApplicationId appId =
         ApplicationId.newInstance(System.currentTimeMillis(), 1);
-    ApplicationSubmissionContext context = ApplicationSubmissionContext
-        .newInstance(appId, "", "", null, null, false, false, -1, null, null);
-    SubmitApplicationRequest request =
-        SubmitApplicationRequest.newInstance(context);
+    SubmitApplicationRequest request = mockSubmitApplicationRequest(appId);
 
     // First attempt
     SubmitApplicationResponse response = interceptor.submitApplication(request);
@@ -207,7 +225,7 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
   @Test
   public void testSubmitApplicationEmptyRequest()
       throws YarnException, IOException, InterruptedException {
-    System.out.println(
+    LOG.info(
         "Test FederationClientInterceptor: Submit Application - Empty");
     try {
       interceptor.submitApplication(null);
@@ -246,16 +264,12 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
   @Test
   public void testForceKillApplication()
       throws YarnException, IOException, InterruptedException {
-    System.out
-        .println("Test FederationClientInterceptor: Force Kill Application");
+    LOG.info("Test FederationClientInterceptor: Force Kill Application");
 
     ApplicationId appId =
         ApplicationId.newInstance(System.currentTimeMillis(), 1);
-    ApplicationSubmissionContext context = ApplicationSubmissionContext
-        .newInstance(appId, "", "", null, null, false, false, -1, null, null);
+    SubmitApplicationRequest request = mockSubmitApplicationRequest(appId);
 
-    SubmitApplicationRequest request =
-        SubmitApplicationRequest.newInstance(context);
     // Submit the application we are going to kill later
     SubmitApplicationResponse response = interceptor.submitApplication(request);
 
@@ -276,7 +290,7 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
   @Test
   public void testForceKillApplicationNotExists()
       throws YarnException, IOException, InterruptedException {
-    System.out.println("Test FederationClientInterceptor: "
+    LOG.info("Test FederationClientInterceptor: "
         + "Force Kill Application - Not Exists");
 
     ApplicationId appId =
@@ -299,7 +313,7 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
   @Test
   public void testForceKillApplicationEmptyRequest()
       throws YarnException, IOException, InterruptedException {
-    System.out.println(
+    LOG.info(
         "Test FederationClientInterceptor: Force Kill Application - Empty");
     try {
       interceptor.forceKillApplication(null);
@@ -325,16 +339,12 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
   @Test
   public void testGetApplicationReport()
       throws YarnException, IOException, InterruptedException {
-    System.out
-        .println("Test FederationClientInterceptor: Get Application Report");
+    LOG.info("Test FederationClientInterceptor: Get Application Report");
 
     ApplicationId appId =
         ApplicationId.newInstance(System.currentTimeMillis(), 1);
-    ApplicationSubmissionContext context = ApplicationSubmissionContext
-        .newInstance(appId, "", "", null, null, false, false, -1, null, null);
+    SubmitApplicationRequest request = mockSubmitApplicationRequest(appId);
 
-    SubmitApplicationRequest request =
-        SubmitApplicationRequest.newInstance(context);
     // Submit the application we want the report later
     SubmitApplicationResponse response = interceptor.submitApplication(request);
 
@@ -357,7 +367,7 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
   @Test
   public void testGetApplicationNotExists()
       throws YarnException, IOException, InterruptedException {
-    System.out.println(
+    LOG.info(
         "Test ApplicationClientProtocol: Get Application Report - Not Exists");
     ApplicationId appId =
         ApplicationId.newInstance(System.currentTimeMillis(), 1);
@@ -379,7 +389,7 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
   @Test
   public void testGetApplicationEmptyRequest()
       throws YarnException, IOException, InterruptedException {
-    System.out.println(
+    LOG.info(
         "Test FederationClientInterceptor: Get Application Report - Empty");
     try {
       interceptor.getApplicationReport(null);
@@ -400,4 +410,25 @@ public class TestFederationClientInterceptor extends BaseRouterClientRMTest {
     }
   }
 
+  @Test
+  public void testGetClusterMetricsRequest() throws YarnException, IOException {
+    LOG.info("Test FederationClientInterceptor : Get Cluster Metrics request");
+    // null request
+    GetClusterMetricsResponse response = interceptor.getClusterMetrics(null);
+    Assert.assertEquals(subClusters.size(),
+        response.getClusterMetrics().getNumNodeManagers());
+    // normal request.
+    response =
+        interceptor.getClusterMetrics(GetClusterMetricsRequest.newInstance());
+    Assert.assertEquals(subClusters.size(),
+        response.getClusterMetrics().getNumNodeManagers());
+
+    ClientMethod remoteMethod = new ClientMethod("getClusterMetrics",
+        new Class[] {GetClusterMetricsRequest.class},
+        new Object[] {GetClusterMetricsRequest.newInstance()});
+    Map<SubClusterId, GetClusterMetricsResponse> clusterMetrics =interceptor.
+        invokeConcurrent(new ArrayList<>(), remoteMethod,
+            GetClusterMetricsResponse.class);
+    Assert.assertEquals(true, clusterMetrics.isEmpty());
+  }
 }

@@ -23,8 +23,9 @@ import java.net.URI;
 import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hdfs.client.HdfsClientConfigKeys;
 import org.apache.hadoop.ipc.RPC;
+
+import static org.apache.hadoop.hdfs.client.HdfsClientConfigKeys.DFS_NAMENODE_RPC_ADDRESS_KEY;
 
 /**
  * A FailoverProxyProvider implementation which allows one to configure
@@ -41,9 +42,13 @@ public class ConfiguredFailoverProxyProvider<T> extends
 
   public ConfiguredFailoverProxyProvider(Configuration conf, URI uri,
       Class<T> xface, HAProxyFactory<T> factory) {
+    this(conf, uri, xface, factory, DFS_NAMENODE_RPC_ADDRESS_KEY);
+  }
+
+  public ConfiguredFailoverProxyProvider(Configuration conf, URI uri,
+      Class<T> xface, HAProxyFactory<T> factory, String addressKey) {
     super(conf, uri, xface, factory);
-    this.proxies = getProxyAddresses(uri,
-        HdfsClientConfigKeys.DFS_NAMENODE_RPC_ADDRESS_KEY);
+    this.proxies = getProxyAddresses(uri, addressKey);
   }
 
   /**

@@ -22,7 +22,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-import static org.mockito.Matchers.anyObject;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.spy;
@@ -40,10 +40,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.util.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -65,11 +65,11 @@ import org.apache.hadoop.hdfs.util.MD5FileUtils;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.test.GenericTestUtils;
 import org.apache.hadoop.test.GenericTestUtils.DelayAnswer;
-import org.apache.log4j.Level;
+import org.apache.hadoop.test.Whitebox;
+import org.slf4j.event.Level;
 import org.junit.Assert;
 import org.junit.Test;
 import org.mockito.Mockito;
-import org.mockito.internal.util.reflection.Whitebox;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
@@ -86,10 +86,10 @@ import org.mockito.stubbing.Answer;
  */
 public class TestSaveNamespace {
   static {
-    GenericTestUtils.setLogLevel(FSImage.LOG, Level.ALL);
+    GenericTestUtils.setLogLevel(FSImage.LOG, Level.TRACE);
   }
   
-  private static final Log LOG = LogFactory.getLog(TestSaveNamespace.class);
+  private static final Logger LOG = LoggerFactory.getLogger(TestSaveNamespace.class);
 
   private static class FaultySaveImage implements Answer<Void> {
     private int count = 0;
@@ -172,36 +172,36 @@ public class TestSaveNamespace {
       // The spy throws a RuntimeException when writing to the second directory
       doAnswer(new FaultySaveImage(true)).
           when(spyImage).saveFSImage(
-          anyObject(),
-          anyObject(), anyObject());
+          any(),
+          any(), any());
       shouldFail = false;
       break;
     case SAVE_SECOND_FSIMAGE_IOE:
       // The spy throws an IOException when writing to the second directory
       doAnswer(new FaultySaveImage(false)).
           when(spyImage).saveFSImage(
-          anyObject(),
-          anyObject(), anyObject());
+          any(),
+          any(), any());
       shouldFail = false;
       break;
     case SAVE_ALL_FSIMAGES:
       // The spy throws IOException in all directories
       doThrow(new RuntimeException("Injected")).
           when(spyImage).saveFSImage(
-          anyObject(),
-          anyObject(), anyObject());
+          any(),
+          any(), any());
       shouldFail = true;
       break;
     case WRITE_STORAGE_ALL:
       // The spy throws an exception before writing any VERSION files
       doAnswer(new FaultyWriteProperties(Fault.WRITE_STORAGE_ALL))
-          .when(spyStorage).writeProperties(anyObject());
+          .when(spyStorage).writeProperties(any());
       shouldFail = true;
       break;
     case WRITE_STORAGE_ONE:
       // The spy throws on exception on one particular storage directory
       doAnswer(new FaultyWriteProperties(Fault.WRITE_STORAGE_ONE))
-        .when(spyStorage).writeProperties(anyObject());
+        .when(spyStorage).writeProperties(any());
       shouldFail = false;
       break;
     default: fail("Unknown fail type");
@@ -332,7 +332,7 @@ public class TestSaveNamespace {
         try {
           fsn.close();
         } catch (Throwable t) {
-          LOG.fatal("Failed to shut down", t);
+          LOG.error("Failed to shut down", t);
         }
       }
     }
@@ -414,7 +414,7 @@ public class TestSaveNamespace {
         FSNamesystem.getNamespaceEditsDirs(conf));
 
     doThrow(new IOException("Injected fault: saveFSImage")).
-        when(spyImage).saveFSImage(anyObject(), anyObject(), anyObject());
+        when(spyImage).saveFSImage(any(), any(), any());
 
     try {
       doAnEdit(fsn, 1);
@@ -632,7 +632,7 @@ public class TestSaveNamespace {
       cluster.getNameNodeRpc().saveNamespace(0, 0);
       fs.setSafeMode(SafeModeAction.SAFEMODE_LEAVE);
     } finally {
-      IOUtils.cleanup(LOG, out, fs);
+      IOUtils.cleanupWithLogger(LOG, out, fs);
       cluster.shutdown();
     }
   }

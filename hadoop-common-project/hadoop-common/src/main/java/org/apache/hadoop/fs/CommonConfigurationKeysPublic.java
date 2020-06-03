@@ -72,6 +72,25 @@ public class CommonConfigurationKeysPublic {
   public static final String  FS_DU_INTERVAL_KEY = "fs.du.interval";
   /** Default value for FS_DU_INTERVAL_KEY */
   public static final long    FS_DU_INTERVAL_DEFAULT = 600000;
+
+  /**
+   * @see
+   * <a href="{@docRoot}/../hadoop-project-dist/hadoop-common/core-default.xml">
+   * core-default.xml</a>
+   */
+  public static final String FS_GETSPACEUSED_CLASSNAME =
+      "fs.getspaceused.classname";
+
+  /**
+   * @see
+   * <a href="{@docRoot}/../hadoop-project-dist/hadoop-common/core-default.xml">
+   * core-default.xml</a>
+   */
+  public static final String FS_GETSPACEUSED_JITTER_KEY =
+      "fs.getspaceused.jitterMillis";
+  /** Default value for FS_GETSPACEUSED_JITTER_KEY */
+  public static final long FS_GETSPACEUSED_JITTER_DEFAULT = 60000;
+
   /**
    * @see
    * <a href="{@docRoot}/../hadoop-project-dist/hadoop-common/core-default.xml">
@@ -398,7 +417,7 @@ public class CommonConfigurationKeysPublic {
   public static final String  IPC_SERVER_LISTEN_QUEUE_SIZE_KEY =
     "ipc.server.listen.queue.size";
   /** Default value for IPC_SERVER_LISTEN_QUEUE_SIZE_KEY */
-  public static final int     IPC_SERVER_LISTEN_QUEUE_SIZE_DEFAULT = 128;
+  public static final int     IPC_SERVER_LISTEN_QUEUE_SIZE_DEFAULT = 256;
   /**
    * @see
    * <a href="{@docRoot}/../hadoop-project-dist/hadoop-common/core-default.xml">
@@ -425,6 +444,15 @@ public class CommonConfigurationKeysPublic {
     "ipc.server.tcpnodelay";
   /** Default value for IPC_SERVER_TCPNODELAY_KEY */
   public static final boolean IPC_SERVER_TCPNODELAY_DEFAULT = true;
+  /**
+   * @see
+   * <a href="{@docRoot}/../hadoop-project-dist/hadoop-common/core-default.xml">
+   * core-default.xml</a>
+   */
+  public static final String  IPC_SERVER_REUSEADDR_KEY =
+      "ipc.server.reuseaddr";
+  /** Default value for IPC_SERVER_REUSEADDR_KEY. */
+  public static final boolean IPC_SERVER_REUSEADDR_DEFAULT = true;
   /**
    * @see
    * <a href="{@docRoot}/../hadoop-project-dist/hadoop-common/core-default.xml">
@@ -630,6 +658,8 @@ public class CommonConfigurationKeysPublic {
    */
   public static final String HADOOP_TOKEN_FILES =
       "hadoop.token.files";
+  public static final String HADOOP_TOKENS =
+      "hadoop.tokens";
   public static final String HADOOP_HTTP_AUTHENTICATION_TYPE =
     "hadoop.http.authentication.type";
 
@@ -643,6 +673,18 @@ public class CommonConfigurationKeysPublic {
   /** Default value for HADOOP_KERBEROS_MIN_SECONDS_BEFORE_RELOGIN */
   public static final int HADOOP_KERBEROS_MIN_SECONDS_BEFORE_RELOGIN_DEFAULT =
           60;
+
+  /**
+   * @see
+   * <a href="{@docRoot}/../hadoop-project-dist/hadoop-common/core-default.xml">
+   * core-default.xml</a>
+   */
+  public static final String HADOOP_KERBEROS_KEYTAB_LOGIN_AUTORENEWAL_ENABLED =
+          "hadoop.kerberos.keytab.login.autorenewal.enabled";
+  /** Default value for HADOOP_KERBEROS_KEYTAB_LOGIN_AUTORENEWAL_ENABLED. */
+  public static final boolean
+          HADOOP_KERBEROS_KEYTAB_LOGIN_AUTORENEWAL_ENABLED_DEFAULT = false;
+
   /**
    * @see
    * <a href="{@docRoot}/../hadoop-project-dist/hadoop-common/core-default.xml">
@@ -908,10 +950,27 @@ public class CommonConfigurationKeysPublic {
           "fs.s3a.*.server-side-encryption.key",
           "fs.azure\\.account.key.*",
           "credential$",
-          "oauth.*token$",
+          "oauth.*secret",
+          "oauth.*password",
+          "oauth.*token",
           HADOOP_SECURITY_SENSITIVE_CONFIG_KEYS);
+
+  /**
+   * @deprecated Please use
+   * {@link CommonConfigurationKeysPublic#HADOOP_TAGS_SYSTEM} instead
+   * See https://issues.apache.org/jira/browse/HADOOP-15474
+   */
   public static final String HADOOP_SYSTEM_TAGS = "hadoop.system.tags";
+
+  /**
+   * @deprecated Please use
+   * {@link CommonConfigurationKeysPublic#HADOOP_TAGS_CUSTOM} instead
+   * See https://issues.apache.org/jira/browse/HADOOP-15474
+   */
   public static final String HADOOP_CUSTOM_TAGS = "hadoop.custom.tags";
+
+  public static final String HADOOP_TAGS_SYSTEM = "hadoop.tags.system";
+  public static final String HADOOP_TAGS_CUSTOM = "hadoop.tags.custom";
 
   /** Configuration option for the shutdown hook manager shutdown time:
    *  {@value}. */
@@ -921,5 +980,22 @@ public class CommonConfigurationKeysPublic {
   /** Default shutdown hook timeout: {@value} seconds. */
   public static final long SERVICE_SHUTDOWN_TIMEOUT_DEFAULT = 30;
 
+  /**
+   * @see
+   * <a href="{@docRoot}/../hadoop-project-dist/hadoop-common/core-default.xml">
+   * core-default.xml</a>
+   */
+  public static final String HADOOP_PROMETHEUS_ENABLED =
+      "hadoop.prometheus.endpoint.enabled";
+  public static final boolean HADOOP_PROMETHEUS_ENABLED_DEFAULT = false;
+
+  /**
+   * @see
+   * <a href="{@docRoot}/../hadoop-project-dist/hadoop-common/core-default.xml">
+   * core-default.xml</a>
+   */
+  public static final String HADOOP_HTTP_IDLE_TIMEOUT_MS_KEY =
+      "hadoop.http.idle_timeout.ms";
+  public static final int HADOOP_HTTP_IDLE_TIMEOUT_MS_DEFAULT = 1000;
 }
 

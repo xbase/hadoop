@@ -19,7 +19,7 @@
 package org.apache.hadoop.yarn.server.resourcemanager.webapp;
 
 import com.google.inject.Inject;
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.yarn.api.records.NodeState;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
@@ -233,12 +233,12 @@ class NodesPage extends RmView {
   private String nodesTableInit() {
     StringBuilder b = tableInit().append(", 'aaData': nodeTableData")
         .append(", bDeferRender: true").append(", bProcessing: true")
-        .append(", aoColumnDefs: [");
-    b.append("{'bSearchable': false, 'aTargets': [ 7 ]}");
-    b.append(", {'sType': 'title-numeric', 'bSearchable': false, "
-        + "'aTargets': [ 9, 10 ] }");
-    b.append(", {'sType': 'title-numeric', 'aTargets': [ 5 ]}");
-    b.append("]}");
+        .append(", aoColumnDefs: [")
+        .append("{'bSearchable': false, 'aTargets': [ 7 ]}")
+        .append(", {'sType': 'title-numeric', 'bSearchable': false, "
+            + "'aTargets': [ 9, 10 ] }")
+        .append(", {'sType': 'title-numeric', 'aTargets': [ 5 ]}")
+        .append("]}");
     return b.toString();
   }
 }

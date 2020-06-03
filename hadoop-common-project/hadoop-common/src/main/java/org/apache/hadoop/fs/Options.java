@@ -55,6 +55,9 @@ public final class Options {
         ChecksumOpt csumOpt) {
       return new ChecksumParam(csumOpt);
     }
+    public static Progress progress(Progressable prog) {
+      return new Progress(prog);
+    }
     public static Perms perms(FsPermission perm) {
       return new Perms(perm);
     }
@@ -287,7 +290,7 @@ public final class Options {
      * @param defaultOpt Default checksum option
      * @param userOpt User-specified checksum option. Ignored if null.
      * @param userBytesPerChecksum User-specified bytesPerChecksum
-     *                Ignored if < 0.
+     *                Ignored if {@literal <} 0.
      */
     public static ChecksumOpt processChecksumOpt(ChecksumOpt defaultOpt, 
         ChecksumOpt userOpt, int userBytesPerChecksum) {

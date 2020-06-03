@@ -199,6 +199,12 @@ public class DockerRunCommand extends DockerCommand {
     return this;
   }
 
+  public DockerRunCommand setServiceMode(boolean serviceMode) {
+    String value = Boolean.toString(serviceMode);
+    super.addCommandArguments("service-mode", value);
+    return this;
+  }
+
   /**
    * Check if user defined environment variables are empty.
    *
@@ -227,5 +233,11 @@ public class DockerRunCommand extends DockerCommand {
    */
   public final void addEnv(Map<String, String> environment) {
     userEnv.putAll(environment);
+  }
+
+  public DockerRunCommand setYarnSysFS(boolean toggle) {
+    String value = Boolean.toString(toggle);
+    super.addCommandArguments("use-yarn-sysfs", value);
+    return this;
   }
 }

@@ -235,8 +235,13 @@ header.bs-docs-nav, header.bs-docs-nav .navbar-brand {
     content: "\e013";
 }
 
+.dfshealth-node-decommissioning:before {
+    color: #5fa341;
+    content: "\e090";
+}
+
 .dfshealth-node-decommissioned:before {
-    color: #bc5f04;
+    color: #eea236;
     content: "\e090";
 }
 
@@ -246,7 +251,7 @@ header.bs-docs-nav, header.bs-docs-nav .navbar-brand {
 }
 
 .dfshealth-node-entering-maintenance:before {
-    color: #eea236;
+    color: #5fa341;
     content: "\e136";
 }
 
@@ -256,8 +261,8 @@ header.bs-docs-nav, header.bs-docs-nav .navbar-brand {
 }
 
 .dfshealth-node-down-decommissioned:before {
-    color: #2e6da6;
-    content: "\e017";
+    color: #c7254e;
+    content: "\e090";
 }
 
 .dfshealth-node-down-maintenance:before {
@@ -278,6 +283,47 @@ header.bs-docs-nav, header.bs-docs-nav .navbar-brand {
 
 .dfshealth-node-legend li:before {
     padding-right: 5pt;
+}
+
+.dfshealth-namenode-icon:before {
+    font-size: 10pt;
+    padding-right: 1pt;
+    font-family: 'Glyphicons Halflings';
+    font-style: normal;
+    font-weight: normal;
+    line-height: 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.dfshealth-namenode-active:before {
+    color: #5fa341;
+    content: "\e013";
+}
+
+.dfshealth-namenode-observer:before {
+    color: #CCCC00;
+    content: "\e013";
+}
+
+.dfshealth-namenode-unavailable:before {
+    color: #c7254e;
+    content: "\e101";
+}
+
+.dfshealth-namenode-standby:before {
+    color: #2e6da6;
+    content: "\e017";
+}
+
+.dfshealth-namenode-safemode:before {
+    color: #bc5f04;
+    content: "\e090";
+}
+
+.dfshealth-namenode-disabled:before {
+    color: #eea236;
+    content: "\e136";
 }
 
 .explorer-entry .explorer-browse-links { cursor: pointer; }
@@ -307,6 +353,13 @@ header.bs-docs-nav, header.bs-docs-nav .navbar-brand {
   min-width: 75px;
   float: right;
   left: 75px;
+}
+
+.datanodestatus{
+    width:75px;
+    height:30px;
+    color: #555;
+    display: inline-block;
 }
 
 .bar rect {

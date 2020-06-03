@@ -31,6 +31,7 @@ import org.apache.hadoop.hdfs.client.HdfsAdmin;
 
 import static org.apache.hadoop.fs.CommonConfigurationKeys.HA_HM_RPC_TIMEOUT_DEFAULT;
 import static org.apache.hadoop.fs.CommonConfigurationKeys.HA_HM_RPC_TIMEOUT_KEY;
+import static org.apache.hadoop.metrics2.source.JvmMetricsInfo.GcTimePercentage;
 import static org.apache.hadoop.test.MetricsAsserts.assertCounter;
 import static org.apache.hadoop.test.MetricsAsserts.assertCounterGt;
 import static org.apache.hadoop.test.MetricsAsserts.assertGauge;
@@ -49,8 +50,8 @@ import java.util.List;
 import java.util.Random;
 import com.google.common.collect.ImmutableList;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
@@ -88,7 +89,7 @@ import org.apache.hadoop.metrics2.MetricsSource;
 import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
 import org.apache.hadoop.test.GenericTestUtils;
 import org.apache.hadoop.test.MetricsAsserts;
-import org.apache.log4j.Level;
+import org.slf4j.event.Level;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -103,12 +104,14 @@ public class TestNameNodeMetrics {
     new Path("/testNameNodeMetrics");
   private static final String NN_METRICS = "NameNodeActivity";
   private static final String NS_METRICS = "FSNamesystem";
+  private static final String JVM_METRICS = "JvmMetrics";
   private static final int BLOCK_SIZE = 1024 * 1024;
   private static final ErasureCodingPolicy EC_POLICY =
       SystemErasureCodingPolicies.getByID(
           SystemErasureCodingPolicies.XOR_2_1_POLICY_ID);
 
-  public static final Log LOG = LogFactory.getLog(TestNameNodeMetrics.class);
+  public static final Logger LOG =
+      LoggerFactory.getLogger(TestNameNodeMetrics.class);
   
   // Number of datanodes in the cluster
   private static final int DATANODE_COUNT = EC_POLICY.getNumDataUnits() +
@@ -139,7 +142,7 @@ public class TestNameNodeMetrics {
     // Enable stale DataNodes checking
     CONF.setBoolean(
         DFSConfigKeys.DFS_NAMENODE_AVOID_STALE_DATANODE_FOR_READ_KEY, true);
-    GenericTestUtils.setLogLevel(LogFactory.getLog(MetricsAsserts.class),
+    GenericTestUtils.setLogLevel(LoggerFactory.getLogger(MetricsAsserts.class),
         Level.DEBUG);
   }
   
@@ -220,6 +223,15 @@ public class TestNameNodeMetrics {
     // considered.
     assert (capacityUsed + capacityRemaining + capacityUsedNonDFS <=
         capacityTotal);
+  }
+
+  /**
+   * Test the GcTimePercentage could be got successfully.
+   */
+  @Test
+  public void testGcTimePercentageMetrics() throws Exception {
+    MetricsRecordBuilder rb = getMetrics(JVM_METRICS);
+    MetricsAsserts.getIntGauge(GcTimePercentage.name(), rb);
   }
 
   /** Test metrics indicating the number of stale DataNodes */
@@ -472,7 +484,7 @@ public class TestNameNodeMetrics {
 
     verifyZeroMetrics();
     verifyAggregatedMetricsTally();
-
+    BlockManagerTestUtil.stopRedundancyThread(bm);
     // Corrupt first replica of the block
     LocatedBlock block = NameNodeAdapter.getBlockLocations(
         cluster.getNameNode(), file.toString(), 0, 1).get(0);
@@ -561,7 +573,7 @@ public class TestNameNodeMetrics {
 
     verifyZeroMetrics();
     verifyAggregatedMetricsTally();
-
+    BlockManagerTestUtil.stopRedundancyThread(bm);
     // Corrupt first replica of the block
     LocatedBlocks lbs = fs.getClient().getNamenode().getBlockLocations(
         ecFile.toString(), 0, fileLen);

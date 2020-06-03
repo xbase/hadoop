@@ -19,15 +19,14 @@
 package org.apache.hadoop.security.token;
 
 import com.google.common.collect.Maps;
-import com.google.protobuf.ByteString;
 import com.google.common.primitives.Bytes;
 
 import org.apache.commons.codec.binary.Base64;
+import org.apache.hadoop.HadoopIllegalArgumentException;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.*;
-import org.apache.hadoop.security.proto.SecurityProtos.TokenProto;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,6 +66,14 @@ public class Token<T extends TokenIdentifier> implements Writable {
     identifier = id.getBytes();
     kind = id.getKind();
     service = new Text();
+  }
+
+  public void setID(byte[] bytes) {
+    identifier = bytes;
+  }
+
+  public void setPassword(byte[] newPassword) {
+    password = newPassword;
   }
 
   /**
@@ -109,32 +116,6 @@ public class Token<T extends TokenIdentifier> implements Writable {
   }
 
   /**
-   * Construct a Token from a TokenProto.
-   * @param tokenPB the TokenProto object
-   */
-  public Token(TokenProto tokenPB) {
-    this.identifier = tokenPB.getIdentifier().toByteArray();
-    this.password = tokenPB.getPassword().toByteArray();
-    this.kind = new Text(tokenPB.getKindBytes().toByteArray());
-    this.service = new Text(tokenPB.getServiceBytes().toByteArray());
-  }
-
-  /**
-   * Construct a TokenProto from this Token instance.
-   * @return a new TokenProto object holding copies of data in this instance
-   */
-  public TokenProto toTokenProto() {
-    return TokenProto.newBuilder().
-        setIdentifier(ByteString.copyFrom(this.getIdentifier())).
-        setPassword(ByteString.copyFrom(this.getPassword())).
-        setKindBytes(ByteString.copyFrom(
-            this.getKind().getBytes(), 0, this.getKind().getLength())).
-        setServiceBytes(ByteString.copyFrom(
-            this.getService().getBytes(), 0, this.getService().getLength())).
-        build();
-  }
-
-  /**
    * Get the token identifier's byte representation.
    * @return the token identifier's byte representation
    */
@@ -156,7 +137,7 @@ public class Token<T extends TokenIdentifier> implements Writable {
           try {
             TokenIdentifier id = tokenIdentifiers.next();
             tokenKindMap.put(id.getKind(), id.getClass());
-          } catch (ServiceConfigurationError e) {
+          } catch (ServiceConfigurationError | LinkageError e) {
             // failure to load a token implementation
             // log at debug and continue.
             LOG.debug("Failed to load token identifier implementation", e);
@@ -372,6 +353,10 @@ public class Token<T extends TokenIdentifier> implements Writable {
    */
   private static void decodeWritable(Writable obj,
                                      String newValue) throws IOException {
+    if (newValue == null) {
+      throw new HadoopIllegalArgumentException(
+              "Invalid argument, newValue is null");
+    }
     Base64 decoder = new Base64(0, null, true);
     DataInputBuffer buf = new DataInputBuffer();
     byte[] decoded = decoder.decode(newValue);
@@ -451,11 +436,11 @@ public class Token<T extends TokenIdentifier> implements Writable {
   @Override
   public String toString() {
     StringBuilder buffer = new StringBuilder();
-    buffer.append("Kind: ");
-    buffer.append(kind.toString());
-    buffer.append(", Service: ");
-    buffer.append(service.toString());
-    buffer.append(", Ident: ");
+    buffer.append("Kind: ")
+        .append(kind.toString())
+        .append(", Service: ")
+        .append(service.toString())
+        .append(", Ident: ");
     identifierToString(buffer);
     return buffer.toString();
   }

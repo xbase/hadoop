@@ -17,8 +17,8 @@
  */
 package org.apache.hadoop.hdfs;
 
-import org.apache.commons.lang.builder.EqualsBuilder;
-import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.commons.lang3.builder.EqualsBuilder;
+import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hdfs.protocol.ExtendedBlock;
 
@@ -76,6 +76,6 @@ final public class ExtendedBlockId {
 
   @Override
   public String toString() {
-    return String.valueOf(blockId) + "_" + bpId;
+    return blockId + "_" + bpId;
   }
 }

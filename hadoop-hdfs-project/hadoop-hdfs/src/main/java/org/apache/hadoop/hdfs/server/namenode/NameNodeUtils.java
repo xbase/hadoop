@@ -70,7 +70,7 @@ public final class NameNodeUtils {
     final Collection<String> nameservices =
         DFSUtilClient.getNameServiceIds(conf);
 
-    final String nnAddr = conf.get(FS_DEFAULT_NAME_KEY);
+    final String nnAddr = conf.getTrimmed(FS_DEFAULT_NAME_KEY);
     if (nnAddr == null) {
       // default fs is not set.
       return null;
@@ -112,7 +112,7 @@ public final class NameNodeUtils {
     }
 
     if (port > 0) {
-      return currentNnAddress;
+       return currentNnAddress;
     } else {
       // the port is missing or 0. Figure out real bind address later.
       return null;

@@ -18,7 +18,7 @@
 
 package org.apache.hadoop.mapreduce.v2.app.job.impl;
 
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -203,7 +203,7 @@ public class TestJobImpl {
   public void testCheckJobCompleteSuccess() throws Exception {
     Configuration conf = new Configuration();
     conf.set(MRJobConfig.MR_AM_STAGING_DIR, stagingDir);
-    AsyncDispatcher dispatcher = new AsyncDispatcher();
+    DrainDispatcher dispatcher = new DrainDispatcher();
     dispatcher.init(conf);
     dispatcher.start();
     CyclicBarrier syncBarrier = new CyclicBarrier(2);
@@ -225,6 +225,11 @@ public class TestJobImpl {
         JobEventType.JOB_MAP_TASK_RESCHEDULED));
     assertJobState(job, JobStateInternal.COMMITTING);
 
+    job.handle(new JobEvent(job.getID(),
+        JobEventType.JOB_TASK_COMPLETED));
+    dispatcher.await();
+    assertJobState(job, JobStateInternal.COMMITTING);
+
     // let the committer complete and verify the job succeeds
     syncBarrier.await();
     assertJobState(job, JobStateInternal.SUCCEEDED);
@@ -235,6 +240,11 @@ public class TestJobImpl {
 
     job.handle(new JobEvent(job.getID(), 
         JobEventType.JOB_MAP_TASK_RESCHEDULED));
+    assertJobState(job, JobStateInternal.SUCCEEDED);
+
+    job.handle(new JobEvent(job.getID(),
+        JobEventType.JOB_TASK_COMPLETED));
+    dispatcher.await();
     assertJobState(job, JobStateInternal.SUCCEEDED);
     
     dispatcher.stop();
@@ -499,6 +509,8 @@ public class TestJobImpl {
     // not initializing dispatcher to avoid potential race condition between
     // the dispatcher thread & test thread - see MAPREDUCE-6831
     AsyncDispatcher dispatcher = new AsyncDispatcher();
+    dispatcher.init(conf);
+
 
     OutputCommitter committer = new StubbedOutputCommitter() {
       @Override
@@ -959,6 +971,7 @@ public class TestJobImpl {
   public void testJobPriorityUpdate() throws Exception {
     Configuration conf = new Configuration();
     AsyncDispatcher dispatcher = new AsyncDispatcher();
+    dispatcher.init(conf);
     Priority submittedPriority = Priority.newInstance(5);
 
     AppContext mockContext = mock(AppContext.class);

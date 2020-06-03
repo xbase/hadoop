@@ -20,8 +20,14 @@ package org.apache.hadoop.yarn.server.resourcemanager.webapp;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+
+import static org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacitySchedulerConfiguration.DOT;
+import static org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacitySchedulerConfiguration.AUTO_CREATED_LEAF_QUEUE_TEMPLATE_PREFIX;
+import static org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacitySchedulerConfiguration.CAPACITY;
+import static org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacitySchedulerConfiguration.PREFIX;
 
 import java.io.StringReader;
 
@@ -33,6 +39,8 @@ import org.apache.hadoop.http.JettyUtils;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.resourcemanager.MockRM;
+import org.apache.hadoop.yarn.server.resourcemanager.MockRMAppSubmissionData;
+import org.apache.hadoop.yarn.server.resourcemanager.MockRMAppSubmitter;
 import org.apache.hadoop.yarn.server.resourcemanager.ResourceManager;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ResourceScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler;
@@ -77,6 +85,8 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
     int numApplications;
     String queueName;
     String state;
+    boolean isAbsoluteResource;
+    boolean autoCreateChildQueueEnabled;
   }
 
   private class LeafQueueInfo extends QueueInfo {
@@ -87,6 +97,8 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
     int maxApplicationsPerUser;
     int userLimit;
     float userLimitFactor;
+    long defaultApplicationLifetime;
+    long maxApplicationLifetime;
   }
 
   private static class WebServletModule extends ServletModule {
@@ -100,6 +112,8 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
       conf = new YarnConfiguration(csConf);
       conf.setClass(YarnConfiguration.RM_SCHEDULER, CapacityScheduler.class,
 		    ResourceScheduler.class);
+      conf.set(YarnConfiguration.RM_PLACEMENT_CONSTRAINTS_HANDLER,
+          YarnConfiguration.SCHEDULER_RM_PLACEMENT_CONSTRAINTS_HANDLER);
       rm = new MockRM(conf);
       bind(ResourceManager.class).toInstance(rm);
       serve("/*").with(GuiceContainer.class);
@@ -125,12 +139,17 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
     final String B = CapacitySchedulerConfiguration.ROOT + ".b";
     config.setCapacity(B, 89.5f);
 
+    final String C = CapacitySchedulerConfiguration.ROOT + ".c";
+    config.setCapacity(C, "[memory=1024]");
+
     // Define 2nd-level queues
     final String A1 = A + ".a1";
     final String A2 = A + ".a2";
     config.setQueues(A, new String[] {"a1", "a2"});
     config.setCapacity(A1, 30);
     config.setMaximumCapacity(A1, 50);
+    config.setMaximumLifetimePerQueue(A2, 100);
+    config.setDefaultLifetimePerQueue(A2, 50);
 
     config.setUserLimitFactor(A1, 100.0f);
     config.setCapacity(A2, 70);
@@ -146,12 +165,18 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
     config.setUserLimitFactor(B2, 100.0f);
     config.setCapacity(B3, 0.5f);
     config.setUserLimitFactor(B3, 100.0f);
-    
-    config.setQueues(A1, new String[] {"a1a", "a1b"});
+
+    config.setQueues(A1, new String[] {"a1a", "a1b", "a1c"});
     final String A1A = A1 + ".a1a";
-    config.setCapacity(A1A, 85);
+    config.setCapacity(A1A, 65);
     final String A1B = A1 + ".a1b";
     config.setCapacity(A1B, 15);
+    final String A1C = A1 + ".a1c";
+    config.setCapacity(A1C, 20);
+
+    config.setAutoCreateChildQueueEnabled(A1C, true);
+    config.setInt(PREFIX + A1C + DOT + AUTO_CREATED_LEAF_QUEUE_TEMPLATE_PREFIX
+        + DOT + CAPACITY, 50);
   }
 
   @Before
@@ -254,7 +279,7 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
     }
   }
 
-  public void verifySubQueueXML(Element qElem, String q, 
+  public void verifySubQueueXML(Element qElem, String q,
       float parentAbsCapacity, float parentAbsMaxCapacity)
       throws Exception {
     NodeList children = qElem.getChildNodes();
@@ -282,6 +307,10 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
         WebServicesTestUtils.getXmlInt(qElem, "numApplications");
     qi.queueName = WebServicesTestUtils.getXmlString(qElem, "queueName");
     qi.state = WebServicesTestUtils.getXmlString(qElem, "state");
+    qi.autoCreateChildQueueEnabled = WebServicesTestUtils.getXmlBoolean(qElem,
+        "autoCreateChildQueueEnabled");
+    qi.isAbsoluteResource = WebServicesTestUtils.getXmlBoolean(qElem,
+        "isAbsoluteResource");
     verifySubQueueGeneric(q, qi, parentAbsCapacity, parentAbsMaxCapacity);
     if (hasSubQueues) {
       for (int j = 0; j < children.getLength(); j++) {
@@ -296,6 +325,14 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
           }
         }
       }
+    } else if (qi.autoCreateChildQueueEnabled) {
+      assertEquals("queueName doesn't match", "a1c", qi.queueName);
+      String capacityStr = WebServicesTestUtils.getPropertyValue(qElem,
+          "leafQueueTemplate", AUTO_CREATED_LEAF_QUEUE_TEMPLATE_PREFIX
+          + DOT + CAPACITY);
+      int capacity = Integer.parseInt(capacityStr);
+      assertEquals(AUTO_CREATED_LEAF_QUEUE_TEMPLATE_PREFIX + DOT
+          + CAPACITY + " doesn't match", 50, capacity);
     } else {
       LeafQueueInfo lqi = (LeafQueueInfo) qi;
       lqi.numActiveApplications =
@@ -311,32 +348,54 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
       lqi.userLimit = WebServicesTestUtils.getXmlInt(qElem, "userLimit");
       lqi.userLimitFactor =
           WebServicesTestUtils.getXmlFloat(qElem, "userLimitFactor");
+      lqi.defaultApplicationLifetime =
+          WebServicesTestUtils.getXmlLong(qElem, "defaultApplicationLifetime");
+      lqi.maxApplicationLifetime =
+          WebServicesTestUtils.getXmlLong(qElem, "maxApplicationLifetime");
       verifyLeafQueueGeneric(q, lqi);
     }
   }
 
   private void verifyClusterScheduler(JSONObject json) throws JSONException,
       Exception {
-    assertEquals("incorrect number of elements", 1, json.length());
+    assertEquals("incorrect number of elements in: " + json, 1, json.length());
     JSONObject info = json.getJSONObject("scheduler");
-    assertEquals("incorrect number of elements", 1, info.length());
+    assertEquals("incorrect number of elements in: " + info, 1, info.length());
     info = info.getJSONObject("schedulerInfo");
-    assertEquals("incorrect number of elements", 8, info.length());
+    assertEquals("incorrect number of elements in: " + info, 12, info.length());
     verifyClusterSchedulerGeneric(info.getString("type"),
         (float) info.getDouble("usedCapacity"),
         (float) info.getDouble("capacity"),
         (float) info.getDouble("maxCapacity"), info.getString("queueName"));
     JSONObject health = info.getJSONObject("health");
     assertNotNull(health);
-    assertEquals("incorrect number of elements", 3, health.length());
+    assertEquals("incorrect number of elements in: " + health, 3,
+        health.length());
+    JSONArray operationsInfo = health.getJSONArray("operationsInfo");
+    assertEquals("incorrect number of elements in: " + health, 4,
+        operationsInfo.length());
+    JSONArray lastRunDetails = health.getJSONArray("lastRunDetails");
+    assertEquals("incorrect number of elements in: " + health, 3,
+        lastRunDetails.length());
+
+    JSONObject maximumAllocation = info.getJSONObject("maximumAllocation");
+    assertEquals("8192", maximumAllocation.getString("memory"));
+    assertEquals("4", maximumAllocation.getString("vCores"));
+
+    JSONObject queueAcls = info.getJSONObject("queueAcls");
+    assertEquals(1, queueAcls.length());
+
+    assertEquals("0", info.getString("queuePriority"));
+    assertEquals("utilization", info.getString("orderingPolicyInfo"));
 
     JSONArray arr = info.getJSONObject("queues").getJSONArray("queue");
-    assertEquals("incorrect number of elements", 2, arr.length());
+    assertEquals("incorrect number of elements in: " + arr, 2, arr.length());
 
     // test subqueues
     for (int i = 0; i < arr.length(); i++) {
       JSONObject obj = arr.getJSONObject(i);
-      String q = CapacitySchedulerConfiguration.ROOT + "." + obj.getString("queueName");
+      String q = CapacitySchedulerConfiguration.ROOT + "." +
+              obj.getString("queueName");
       verifySubQueue(obj, q, 100, 100);
     }
   }
@@ -351,13 +410,13 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
     assertTrue("queueName doesn't match", "root".matches(queueName));
   }
 
-  private void verifySubQueue(JSONObject info, String q, 
+  private void verifySubQueue(JSONObject info, String q,
       float parentAbsCapacity, float parentAbsMaxCapacity)
       throws JSONException, Exception {
-    int numExpectedElements = 20;
+    int numExpectedElements = 27;
     boolean isParentQueue = true;
     if (!info.has("queues")) {
-      numExpectedElements = 35;
+      numExpectedElements = 45;
       isParentQueue = false;
     }
     assertEquals("incorrect number of elements", numExpectedElements, info.length());
@@ -375,7 +434,10 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
 
     verifySubQueueGeneric(q, qi, parentAbsCapacity, parentAbsMaxCapacity);
 
-    if (isParentQueue) {
+    // Separate Condition for Managed Parent Queue
+    if (qi.queueName.equals("a1c")) {
+      assertTrue(info.getBoolean("autoCreateChildQueueEnabled"));
+    } else if (isParentQueue) {
       JSONArray arr = info.getJSONObject("queues").getJSONArray("queue");
       // test subqueues
       for (int i = 0; i < arr.length(); i++) {
@@ -383,6 +445,17 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
         String q2 = q + "." + obj.getString("queueName");
         verifySubQueue(obj, q2, qi.absoluteCapacity, qi.absoluteMaxCapacity);
       }
+
+      JSONObject maximumAllocation = info.getJSONObject("maximumAllocation");
+      assertEquals("8192", maximumAllocation.getString("memory"));
+      assertEquals("4", maximumAllocation.getString("vCores"));
+
+      JSONObject queueAcls = info.getJSONObject("queueAcls");
+      assertEquals(1, queueAcls.length());
+
+      assertEquals("0", info.getString("queuePriority"));
+      assertEquals("utilization", info.getString("orderingPolicyInfo"));
+      assertFalse(info.getBoolean("autoCreateChildQueueEnabled"));
     } else {
       Assert.assertEquals("\"type\" field is incorrect",
           "capacitySchedulerLeafQueueInfo", info.getString("type"));
@@ -394,6 +467,9 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
       lqi.maxApplicationsPerUser = info.getInt("maxApplicationsPerUser");
       lqi.userLimit = info.getInt("userLimit");
       lqi.userLimitFactor = (float) info.getDouble("userLimitFactor");
+      lqi.defaultApplicationLifetime =
+          info.getLong("defaultApplicationLifetime");
+      lqi.maxApplicationLifetime = info.getLong("maxApplicationLifetime");
       verifyLeafQueueGeneric(q, lqi);
       // resourcesUsed and users (per-user resources used) are checked in
       // testPerUserResource()
@@ -428,6 +504,14 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
         + " expected: " + q, qshortName.matches(info.queueName));
     assertTrue("state doesn't match",
         (csConf.getState(q).toString()).matches(info.state));
+    if (q.equals("c")) {
+      assertTrue("c queue is not configured in Absolute resource",
+          info.isAbsoluteResource);
+    } else {
+      assertFalse(info.queueName
+          + " queue is not configured in Absolute resource",
+          info.isAbsoluteResource);
+    }
 
   }
 
@@ -458,9 +542,18 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
         info.userLimit);
     assertEquals("userLimitFactor doesn't match",
         csConf.getUserLimitFactor(q), info.userLimitFactor, 1e-3f);
+
+    if (q.equals("root.a.a2")) {
+      assertEquals("defaultApplicationLifetime doesn't match",
+          csConf.getDefaultLifetimePerQueue(q),
+          info.defaultApplicationLifetime);
+      assertEquals("maxApplicationLifetime doesn't match",
+          csConf.getMaximumLifetimePerQueue(q),
+          info.maxApplicationLifetime);
+    }
   }
 
-  //Return a child Node of node with the tagname or null if none exists 
+  //Return a child Node of node with the tagname or null if none exists
   private Node getChildNodeByName(Node node, String tagname) {
     NodeList nodeList = node.getChildNodes();
     for (int i=0; i < nodeList.getLength(); ++i) {
@@ -480,8 +573,24 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
     //Start RM so that it accepts app submissions
     rm.start();
     try {
-      rm.submitApp(10, "app1", "user1", null, "b1");
-      rm.submitApp(20, "app2", "user2", null, "b1");
+      MockRMAppSubmissionData data1 =
+          MockRMAppSubmissionData.Builder.createWithMemory(10, rm)
+              .withAppName("app1")
+              .withUser("user1")
+              .withAcls(null)
+              .withQueue("b1")
+              .withUnmanagedAM(false)
+              .build();
+      MockRMAppSubmitter.submit(rm, data1);
+      MockRMAppSubmissionData data =
+          MockRMAppSubmissionData.Builder.createWithMemory(20, rm)
+              .withAppName("app2")
+              .withUser("user2")
+              .withAcls(null)
+              .withQueue("b1")
+              .withUnmanagedAM(false)
+              .build();
+      MockRMAppSubmitter.submit(rm, data);
 
       //Get the XML from ws/v1/cluster/scheduler
       WebResource r = resource();
@@ -510,7 +619,7 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
           for (int j=0; j<users.getLength(); ++j) {
             Node user = users.item(j);
             String username = getChildNodeByName(user, "username")
-              .getTextContent(); 
+                .getTextContent();
             assertTrue(username.equals("user1") || username.equals("user2"));
             //Should be a parsable integer
             Integer.parseInt(getChildNodeByName(getChildNodeByName(user,
@@ -561,8 +670,24 @@ public class TestRMWebServicesCapacitySched extends JerseyTestBase {
     //Start RM so that it accepts app submissions
     rm.start();
     try {
-      rm.submitApp(10, "app1", "user1", null, "b1");
-      rm.submitApp(20, "app2", "user2", null, "b1");
+      MockRMAppSubmissionData data1 =
+          MockRMAppSubmissionData.Builder.createWithMemory(10, rm)
+              .withAppName("app1")
+              .withUser("user1")
+              .withAcls(null)
+              .withQueue("b1")
+              .withUnmanagedAM(false)
+              .build();
+      MockRMAppSubmitter.submit(rm, data1);
+      MockRMAppSubmissionData data =
+          MockRMAppSubmissionData.Builder.createWithMemory(20, rm)
+              .withAppName("app2")
+              .withUser("user2")
+              .withAcls(null)
+              .withQueue("b1")
+              .withUnmanagedAM(false)
+              .build();
+      MockRMAppSubmitter.submit(rm, data);
 
       //Get JSON
       WebResource r = resource();

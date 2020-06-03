@@ -18,8 +18,8 @@
 package org.apache.hadoop.hdfs.qjournal.server;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.protobuf.BlockingService;
-import org.apache.commons.logging.Log;
+import org.apache.hadoop.thirdparty.protobuf.BlockingService;
+import org.slf4j.Logger;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeys;
@@ -32,6 +32,7 @@ import org.apache.hadoop.hdfs.qjournal.protocol.InterQJournalProtocol;
 import org.apache.hadoop.hdfs.qjournal.protocol.InterQJournalProtocolProtos.InterQJournalProtocolService;
 import org.apache.hadoop.hdfs.qjournal.protocol.QJournalProtocol;
 import org.apache.hadoop.hdfs.qjournal.protocol.QJournalProtocolProtos.GetEditLogManifestResponseProto;
+import org.apache.hadoop.hdfs.qjournal.protocol.QJournalProtocolProtos.GetJournaledEditsResponseProto;
 import org.apache.hadoop.hdfs.qjournal.protocol.QJournalProtocolProtos.GetJournalStateResponseProto;
 import org.apache.hadoop.hdfs.qjournal.protocol.QJournalProtocolProtos.NewEpochResponseProto;
 import org.apache.hadoop.hdfs.qjournal.protocol.QJournalProtocolProtos.PrepareRecoveryResponseProto;
@@ -61,7 +62,7 @@ import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_JOURNALNODE_RPC_BIND_HOST
 @VisibleForTesting
 public class JournalNodeRpcServer implements QJournalProtocol,
     InterQJournalProtocol {
-  private static final Log LOG = JournalNode.LOG;
+  private static final Logger LOG = JournalNode.LOG;
   private static final int HANDLER_COUNT = 5;
   private final JournalNode jn;
   private Server server;
@@ -176,9 +177,10 @@ public class JournalNodeRpcServer implements QJournalProtocol,
   @Override
   public void format(String journalId,
                      String nameServiceId,
-                     NamespaceInfo nsInfo)
+                     NamespaceInfo nsInfo,
+                     boolean force)
       throws IOException {
-    jn.getOrCreateJournal(journalId, nameServiceId).format(nsInfo);
+    jn.getOrCreateJournal(journalId, nameServiceId).format(nsInfo, force);
   }
 
   @Override
@@ -231,6 +233,13 @@ public class JournalNodeRpcServer implements QJournalProtocol,
         .setHttpPort(jn.getBoundHttpAddress().getPort())
         .setFromURL(jn.getHttpServerURI())
         .build();
+  }
+
+  @Override
+  public GetJournaledEditsResponseProto getJournaledEdits(String jid,
+      String nameServiceId, long sinceTxId, int maxTxns) throws IOException {
+    return jn.getOrCreateJournal(jid, nameServiceId)
+        .getJournaledEdits(sinceTxId, maxTxns);
   }
 
   @Override

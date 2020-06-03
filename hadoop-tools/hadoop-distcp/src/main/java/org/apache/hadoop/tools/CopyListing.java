@@ -27,8 +27,8 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.tools.util.DistCpUtils;
 import org.apache.hadoop.security.Credentials;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
@@ -48,7 +48,7 @@ import com.google.common.collect.Sets;
 public abstract class CopyListing extends Configured {
 
   private Credentials credentials;
-  static final Log LOG = LogFactory.getLog(DistCp.class);
+  static final Logger LOG = LoggerFactory.getLogger(DistCp.class);
   /**
    * Build listing function creates the input listing that distcp uses to
    * perform the copy.
@@ -246,6 +246,29 @@ public abstract class CopyListing extends Configured {
    */
   protected Credentials getCredentials() {
     return credentials;
+  }
+
+  /**
+   * Returns the key for an entry in the copy listing sequence file.
+   * @param sourcePathRoot the root source path for determining the relative
+   *                       target path
+   * @param fileStatus the copy listing file status
+   * @return the key for the sequence file entry
+   */
+  protected Text getFileListingKey(Path sourcePathRoot,
+      CopyListingFileStatus fileStatus) {
+    return new Text(DistCpUtils.getRelativePath(sourcePathRoot,
+        fileStatus.getPath()));
+  }
+
+  /**
+   * Returns the value for an entry in the copy listing sequence file.
+   * @param fileStatus the copy listing file status
+   * @return the value for the sequence file entry
+   */
+  protected CopyListingFileStatus getFileListingValue(
+      CopyListingFileStatus fileStatus) {
+    return fileStatus;
   }
 
   /**

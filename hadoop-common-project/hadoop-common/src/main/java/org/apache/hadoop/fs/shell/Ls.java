@@ -246,8 +246,30 @@ class Ls extends FsCommand {
   }
 
   @Override
-  protected void processPaths(PathData parent, PathData ... items)
-  throws IOException {
+  protected boolean isSorted() {
+    // use the non-iterative method for listing because explicit sorting is
+    // required based on time/size/reverse or Total number of entries
+    // required to print summary first when non-recursive.
+    return !isRecursive() || isOrderTime() || isOrderSize() || isOrderReverse();
+  }
+
+  @Override
+  protected int getListingGroupSize() {
+    if (pathOnly) {
+      // If there is a need of printing only paths, then no grouping required
+      return 0;
+    }
+    /*
+     * LS output should be formatted properly. Grouping 100 items and formatting
+     * the output to reduce the creation of huge sized arrays. This method will
+     * be called only when recursive is set.
+     */
+    return 100;
+  }
+
+  @Override
+  protected void processPaths(PathData parent, PathData... items)
+      throws IOException {
     if (parent != null && !isRecursive() && items.length != 0) {
       if (!pathOnly) {
         out.println("Found " + items.length + " items");
@@ -312,10 +334,10 @@ class Ls extends FsCommand {
     }
 
     StringBuilder fmt = new StringBuilder();
-    fmt.append("%s%s"); // permission string
-    fmt.append("%"  + maxRepl  + "s ");
-    fmt.append((maxOwner > 0) ? "%-" + maxOwner + "s " : "%s");
-    fmt.append((maxGroup > 0) ? "%-" + maxGroup + "s " : "%s");
+    fmt.append("%s%s") // permission string
+        .append("%"  + maxRepl  + "s ")
+        .append((maxOwner > 0) ? "%-" + maxOwner + "s " : "%s")
+        .append((maxGroup > 0) ? "%-" + maxGroup + "s " : "%s");
     // Do not use '%-0s' as a formatting conversion, since it will throw a
     // a MissingFormatWidthException if it is used in String.format().
     // http://docs.oracle.com/javase/1.5.0/docs/api/java/util/Formatter.html#intFlags

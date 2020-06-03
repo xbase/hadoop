@@ -32,7 +32,7 @@ import java.util.Map;
 
 import javax.servlet.http.HttpServlet;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configuration.IntegerRanges;
@@ -42,6 +42,7 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authorize.AccessControlList;
 import org.apache.hadoop.security.http.RestCsrfPreventionFilter;
 import org.apache.hadoop.security.http.XFrameOptionsFilter;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.webapp.util.WebAppUtils;
 import org.eclipse.jetty.webapp.WebAppContext;
@@ -95,6 +96,7 @@ public class WebApps {
     boolean findPort = false;
     Configuration conf;
     Policy httpPolicy = null;
+    boolean needsClientAuth = false;
     String portRangeConfigKey = null;
     boolean devMode = false;
     private String spnegoPrincipalKey;
@@ -103,6 +105,7 @@ public class WebApps {
     private String xfsConfigPrefix;
     private final HashSet<ServletStruct> servlets = new HashSet<ServletStruct>();
     private final HashMap<String, Object> attributes = new HashMap<String, Object>();
+    private ApplicationClientProtocol appClientProtocol;
 
     Builder(String name, Class<T> api, T application, String wsName) {
       this.name = name;
@@ -174,6 +177,11 @@ public class WebApps {
       return this;
     }
 
+    public Builder<T> needsClientAuth(boolean needsClientAuth) {
+      this.needsClientAuth = needsClientAuth;
+      return this;
+    }
+
     /**
      * Set port range config key and associated configuration object.
      * @param config configuration.
@@ -223,6 +231,12 @@ public class WebApps {
 
     public Builder<T> inDevMode() {
       devMode = true;
+      return this;
+    }
+
+    public Builder<T> withAppClientProtocol(
+        ApplicationClientProtocol appClientProto) {
+      this.appClientProtocol = appClientProto;
       return this;
     }
 
@@ -335,7 +349,24 @@ public class WebApps {
         }
 
         if (httpScheme.equals(WebAppUtils.HTTPS_PREFIX)) {
-          WebAppUtils.loadSslConfiguration(builder, conf);
+          String amKeystoreLoc = System.getenv("KEYSTORE_FILE_LOCATION");
+          if (amKeystoreLoc != null) {
+            LOG.info("Setting keystore location to " + amKeystoreLoc);
+            String password = System.getenv("KEYSTORE_PASSWORD");
+            builder.keyStore(amKeystoreLoc, password, "jks");
+          } else {
+            LOG.info("Loading standard ssl config");
+            WebAppUtils.loadSslConfiguration(builder, conf);
+          }
+          builder.needsClientAuth(needsClientAuth);
+          if (needsClientAuth) {
+            String amTruststoreLoc = System.getenv("TRUSTSTORE_FILE_LOCATION");
+            if (amTruststoreLoc != null) {
+              LOG.info("Setting truststore location to " + amTruststoreLoc);
+              String password = System.getenv("TRUSTSTORE_PASSWORD");
+              builder.trustStore(amTruststoreLoc, password, "jks");
+            }
+          }
         }
 
         HttpServer2 server = builder.build();
@@ -378,7 +409,6 @@ public class WebApps {
 
         webapp.setConf(conf);
         webapp.setHttpServer(server);
-
       } catch (ClassNotFoundException e) {
         throw new WebAppException("Error starting http server", e);
       } catch (IOException e) {
@@ -389,6 +419,9 @@ public class WebApps {
         protected void configure() {
           if (api != null) {
             bind(api).toInstance(application);
+          }
+          if (appClientProtocol != null) {
+            bind(ApplicationClientProtocol.class).toInstance(appClientProtocol);
           }
         }
       });

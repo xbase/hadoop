@@ -49,9 +49,7 @@ import org.apache.hadoop.yarn.server.resourcemanager.recovery.MemoryRMStateStore
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.RMStateStore;
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.RMStateStore.RMState;
 import org.apache.hadoop.yarn.util.ConverterUtils;
-import org.apache.log4j.Level;
-import org.apache.log4j.LogManager;
-import org.apache.log4j.Logger;
+import org.slf4j.event.Level;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -62,14 +60,29 @@ public class TestRMDelegationTokens {
 
   @Before
   public void setup() {
-    Logger rootLogger = LogManager.getRootLogger();
-    rootLogger.setLevel(Level.DEBUG);
+    GenericTestUtils.setRootLogLevel(Level.DEBUG);
     ExitUtil.disableSystemExit();
     testConf = new YarnConfiguration();
     testConf
         .set(YarnConfiguration.RM_STORE, MemoryRMStateStore.class.getName());
     UserGroupInformation.setLoginUser(null);
     UserGroupInformation.setConfiguration(testConf);
+  }
+
+  private static void assertMasterKeysAreSaved(
+      Set<DelegationKey> rmDTMasterKeyState,
+      RMDelegationTokenSecretManager dtSecretManager) {
+    dtSecretManager.getAllMasterKeys().forEach(managerKey -> {
+      int keyId = managerKey.getKeyId();
+      boolean found = false;
+      for (DelegationKey stateKey: rmDTMasterKeyState) {
+        if (stateKey.getKeyId() == keyId) {
+          found = true;
+          break;
+        }
+      }
+      Assert.assertTrue("Master key not found: " + keyId, found);
+    });
   }
 
   // Test the DT mast key in the state-store when the mast key is being rolled.
@@ -99,18 +112,8 @@ public class TestRMDelegationTokens {
 
     RMDelegationTokenSecretManager dtSecretManager =
         rm1.getRMContext().getRMDelegationTokenSecretManager();
-    // assert all master keys are saved
-    dtSecretManager.getAllMasterKeys().forEach(managerKey -> {
-      int keyId = managerKey.getKeyId();
-      boolean found = false;
-      for (DelegationKey stateKey: rmDTMasterKeyState) {
-        if (stateKey.getKeyId() == keyId) {
-          found = true;
-          break;
-        }
-      }
-      Assert.assertTrue("Master key not found: " + keyId, found);
-    });
+
+    assertMasterKeysAreSaved(rmDTMasterKeyState, dtSecretManager);
 
     // request to generate a RMDelegationToken
     GetDelegationTokenRequest request = mock(GetDelegationTokenRequest.class);
@@ -157,8 +160,7 @@ public class TestRMDelegationTokens {
     RMDelegationTokenSecretManager dtSecretManager =
         rm1.getRMContext().getRMDelegationTokenSecretManager();
 
-    // assert all master keys are saved
-    Assert.assertEquals(dtSecretManager.getAllMasterKeys(), rmDTMasterKeyState);
+    assertMasterKeysAreSaved(rmDTMasterKeyState, dtSecretManager);
     Set<DelegationKey> expiringKeys = new HashSet<DelegationKey>();
     expiringKeys.addAll(dtSecretManager.getAllMasterKeys());
 

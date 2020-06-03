@@ -21,6 +21,7 @@ package org.apache.hadoop.fs.aliyun.oss;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileSystemContractBaseTest;
 import org.apache.hadoop.fs.Path;
 
@@ -30,6 +31,7 @@ import org.junit.Test;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.Arrays;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -93,6 +95,28 @@ public class TestAliyunOSSFileSystemContract
         UserGroupInformation.getCurrentUser().getShortUserName());
     assertEquals(fs.getGroup(),
         UserGroupInformation.getCurrentUser().getShortUserName());
+  }
+
+  @Test
+  public void testGetFileStatusInVersioningBucket() throws Exception {
+    Path file = this.path("/test/hadoop/file");
+    for (int i = 1; i <= 30; ++i) {
+      this.createFile(new Path(file, "sub" + i));
+    }
+    assertTrue("File exists", this.fs.exists(file));
+    FileStatus fs = this.fs.getFileStatus(file);
+    assertEquals(fs.getOwner(),
+        UserGroupInformation.getCurrentUser().getShortUserName());
+    assertEquals(fs.getGroup(),
+        UserGroupInformation.getCurrentUser().getShortUserName());
+
+    AliyunOSSFileSystemStore store = ((AliyunOSSFileSystem)this.fs).getStore();
+    for (int i = 0; i < 29; ++i) {
+      store.deleteObjects(Arrays.asList("test/hadoop/file/sub" + i));
+    }
+
+    // HADOOP-16840, will throw FileNotFoundException without this fix
+    this.fs.getFileStatus(file);
   }
 
   @Test
@@ -359,4 +383,79 @@ public class TestAliyunOSSFileSystemContract
     }
   }
 
+  @Test
+  public void testRenameChangingDirShouldFail() throws Exception {
+    testRenameDir(true, false, false);
+    testRenameDir(true, true, true);
+  }
+
+  @Test
+  public void testRenameDir() throws Exception {
+    testRenameDir(false, true, false);
+    testRenameDir(false, true, true);
+  }
+
+  private void testRenameDir(boolean changing, boolean result, boolean empty)
+      throws Exception {
+    fs.getConf().setLong(Constants.FS_OSS_BLOCK_SIZE_KEY, 1024);
+    String key = "a/b/test.file";
+    for (int i = 0; i < 100; i++) {
+      if (empty) {
+        fs.createNewFile(this.path(key + "." + i));
+      } else {
+        createFile(this.path(key + "." + i));
+      }
+    }
+
+    Path srcPath = this.path("a");
+    Path dstPath = this.path("b");
+    TestRenameTask task = new TestRenameTask(fs, srcPath, dstPath);
+    Thread thread = new Thread(task);
+    thread.start();
+    while (!task.isRunning()) {
+      Thread.sleep(1000);
+    }
+
+    if (changing) {
+      fs.delete(this.path("a/b"), true);
+    }
+
+    thread.join();
+    assertEquals(result, task.isSucceed());
+  }
+
+  class TestRenameTask implements Runnable {
+    private FileSystem fs;
+    private Path srcPath;
+    private Path dstPath;
+    private boolean result;
+    private boolean running;
+    TestRenameTask(FileSystem fs, Path srcPath, Path dstPath) {
+      this.fs = fs;
+      this.srcPath = srcPath;
+      this.dstPath = dstPath;
+      this.result = false;
+      this.running = false;
+    }
+
+    boolean isSucceed() {
+      return this.result;
+    }
+
+    boolean isRunning() {
+      return this.running;
+    }
+    @Override
+    public void run() {
+      try {
+        running = true;
+        result = fs.rename(srcPath, dstPath);
+      } catch (Exception e) {
+      }
+    }
+  }
+
+  protected int getGlobalTimeout() {
+    return 120 * 1000;
+  }
 }

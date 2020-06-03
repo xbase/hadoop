@@ -31,6 +31,7 @@ import com.aliyun.oss.model.CompleteMultipartUploadResult;
 import com.aliyun.oss.model.CopyObjectResult;
 import com.aliyun.oss.model.DeleteObjectsRequest;
 import com.aliyun.oss.model.DeleteObjectsResult;
+import com.aliyun.oss.model.GenericRequest;
 import com.aliyun.oss.model.GetObjectRequest;
 import com.aliyun.oss.model.InitiateMultipartUploadRequest;
 import com.aliyun.oss.model.InitiateMultipartUploadResult;
@@ -45,7 +46,7 @@ import com.aliyun.oss.model.UploadPartCopyResult;
 import com.aliyun.oss.model.UploadPartRequest;
 import com.aliyun.oss.model.UploadPartResult;
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FileStatus;
@@ -260,11 +261,13 @@ public class AliyunOSSFileSystemStore {
    */
   public ObjectMetadata getObjectMetadata(String key) {
     try {
-      ObjectMetadata objectMeta = ossClient.getObjectMetadata(bucketName, key);
+      GenericRequest request = new GenericRequest(bucketName, key);
+      request.setLogEnabled(false);
+      ObjectMetadata objectMeta = ossClient.getObjectMetadata(request);
       statistics.incrementReadOps(1);
       return objectMeta;
     } catch (OSSException osse) {
-      LOG.error("Exception thrown when get object meta: "
+      LOG.debug("Exception thrown when get object meta: "
               + key + ", exception: " + osse);
       return null;
     }

@@ -31,11 +31,11 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.InvalidProtocolBufferException;
+import org.apache.hadoop.thirdparty.protobuf.CodedInputStream;
+import org.apache.hadoop.thirdparty.protobuf.InvalidProtocolBufferException;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.XAttr;
 import org.apache.hadoop.fs.permission.AclEntry;
@@ -66,7 +66,8 @@ import com.google.common.collect.Maps;
  * file status of the namespace of the fsimage.
  */
 class FSImageLoader {
-  public static final Log LOG = LogFactory.getLog(FSImageHandler.class);
+  public static final Logger LOG =
+      LoggerFactory.getLogger(FSImageHandler.class);
 
   private final SerialNumberManager.StringTable stringTable;
   // byte representation of inodes, sorted by id
@@ -155,7 +156,13 @@ class FSImageLoader {
           LOG.debug("Loading section " + s.getName() + " length: " + s.getLength
               ());
         }
-        switch (FSImageFormatProtobuf.SectionName.fromString(s.getName())) {
+
+        FSImageFormatProtobuf.SectionName sectionName
+            = FSImageFormatProtobuf.SectionName.fromString(s.getName());
+        if (sectionName == null) {
+          throw new IOException("Unrecognized section " + s.getName());
+        }
+        switch (sectionName) {
           case STRING_TABLE:
             stringTable = loadStringTable(is);
             break;

@@ -28,8 +28,8 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.ipc.Server;
 import org.apache.hadoop.util.ExitUtil;
@@ -37,7 +37,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
 class FSEditLogAsync extends FSEditLog implements Runnable {
-  static final Log LOG = LogFactory.getLog(FSEditLog.class);
+  static final Logger LOG = LoggerFactory.getLogger(FSEditLog.class);
 
   // use separate mutex to avoid possible deadlock when stopping the thread.
   private final Object syncThreadLock = new Object();
@@ -258,7 +258,7 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
 
   private void terminate(Throwable t) {
     String message = "Exception while edit logging: "+t.getMessage();
-    LOG.fatal(message, t);
+    LOG.error(message, t);
     ExitUtil.terminate(1, message);
   }
 

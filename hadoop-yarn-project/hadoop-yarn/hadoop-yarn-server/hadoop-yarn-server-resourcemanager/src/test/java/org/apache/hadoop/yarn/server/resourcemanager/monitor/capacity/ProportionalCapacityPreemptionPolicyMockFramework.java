@@ -18,8 +18,8 @@
 
 package org.apache.hadoop.yarn.server.resourcemanager.monitor.capacity;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
@@ -81,17 +81,17 @@ import java.util.TreeSet;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.hadoop.yarn.event.Event;
 
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Matchers.isA;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 public class ProportionalCapacityPreemptionPolicyMockFramework {
-  static final Log LOG =
-      LogFactory.getLog(TestProportionalCapacityPreemptionPolicyForNodePartitions.class);
+  static final Logger LOG = LoggerFactory.getLogger(
+      TestProportionalCapacityPreemptionPolicyForNodePartitions.class);
   final String ROOT = CapacitySchedulerConfiguration.ROOT;
 
   Map<String, CSQueue> nameToCSQueues = null;
@@ -449,6 +449,11 @@ public class ProportionalCapacityPreemptionPolicyMockFramework {
         Resource capacity = Resources.multiply(totResoucePerPartition,
             queue.getQueueCapacities().getAbsoluteCapacity());
         HashSet<String> users = userMap.get(queue.getQueueName());
+        //TODO: Refactor this test class to use queue path internally like
+        // CS does from now on
+        if (users == null) {
+          users = userMap.get(queue.getQueuePath());
+        }
         when(queue.getAllUsers()).thenReturn(users);
         Resource userLimit;
         if (mulp > 0) {
@@ -669,7 +674,7 @@ public class ProportionalCapacityPreemptionPolicyMockFramework {
       ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
       when(queue.getReadLock()).thenReturn(lock.readLock());
       setupQueue(queue, q, queueExprArray, idx);
-      if (queue.getQueueName().equals(ROOT)) {
+      if (queue.getQueuePath().equals(ROOT)) {
         rootQueue = (ParentQueue) queue;
       }
     }
@@ -684,7 +689,7 @@ public class ProportionalCapacityPreemptionPolicyMockFramework {
     int myLevel = getLevel(q);
     if (0 == myLevel) {
       // It's root
-      when(queue.getQueueName()).thenReturn(ROOT);
+      when(queue.getQueuePath()).thenReturn(ROOT);
       queuePath = ROOT;
     }
 
@@ -710,10 +715,10 @@ public class ProportionalCapacityPreemptionPolicyMockFramework {
     when(queue.getQueueResourceUsage()).thenReturn(ru);
     when(queue.getQueueResourceQuotas()).thenReturn(qr);
 
-    LOG.debug("Setup queue, name=" + queue.getQueueName() + " path="
+    LOG.debug("Setup queue, short name=" + queue.getQueueName() + " path="
         + queue.getQueuePath());
     LOG.debug("Parent=" + (parentQueue == null ? "null" : parentQueue
-        .getQueueName()));
+        .getQueuePath()));
 
     // Setup other fields like used resource, guaranteed resource, etc.
     String capacitySettingStr = q.substring(q.indexOf("(") + 1, q.indexOf(")"));
@@ -796,8 +801,14 @@ public class ProportionalCapacityPreemptionPolicyMockFramework {
           Boolean.valueOf(otherConfigs.get("disable_preemption")));
     }
 
+    //TODO: Refactor this test class to use queue path internally like CS
+    // does from now on
+    nameToCSQueues.put(queuePath, queue);
     nameToCSQueues.put(queueName, queue);
+    when(cs.getQueue(eq(queuePath))).thenReturn(queue);
     when(cs.getQueue(eq(queueName))).thenReturn(queue);
+    when(cs.normalizeQueueName(eq(queuePath))).thenReturn(queuePath);
+    when(cs.normalizeQueueName(eq(queueName))).thenReturn(queuePath);
   }
 
   /**
@@ -949,7 +960,7 @@ public class ProportionalCapacityPreemptionPolicyMockFramework {
   }
 
   static class IsPreemptionRequestForQueueAndNode
-      extends ArgumentMatcher<ContainerPreemptEvent> {
+      implements ArgumentMatcher<ContainerPreemptEvent> {
     private final ApplicationAttemptId appAttId;
     private final String queueName;
     private final NodeId nodeId;
@@ -961,9 +972,7 @@ public class ProportionalCapacityPreemptionPolicyMockFramework {
       this.nodeId = nodeId;
     }
     @Override
-    public boolean matches(Object o) {
-      ContainerPreemptEvent cpe = (ContainerPreemptEvent)o;
-
+    public boolean matches(ContainerPreemptEvent cpe) {
       return appAttId.equals(cpe.getAppId())
           && queueName.equals(cpe.getContainer().getQueueName())
           && nodeId.equals(cpe.getContainer().getAllocatedNode());

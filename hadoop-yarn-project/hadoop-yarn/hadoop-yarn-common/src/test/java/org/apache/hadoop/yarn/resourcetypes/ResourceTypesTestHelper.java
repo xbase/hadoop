@@ -16,6 +16,7 @@
 
 package org.apache.hadoop.yarn.resourcetypes;
 
+import com.google.common.collect.Maps;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.ResourceInformation;
 import org.apache.hadoop.yarn.factories.RecordFactory;
@@ -24,6 +25,7 @@ import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Contains helper methods to create Resource and ResourceInformation objects.
@@ -55,14 +57,15 @@ public final class ResourceTypesTestHelper {
     Resource resource = RECORD_FACTORY.newRecordInstance(Resource.class);
     resource.setMemorySize(memory);
     resource.setVirtualCores(vCores);
-
-    for (Map.Entry<String, String> customResource :
-            customResources.entrySet()) {
-      String resourceName = customResource.getKey();
-      ResourceInformation resourceInformation =
-              createResourceInformation(resourceName,
-                      customResource.getValue());
-      resource.setResourceInformation(resourceName, resourceInformation);
+    if (customResources != null) {
+      for (Map.Entry<String, String> customResource :
+          customResources.entrySet()) {
+        String resourceName = customResource.getKey();
+        ResourceInformation resourceInformation =
+            createResourceInformation(resourceName,
+                customResource.getValue());
+        resource.setResourceInformation(resourceName, resourceInformation);
+      }
     }
     return resource;
   }
@@ -88,6 +91,31 @@ public final class ResourceTypesTestHelper {
     long value = Long.parseLong(matcher.group(1));
 
     return new ResourceValueAndUnit(value, matcher.group(2));
+  }
+
+  public static Map<String, Long> extractCustomResources(Resource res) {
+    Map<String, Long> customResources = Maps.newHashMap();
+    for (int i = 0; i < res.getResources().length; i++) {
+      ResourceInformation ri = res.getResourceInformation(i);
+      if (!ri.getName().equals(ResourceInformation.MEMORY_URI)
+          && !ri.getName().equals(ResourceInformation.VCORES_URI)) {
+        customResources.put(ri.getName(), ri.getValue());
+      }
+    }
+    return customResources;
+  }
+
+  public static Map<String, String> extractCustomResourcesAsStrings(
+      Resource res) {
+    Map<String, Long> resValues = extractCustomResources(res);
+    return convertCustomResources(resValues);
+  }
+
+  public static Map<String, String> convertCustomResources(
+      Map<String, ? extends Number> customResources) {
+    return customResources.entrySet().stream()
+        .collect(Collectors.toMap(
+            Map.Entry::getKey, e -> String.valueOf(e.getValue())));
   }
 
 }

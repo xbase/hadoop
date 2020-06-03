@@ -46,6 +46,9 @@ import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_MAX_NUM_BLOCKS_TO_LOG_DEF
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_MAX_NUM_BLOCKS_TO_LOG_KEY;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_METRICS_LOGGER_PERIOD_SECONDS_DEFAULT;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_METRICS_LOGGER_PERIOD_SECONDS_KEY;
+import static org.apache.hadoop.hdfs.protocol.datatransfer.BlockConstructionStage.PIPELINE_SETUP_APPEND_RECOVERY;
+import static org.apache.hadoop.hdfs.protocol.datatransfer.BlockConstructionStage.PIPELINE_SETUP_CREATE;
+import static org.apache.hadoop.hdfs.protocol.datatransfer.BlockConstructionStage.PIPELINE_SETUP_STREAMING_RECOVERY;
 import static org.apache.hadoop.util.ExitUtil.terminate;
 
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
@@ -96,6 +99,7 @@ import javax.net.SocketFactory;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.HadoopIllegalArgumentException;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.ReconfigurableBase;
@@ -111,6 +115,7 @@ import org.apache.hadoop.hdfs.HDFSPolicyProvider;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
 import org.apache.hadoop.hdfs.server.datanode.checker.DatasetVolumeChecker;
 import org.apache.hadoop.hdfs.server.datanode.checker.StorageLocationChecker;
+import org.apache.hadoop.hdfs.util.DataTransferThrottler;
 import org.apache.hadoop.util.AutoCloseableLock;
 import org.apache.hadoop.hdfs.client.BlockReportOptions;
 import org.apache.hadoop.hdfs.client.HdfsClientConfigKeys;
@@ -166,6 +171,7 @@ import org.apache.hadoop.hdfs.server.datanode.SecureDataNodeStarter.SecureResour
 import org.apache.hadoop.hdfs.server.datanode.erasurecode.ErasureCodingWorker;
 import org.apache.hadoop.hdfs.server.datanode.fsdataset.FsDatasetSpi;
 import org.apache.hadoop.hdfs.server.datanode.fsdataset.FsVolumeSpi;
+import org.apache.hadoop.hdfs.server.datanode.fsdataset.impl.AddBlockPoolException;
 import org.apache.hadoop.hdfs.server.datanode.metrics.DataNodeDiskMetrics;
 import org.apache.hadoop.hdfs.server.datanode.metrics.DataNodeMetrics;
 import org.apache.hadoop.hdfs.server.datanode.metrics.DataNodePeerMetrics;
@@ -206,13 +212,13 @@ import org.apache.hadoop.tracing.TracerConfigurationManager;
 import org.apache.hadoop.util.Daemon;
 import org.apache.hadoop.util.DiskChecker.DiskErrorException;
 import org.apache.hadoop.util.GenericOptionsParser;
-import org.apache.hadoop.util.InvalidChecksumSizeException;
 import org.apache.hadoop.util.JvmPauseMonitor;
 import org.apache.hadoop.util.ServicePlugin;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.util.Time;
 import org.apache.hadoop.util.Timer;
 import org.apache.hadoop.util.VersionInfo;
+import org.apache.hadoop.util.concurrent.HadoopExecutors;
 import org.apache.htrace.core.Tracer;
 import org.eclipse.jetty.util.ajax.JSON;
 
@@ -223,7 +229,7 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.Lists;
-import com.google.protobuf.BlockingService;
+import org.apache.hadoop.thirdparty.protobuf.BlockingService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -242,7 +248,7 @@ import org.slf4j.LoggerFactory;
  * DataNodes.
  *
  * The DataNode maintains just one critical table:
- *   block-> stream of bytes (of BLOCK_SIZE or less)
+ *   block{@literal ->} stream of bytes (of BLOCK_SIZE or less)
  *
  * This info is stored on a local disk.  The DataNode
  * reports the table's contents to the NameNode upon startup
@@ -395,6 +401,8 @@ public class DataNode extends ReconfigurableBase
   private static final double CONGESTION_RATIO = 1.5;
   private DiskBalancer diskBalancer;
 
+  private final ExecutorService xferService;
+
   @Nullable
   private final StorageLocationChecker storageLocationChecker;
 
@@ -435,6 +443,8 @@ public class DataNode extends ReconfigurableBase
     initOOBTimeout();
     storageLocationChecker = null;
     volumeChecker = new DatasetVolumeChecker(conf, new Timer());
+    this.xferService =
+        HadoopExecutors.newCachedThreadPool(new Daemon.DaemonFactory());
   }
 
   /**
@@ -475,6 +485,8 @@ public class DataNode extends ReconfigurableBase
         conf.get("hadoop.hdfs.configuration.version", "UNSPECIFIED");
 
     this.volumeChecker = new DatasetVolumeChecker(conf, new Timer());
+    this.xferService =
+        HadoopExecutors.newCachedThreadPool(new Daemon.DaemonFactory());
 
     // Determine whether we should try to pass file descriptors to clients.
     if (conf.getBoolean(HdfsClientConfigKeys.Read.ShortCircuit.KEY,
@@ -528,7 +540,7 @@ public class DataNode extends ReconfigurableBase
   }
 
   /**
-   * {@inheritdoc}.
+   * {@inheritDoc }.
    */
   @Override
   public String reconfigurePropertyImpl(String property, String newVal)
@@ -581,7 +593,15 @@ public class DataNode extends ReconfigurableBase
                       "balancer max concurrent movers must be larger than 0"));
             }
           }
-          xserver.updateBalancerMaxConcurrentMovers(movers);
+          boolean success = xserver.updateBalancerMaxConcurrentMovers(movers);
+          if (!success) {
+            rootException = new ReconfigurationException(
+                property,
+                newVal,
+                getConf().get(property),
+                new IllegalArgumentException(
+                    "Could not modify concurrent moves thread count"));
+          }
           return Integer.toString(movers);
         } catch (NumberFormatException nfe) {
           rootException = new ReconfigurationException(
@@ -745,90 +765,93 @@ public class DataNode extends ReconfigurableBase
    * @throws IOException on error. If an IOException is thrown, some new volumes
    * may have been successfully added and removed.
    */
-  private synchronized void refreshVolumes(String newVolumes) throws IOException {
-    Configuration conf = getConf();
-    conf.set(DFS_DATANODE_DATA_DIR_KEY, newVolumes);
-    ExecutorService service = null;
-    int numOldDataDirs = dataDirs.size();
-    ChangedVolumes changedVolumes = parseChangedVolumes(newVolumes);
-    StringBuilder errorMessageBuilder = new StringBuilder();
-    List<String> effectiveVolumes = Lists.newArrayList();
-    for (StorageLocation sl : changedVolumes.unchangedLocations) {
-      effectiveVolumes.add(sl.toString());
+  private void refreshVolumes(String newVolumes) throws IOException {
+    // Add volumes for each Namespace
+    final List<NamespaceInfo> nsInfos = Lists.newArrayList();
+    for (BPOfferService bpos : blockPoolManager.getAllNamenodeThreads()) {
+      nsInfos.add(bpos.getNamespaceInfo());
     }
-
-    try {
-      if (numOldDataDirs + getFSDataset().getNumFailedVolumes()
-          + changedVolumes.newLocations.size()
-          - changedVolumes.deactivateLocations.size() <= 0) {
-        throw new IOException("Attempt to remove all volumes.");
-      }
-      if (!changedVolumes.newLocations.isEmpty()) {
-        LOG.info("Adding new volumes: {}",
-            Joiner.on(",").join(changedVolumes.newLocations));
-
-        // Add volumes for each Namespace
-        final List<NamespaceInfo> nsInfos = Lists.newArrayList();
-        for (BPOfferService bpos : blockPoolManager.getAllNamenodeThreads()) {
-          nsInfos.add(bpos.getNamespaceInfo());
-        }
-        service = Executors
-            .newFixedThreadPool(changedVolumes.newLocations.size());
-        List<Future<IOException>> exceptions = Lists.newArrayList();
-        for (final StorageLocation location : changedVolumes.newLocations) {
-          exceptions.add(service.submit(new Callable<IOException>() {
-            @Override
-            public IOException call() {
-              try {
-                data.addVolume(location, nsInfos);
-              } catch (IOException e) {
-                return e;
-              }
-              return null;
-            }
-          }));
-        }
-
-        for (int i = 0; i < changedVolumes.newLocations.size(); i++) {
-          StorageLocation volume = changedVolumes.newLocations.get(i);
-          Future<IOException> ioExceptionFuture = exceptions.get(i);
-          try {
-            IOException ioe = ioExceptionFuture.get();
-            if (ioe != null) {
-              errorMessageBuilder.append(
-                  String.format("FAILED TO ADD: %s: %s%n",
-                  volume, ioe.getMessage()));
-              LOG.error("Failed to add volume: {}", volume, ioe);
-            } else {
-              effectiveVolumes.add(volume.toString());
-              LOG.info("Successfully added volume: {}", volume);
-            }
-          } catch (Exception e) {
-            errorMessageBuilder.append(
-                String.format("FAILED to ADD: %s: %s%n", volume,
-                              e.toString()));
-            LOG.error("Failed to add volume: {}", volume, e);
-          }
-        }
+    synchronized(this) {
+      Configuration conf = getConf();
+      conf.set(DFS_DATANODE_DATA_DIR_KEY, newVolumes);
+      ExecutorService service = null;
+      int numOldDataDirs = dataDirs.size();
+      ChangedVolumes changedVolumes = parseChangedVolumes(newVolumes);
+      StringBuilder errorMessageBuilder = new StringBuilder();
+      List<String> effectiveVolumes = Lists.newArrayList();
+      for (StorageLocation sl : changedVolumes.unchangedLocations) {
+        effectiveVolumes.add(sl.toString());
       }
 
       try {
-        removeVolumes(changedVolumes.deactivateLocations);
-      } catch (IOException e) {
-        errorMessageBuilder.append(e.getMessage());
-        LOG.error("Failed to remove volume", e);
-      }
+        if (numOldDataDirs + getFSDataset().getNumFailedVolumes()
+            + changedVolumes.newLocations.size()
+            - changedVolumes.deactivateLocations.size() <= 0) {
+          throw new IOException("Attempt to remove all volumes.");
+        }
+        if (!changedVolumes.newLocations.isEmpty()) {
+          LOG.info("Adding new volumes: {}",
+              Joiner.on(",").join(changedVolumes.newLocations));
 
-      if (errorMessageBuilder.length() > 0) {
-        throw new IOException(errorMessageBuilder.toString());
+          service = Executors
+              .newFixedThreadPool(changedVolumes.newLocations.size());
+          List<Future<IOException>> exceptions = Lists.newArrayList();
+
+          for (final StorageLocation location : changedVolumes.newLocations) {
+            exceptions.add(service.submit(new Callable<IOException>() {
+              @Override
+              public IOException call() {
+                try {
+                  data.addVolume(location, nsInfos);
+                } catch (IOException e) {
+                  return e;
+                }
+                return null;
+              }
+            }));
+          }
+
+          for (int i = 0; i < changedVolumes.newLocations.size(); i++) {
+            StorageLocation volume = changedVolumes.newLocations.get(i);
+            Future<IOException> ioExceptionFuture = exceptions.get(i);
+            try {
+              IOException ioe = ioExceptionFuture.get();
+              if (ioe != null) {
+                errorMessageBuilder.append(
+                    String.format("FAILED TO ADD: %s: %s%n",
+                        volume, ioe.getMessage()));
+                LOG.error("Failed to add volume: {}", volume, ioe);
+              } else {
+                effectiveVolumes.add(volume.toString());
+                LOG.info("Successfully added volume: {}", volume);
+              }
+            } catch (Exception e) {
+              errorMessageBuilder.append(
+                  String.format("FAILED to ADD: %s: %s%n", volume,
+                      e.toString()));
+              LOG.error("Failed to add volume: {}", volume, e);
+            }
+          }
+        }
+
+        try {
+          removeVolumes(changedVolumes.deactivateLocations);
+        } catch (IOException e) {
+          errorMessageBuilder.append(e.getMessage());
+          LOG.error("Failed to remove volume", e);
+        }
+
+        if (errorMessageBuilder.length() > 0) {
+          throw new IOException(errorMessageBuilder.toString());
+        }
+      } finally {
+        if (service != null) {
+          service.shutdown();
+        }
+        conf.set(DFS_DATANODE_DATA_DIR_KEY,
+            Joiner.on(",").join(effectiveVolumes));
+        dataDirs = getStorageLocations(conf);
       }
-    } finally {
-      if (service != null) {
-        service.shutdown();
-      }
-      conf.set(DFS_DATANODE_DATA_DIR_KEY,
-          Joiner.on(",").join(effectiveVolumes));
-      dataDirs = getStorageLocations(conf);
     }
   }
 
@@ -1059,7 +1082,7 @@ public class DataNode extends ReconfigurableBase
     }
 
     // Is the user a member of the super group?
-    List<String> groups = Arrays.asList(callerUgi.getGroupNames());
+    List<String> groups = callerUgi.getGroups();
     if (groups.contains(supergroup)) {
       return;
     }
@@ -1087,7 +1110,7 @@ public class DataNode extends ReconfigurableBase
       reason = "verifcation is not supported by SimulatedFSDataset";
     } 
     if (reason == null) {
-      directoryScanner = new DirectoryScanner(this, data, conf);
+      directoryScanner = new DirectoryScanner(data, conf);
       directoryScanner.start();
     } else {
       LOG.info("Periodic Directory Tree Verification scan " +
@@ -1404,7 +1427,7 @@ public class DataNode extends ReconfigurableBase
     int volsConfigured = dnConf.getVolsConfigured();
     if (volFailuresTolerated < MAX_VOLUME_FAILURE_TOLERATED_LIMIT
         || volFailuresTolerated >= volsConfigured) {
-      throw new DiskErrorException("Invalid value configured for "
+      throw new HadoopIllegalArgumentException("Invalid value configured for "
           + "dfs.datanode.failed.volumes.tolerated - " + volFailuresTolerated
           + ". Value configured is either less than -1 or >= "
           + "to the number of configured volumes (" + volsConfigured + ").");
@@ -1431,7 +1454,7 @@ public class DataNode extends ReconfigurableBase
 
     metrics = DataNodeMetrics.create(getConf(), getDisplayName());
     peerMetrics = dnConf.peerStatsEnabled ?
-        DataNodePeerMetrics.create(getDisplayName()) : null;
+        DataNodePeerMetrics.create(getDisplayName(), getConf()) : null;
     metrics.getJvmMetrics().setPauseMonitor(pauseMonitor);
 
     ecWorker = new ErasureCodingWorker(getConf(), this);
@@ -1678,14 +1701,38 @@ public class DataNode extends ReconfigurableBase
     // the dataset, block scanners, etc.
     initStorage(nsInfo);
 
-    // Exclude failed disks before initializing the block pools to avoid startup
-    // failures.
+    try {
+      data.addBlockPool(nsInfo.getBlockPoolID(), getConf());
+    } catch (AddBlockPoolException e) {
+      handleAddBlockPoolError(e);
+    }
+    // HDFS-14993: check disk after add the block pool info.
     checkDiskError();
 
-    data.addBlockPool(nsInfo.getBlockPoolID(), getConf());
     blockScanner.enableBlockPoolId(bpos.getBlockPoolId());
     initDirectoryScanner(getConf());
     initDiskBalancer(data, getConf());
+  }
+
+  /**
+   * Handles an AddBlockPoolException object thrown from
+   * {@link org.apache.hadoop.hdfs.server.datanode.fsdataset.impl.FsVolumeList#
+   * addBlockPool}. Will ensure that all volumes that encounted a
+   * AddBlockPoolException are removed from the DataNode and marked as failed
+   * volumes in the same way as a runtime volume failure.
+   *
+   * @param e this exception is a container for all IOException objects caught
+   *          in FsVolumeList#addBlockPool.
+   */
+  private void handleAddBlockPoolError(AddBlockPoolException e)
+      throws IOException {
+    Map<FsVolumeSpi, IOException> unhealthyDataDirs =
+        e.getFailingVolumes();
+    if (unhealthyDataDirs != null && !unhealthyDataDirs.isEmpty()) {
+      handleVolumeFailures(unhealthyDataDirs.keySet());
+    } else {
+      LOG.debug("HandleAddBlockPoolError called with empty exception list");
+    }
   }
 
   List<BPOfferService> getAllBpOs() {
@@ -1756,7 +1803,12 @@ public class DataNode extends ReconfigurableBase
   public int getXferPort() {
     return streamingAddr.getPort();
   }
-  
+
+  @VisibleForTesting
+  public SaslDataTransferServer getSaslServer() {
+    return saslServer;
+  }
+
   /**
    * @return name useful for logging
    */
@@ -1987,7 +2039,7 @@ public class DataNode extends ReconfigurableBase
         }
       }
     }
-    
+
     List<BPOfferService> bposArray = (this.blockPoolManager == null)
         ? new ArrayList<BPOfferService>()
         : this.blockPoolManager.getAllNamenodeThreads();
@@ -2048,6 +2100,9 @@ public class DataNode extends ReconfigurableBase
     // wait reconfiguration thread, if any, to exit
     shutdownReconfigurationTask();
 
+    LOG.info("Waiting up to 30 seconds for transfer threads to complete");
+    HadoopExecutors.shutdown(this.xferService, LOG, 15L, TimeUnit.SECONDS);
+
     // wait for all data receiver threads to exit
     if (this.threadGroup != null) {
       int sleepMs = 2;
@@ -2091,6 +2146,8 @@ public class DataNode extends ReconfigurableBase
     }
     if (metrics != null) {
       metrics.setDataNodeActiveXceiversCount(0);
+      metrics.setDataNodePacketResponderCount(0);
+      metrics.setDataNodeBlockRecoveryWorkerCount(0);
     }
 
    // IPC server needs to be shutdown late in the process, otherwise
@@ -2160,7 +2217,7 @@ public class DataNode extends ReconfigurableBase
         });
   }
 
-  private void handleDiskError(String failedVolumes) {
+  private void handleDiskError(String failedVolumes, int failedNumber) {
     final boolean hasEnoughResources = data.hasEnoughResource();
     LOG.warn("DataNode.handleDiskError on: " +
         "[{}] Keep Running: {}", failedVolumes, hasEnoughResources);
@@ -2169,7 +2226,7 @@ public class DataNode extends ReconfigurableBase
     // shutdown the DN completely.
     int dpError = hasEnoughResources ? DatanodeProtocol.DISK_ERROR  
                                      : DatanodeProtocol.FATAL_DISK_ERROR;  
-    metrics.incrVolumeFailures();
+    metrics.incrVolumeFailures(failedNumber);
 
     //inform NameNodes
     for(BPOfferService bpos: blockPoolManager.getAllNamenodeThreads()) {
@@ -2189,7 +2246,20 @@ public class DataNode extends ReconfigurableBase
   /** Number of concurrent xceivers per node. */
   @Override // DataNodeMXBean
   public int getXceiverCount() {
-    return threadGroup == null ? 0 : threadGroup.activeCount();
+    if (metrics == null) {
+      return 0;
+    }
+    return metrics.getDataNodeActiveXceiverCount();
+  }
+
+  @Override // DataNodeMXBean
+  public int getActiveTransferThreadCount() {
+    if (metrics == null) {
+      return 0;
+    }
+    return metrics.getDataNodeActiveXceiverCount()
+        + metrics.getDataNodePacketResponderCount()
+        + metrics.getDataNodeBlockRecoveryWorkerCount();
   }
 
   @Override // DataNodeMXBean
@@ -2321,17 +2391,16 @@ public class DataNode extends ReconfigurableBase
     
     int numTargets = xferTargets.length;
     if (numTargets > 0) {
-      StringBuilder xfersBuilder = new StringBuilder();
-      for (int i = 0; i < numTargets; i++) {
-        xfersBuilder.append(xferTargets[i]);
-        xfersBuilder.append(" ");
-      }
-      LOG.info(bpReg + " Starting thread to transfer " + 
-               block + " to " + xfersBuilder);                       
+      final String xferTargetsString =
+          StringUtils.join(" ", Arrays.asList(xferTargets));
+      LOG.info("{} Starting thread to transfer {} to {}", bpReg, block,
+          xferTargetsString);
 
-      new Daemon(new DataTransfer(xferTargets, xferTargetStorageTypes,
-          xferTargetStorageIDs, block,
-          BlockConstructionStage.PIPELINE_SETUP_CREATE, "")).start();
+      final DataTransfer dataTransferTask = new DataTransfer(xferTargets,
+          xferTargetStorageTypes, xferTargetStorageIDs, block,
+          BlockConstructionStage.PIPELINE_SETUP_CREATE, "");
+
+      this.xferService.execute(dataTransferTask);
     }
   }
 
@@ -2452,6 +2521,9 @@ public class DataNode extends ReconfigurableBase
     final String clientname;
     final CachingStrategy cachingStrategy;
 
+    /** Throttle to block replication when data transfers or writes. */
+    private DataTransferThrottler throttler;
+
     /**
      * Connect to the first item in the target list.  Pass along the 
      * entire target list, the block, and the data.
@@ -2478,6 +2550,11 @@ public class DataNode extends ReconfigurableBase
       this.clientname = clientname;
       this.cachingStrategy =
           new CachingStrategy(true, getDnConf().readaheadLength);
+      if (isTransfer(stage, clientname)) {
+        this.throttler = xserver.getTransferThrottler();
+      } else if(isWrite(stage)) {
+        this.throttler = xserver.getWriteThrottler();
+      }
     }
 
     /**
@@ -2536,7 +2613,7 @@ public class DataNode extends ReconfigurableBase
             targetStorageIds);
 
         // send data & checksum
-        blockSender.sendBlock(out, unbufOut, null);
+        blockSender.sendBlock(out, unbufOut, throttler);
 
         // no response necessary
         LOG.info("{}, at {}: Transmitted {} (numBytes={}) to {}",
@@ -2562,15 +2639,11 @@ public class DataNode extends ReconfigurableBase
           metrics.incrBlocksReplicated();
         }
       } catch (IOException ie) {
-        if (ie instanceof InvalidChecksumSizeException) {
-          // Add the block to the front of the scanning queue if metadata file
-          // is corrupt. We already add the block to front of scanner if the
-          // peer disconnects.
-          LOG.info("Adding block: {} for scanning", b);
-          blockScanner.markSuspectBlock(data.getVolume(b).getStorageID(), b);
-        }
+        handleBadBlock(b, ie, false);
         LOG.warn("{}:Failed to transfer {} to {} got",
             bpReg, b, targets[0], ie);
+      } catch (Throwable t) {
+        LOG.error("Failed to transfer block " + b, t);
       } finally {
         decrementXmitsInProgress();
         IOUtils.closeStream(blockSender);
@@ -2578,6 +2651,11 @@ public class DataNode extends ReconfigurableBase
         IOUtils.closeStream(in);
         IOUtils.closeSocket(sock);
       }
+    }
+
+    @Override
+    public String toString() {
+      return "DataTransfer " + b + " to " + Arrays.asList(targets);
     }
   }
 
@@ -2714,7 +2792,8 @@ public class DataNode extends ReconfigurableBase
     return locations;
   }
 
-  /** Instantiate & Start a single datanode daemon and wait for it to finish.
+  /** Instantiate &amp; Start a single datanode daemon and wait for it to
+   * finish.
    *  If this thread is specifically interrupted, it will stop waiting.
    */
   @VisibleForTesting
@@ -2723,7 +2802,8 @@ public class DataNode extends ReconfigurableBase
     return createDataNode(args, conf, null);
   }
   
-  /** Instantiate & Start a single datanode daemon and wait for it to finish.
+  /** Instantiate &amp; Start a single datanode daemon and wait for it to
+   * finish.
    *  If this thread is specifically interrupted, it will stop waiting.
    */
   @VisibleForTesting
@@ -3007,15 +3087,22 @@ public class DataNode extends ReconfigurableBase
     b.setNumBytes(visible);
 
     if (targets.length > 0) {
-      Daemon daemon = new Daemon(threadGroup,
-          new DataTransfer(targets, targetStorageTypes, targetStorageIds, b,
-              stage, client));
-      daemon.start();
+      if (LOG.isDebugEnabled()) {
+        final String xferTargetsString =
+            StringUtils.join(" ", Arrays.asList(targets));
+        LOG.debug("Transferring a replica to {}", xferTargetsString);
+      }
+
+      final DataTransfer dataTransferTask = new DataTransfer(targets,
+          targetStorageTypes, targetStorageIds, b, stage, client);
+
+      @SuppressWarnings("unchecked")
+      Future<Void> f = (Future<Void>) this.xferService.submit(dataTransferTask);
       try {
-        daemon.join();
-      } catch (InterruptedException e) {
-        throw new IOException(
-            "Pipeline recovery for " + b + " is interrupted.", e);
+        f.get();
+      } catch (InterruptedException | ExecutionException e) {
+        throw new IOException("Pipeline recovery for " + b + " is interrupted.",
+            e);
       }
     }
   }
@@ -3254,10 +3341,14 @@ public class DataNode extends ReconfigurableBase
   public void triggerBlockReport(BlockReportOptions options)
       throws IOException {
     checkSuperuserPrivilege();
+    InetSocketAddress namenodeAddr = options.getNamenodeAddr();
+    boolean shouldTriggerToAllNn = (namenodeAddr == null);
     for (BPOfferService bpos : blockPoolManager.getAllNamenodeThreads()) {
       if (bpos != null) {
         for (BPServiceActor actor : bpos.getBPServiceActors()) {
-          actor.triggerBlockReport(options);
+          if (shouldTriggerToAllNn || namenodeAddr.equals(actor.nnAddr)) {
+            actor.triggerBlockReport(options);
+          }
         }
       }
     }
@@ -3355,7 +3446,7 @@ public class DataNode extends ReconfigurableBase
       unhealthyVolumes = volumeChecker.checkAllVolumes(data);
       lastDiskErrorCheck = Time.monotonicNow();
     } catch (InterruptedException e) {
-      LOG.error("Interruped while running disk check", e);
+      LOG.error("Interrupted while running disk check", e);
       throw new IOException("Interrupted while running disk check", e);
     }
 
@@ -3376,8 +3467,8 @@ public class DataNode extends ReconfigurableBase
     }
 
     data.handleVolumeFailures(unhealthyVolumes);
-    Set<StorageLocation> unhealthyLocations = new HashSet<>(
-        unhealthyVolumes.size());
+    int failedNumber = unhealthyVolumes.size();
+    Set<StorageLocation> unhealthyLocations = new HashSet<>(failedNumber);
 
     StringBuilder sb = new StringBuilder("DataNode failed volumes:");
     for (FsVolumeSpi vol : unhealthyVolumes) {
@@ -3392,8 +3483,43 @@ public class DataNode extends ReconfigurableBase
       LOG.warn("Error occurred when removing unhealthy storage dirs", e);
     }
     LOG.debug("{}", sb);
-      // send blockreport regarding volume failure
-    handleDiskError(sb.toString());
+    // send blockreport regarding volume failure
+    handleDiskError(sb.toString(), failedNumber);
+  }
+
+  /**
+   * A bad block need to be handled, either to add to blockScanner suspect queue
+   * or report to NameNode directly.
+   *
+   * If the method is called by scanner, then the block must be a bad block, we
+   * report it to NameNode directly. Otherwise if we judge it as a bad block
+   * according to exception type, then we try to add the bad block to
+   * blockScanner suspect queue if blockScanner is enabled, or report to
+   * NameNode directly otherwise.
+   *
+   * @param block The suspicious block
+   * @param e The exception encountered when accessing the block
+   * @param fromScanner Is it from blockScanner. The blockScanner will call this
+   *          method only when it's sure that the block is corrupt.
+   */
+  void handleBadBlock(ExtendedBlock block, IOException e, boolean fromScanner) {
+
+    boolean isBadBlock = fromScanner || (e instanceof DiskFileCorruptException
+        || e instanceof CorruptMetaHeaderException);
+
+    if (!isBadBlock) {
+      return;
+    }
+    if (!fromScanner && blockScanner.isEnabled()) {
+      blockScanner.markSuspectBlock(data.getVolume(block).getStorageID(),
+          block);
+    } else {
+      try {
+        reportBadBlocks(block);
+      } catch (IOException ie) {
+        LOG.warn("report bad block {} failed", block, ie);
+      }
+    }
   }
 
   @VisibleForTesting
@@ -3631,5 +3757,33 @@ public class DataNode extends ReconfigurableBase
       throw new IOException("DiskBalancer is not initialized");
     }
     return this.diskBalancer;
+  }
+
+  /**
+   * Construct DataTransfer in {@link DataNode#transferBlock}, the
+   * BlockConstructionStage is PIPELINE_SETUP_CREATE and clientName is "".
+   */
+  private static boolean isTransfer(BlockConstructionStage stage,
+      String clientName) {
+    if (stage == PIPELINE_SETUP_CREATE && clientName.isEmpty()) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Construct DataTransfer in
+   * {@link DataNode#transferReplicaForPipelineRecovery}.
+   *
+   * When recover pipeline, BlockConstructionStage is
+   * PIPELINE_SETUP_APPEND_RECOVERY,
+   * PIPELINE_SETUP_STREAMING_RECOVERY,PIPELINE_CLOSE_RECOVERY. If
+   * BlockConstructionStage is PIPELINE_CLOSE_RECOVERY, don't need transfer
+   * replica. So BlockConstructionStage is PIPELINE_SETUP_APPEND_RECOVERY,
+   * PIPELINE_SETUP_STREAMING_RECOVERY.
+   */
+  private static boolean isWrite(BlockConstructionStage stage) {
+    return (stage == PIPELINE_SETUP_STREAMING_RECOVERY
+        || stage == PIPELINE_SETUP_APPEND_RECOVERY);
   }
 }

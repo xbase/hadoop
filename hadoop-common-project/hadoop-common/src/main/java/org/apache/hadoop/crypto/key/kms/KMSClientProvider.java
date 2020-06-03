@@ -55,6 +55,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.lang.reflect.UndeclaredThrowableException;
+import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.SocketTimeoutException;
@@ -262,12 +263,12 @@ public class KMSClientProvider extends KeyProvider implements CryptoExtension,
 
     /**
      * This provider expects URIs in the following form :
-     * kms://<PROTO>@<AUTHORITY>/<PATH>
+     * {@literal kms://<PROTO>@<AUTHORITY>/<PATH>}
      *
      * where :
      * - PROTO = http or https
-     * - AUTHORITY = <HOSTS>[:<PORT>]
-     * - HOSTS = <HOSTNAME>[;<HOSTS>]
+     * - AUTHORITY = {@literal <HOSTS>[:<PORT>]}
+     * - HOSTS = {@literal <HOSTNAME>[;<HOSTS>]}
      * - HOSTNAME = string
      * - PORT = integer
      *
@@ -511,10 +512,14 @@ public class KMSClientProvider extends KeyProvider implements CryptoExtension,
           return authUrl.openConnection(url, authToken, doAsUser);
         }
       });
+    } catch (ConnectException ex) {
+      String msg = "Failed to connect to: " + url.toString();
+      LOG.warn(msg);
+      throw new IOException(msg, ex);
+    } catch (SocketTimeoutException ex) {
+      LOG.warn("Failed to connect to {}:{}", url.getHost(), url.getPort());
+      throw ex;
     } catch (IOException ex) {
-      if (ex instanceof SocketTimeoutException) {
-        LOG.warn("Failed to connect to {}:{}", url.getHost(), url.getPort());
-      }
       throw ex;
     } catch (UndeclaredThrowableException ex) {
       throw new IOException(ex.getUndeclaredThrowable());

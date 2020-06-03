@@ -148,6 +148,9 @@ public class LoadBalancingKMSClientProvider extends KeyProvider implements
       selectDelegationToken(Credentials creds) {
     Token<? extends TokenIdentifier> token =
         KMSClientProvider.selectDelegationToken(creds, canonicalService);
+    if (token == null) {
+      token = KMSClientProvider.selectDelegationToken(creds, dtService);
+    }
     // fallback to querying each sub-provider.
     if (token == null) {
       for (KMSClientProvider provider : getProviders()) {
@@ -201,7 +204,7 @@ public class LoadBalancingKMSClientProvider extends KeyProvider implements
         // compatible with earlier versions of LBKMSCP
         if (action.action == RetryAction.RetryDecision.FAIL
             && numFailovers >= providers.length - 1) {
-          LOG.warn("Aborting since the Request has failed with all KMS"
+          LOG.error("Aborting since the Request has failed with all KMS"
               + " providers(depending on {}={} setting and numProviders={})"
               + " in the group OR the exception is not recoverable",
               CommonConfigurationKeysPublic.KMS_CLIENT_FAILOVER_MAX_RETRIES_KEY,

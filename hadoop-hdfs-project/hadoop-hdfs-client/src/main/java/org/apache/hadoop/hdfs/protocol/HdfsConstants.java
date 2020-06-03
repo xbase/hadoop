@@ -50,6 +50,52 @@ public final class HdfsConstants {
   public static final byte PROVIDED_STORAGE_POLICY_ID = 1;
   public static final String PROVIDED_STORAGE_POLICY_NAME = "PROVIDED";
 
+  /**
+   * This enum wraps above Storage Policy ID and name.
+   * Recommend to use this enum instead of above static variables.
+   * For example,
+   * StoragePolicy.HOT.value() is equal to HOT_STORAGE_POLICY_ID
+   * StoragePolicy.HOT.name() is equal to HOT_STORAGE_POLICY_NAME
+   */
+  public enum StoragePolicy{
+    PROVIDED(PROVIDED_STORAGE_POLICY_ID),
+    COLD(COLD_STORAGE_POLICY_ID),
+    WARM(WARM_STORAGE_POLICY_ID),
+    HOT(HOT_STORAGE_POLICY_ID),
+    ONE_SSD(ONESSD_STORAGE_POLICY_ID),
+    ALL_SSD(ALLSSD_STORAGE_POLICY_ID),
+    LAZY_PERSIST(MEMORY_STORAGE_POLICY_ID);
+
+    private byte value;
+    StoragePolicy(byte value) {
+      this.value = value;
+    }
+
+    public static StoragePolicy valueOf(int value) {
+      switch (value) {
+      case 1:
+        return PROVIDED;
+      case 2:
+        return COLD;
+      case 5:
+        return WARM;
+      case 7:
+        return HOT;
+      case 10:
+        return ONE_SSD;
+      case 12:
+        return ALL_SSD;
+      case 15:
+        return LAZY_PERSIST;
+      default:
+        return null;
+      }
+    }
+
+    public byte value() {
+      return this.value;
+    }
+  }
 
   public static final int DEFAULT_DATA_SOCKET_SIZE = 0;
 
@@ -92,6 +138,11 @@ public final class HdfsConstants {
    */
   public static final String CLIENT_NAMENODE_PROTOCOL_NAME =
       "org.apache.hadoop.hdfs.protocol.ClientProtocol";
+  /**
+   * Router admin Protocol Names.
+   */
+  public static final String ROUTER_ADMIN_PROTOCOL_NAME =
+      "org.apache.hadoop.hdfs.protocolPB.RouterAdminProtocol";
 
   // Timeouts for communicating with DataNode for streaming writes/reads
   public static final int READ_TIMEOUT = 60 * 1000;
@@ -111,21 +162,42 @@ public final class HdfsConstants {
    * lease, another client can preempt the lease.
    */
   public static final long LEASE_SOFTLIMIT_PERIOD = 60 * 1000;
-  /**
-   * For a HDFS client to write to a file, a lease is granted; During the lease
-   * period, no other client can write to the file. The writing client can
-   * periodically renew the lease. When the file is closed, the lease is
-   * revoked. The lease duration is bound by a
-   * {@link HdfsConstants#LEASE_SOFTLIMIT_PERIOD soft limit} and this hard
-   * limit. If after the hard limit expires and the client has failed to renew
-   * the lease, HDFS assumes that the client has quit and will automatically
-   * close the file on behalf of the writer, and recover the lease.
-   */
-  public static final long LEASE_HARDLIMIT_PERIOD = 60 * LEASE_SOFTLIMIT_PERIOD;
 
   // SafeMode actions
   public enum SafeModeAction {
     SAFEMODE_LEAVE, SAFEMODE_ENTER, SAFEMODE_GET, SAFEMODE_FORCE_EXIT
+  }
+
+  /**
+   * Storage policy satisfier service modes.
+   */
+  public enum StoragePolicySatisfierMode {
+
+    /**
+     * This mode represents that SPS service is running outside Namenode as an
+     * external service and can accept any SPS call request.
+     */
+    EXTERNAL,
+
+    /**
+     * This mode represents that SPS service is disabled and cannot accept any
+     * SPS call request.
+     */
+    NONE;
+
+    private static final Map<String, StoragePolicySatisfierMode> MAP =
+        new HashMap<>();
+
+    static {
+      for (StoragePolicySatisfierMode a : values()) {
+        MAP.put(a.name(), a);
+      }
+    }
+
+    /** Convert the given String to a StoragePolicySatisfierMode. */
+    public static StoragePolicySatisfierMode fromString(String s) {
+      return MAP.get(StringUtils.toUpperCase(s));
+    }
   }
 
   public enum RollingUpgradeAction {

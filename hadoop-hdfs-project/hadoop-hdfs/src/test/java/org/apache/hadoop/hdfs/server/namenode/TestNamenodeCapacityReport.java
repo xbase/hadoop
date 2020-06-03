@@ -25,8 +25,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
@@ -52,7 +52,8 @@ import org.junit.Test;
  * This tests InterDataNodeProtocol for block handling. 
  */
 public class TestNamenodeCapacityReport {
-  private static final Log LOG = LogFactory.getLog(TestNamenodeCapacityReport.class);
+  private static final Logger LOG =
+      LoggerFactory.getLogger(TestNamenodeCapacityReport.class);
 
   /**
    * The following test first creates a file.
@@ -225,9 +226,9 @@ public class TestNamenodeCapacityReport {
       triggerHeartbeats(datanodes);
       
       // check that all nodes are live and in service
-      int expectedTotalLoad = nodes;  // xceiver server adds 1 to load
+      int expectedTotalLoad = 0;
       int expectedInServiceNodes = nodes;
-      int expectedInServiceLoad = nodes;
+      int expectedInServiceLoad = 0;
       checkClusterHealth(nodes, namesystem, expectedTotalLoad,
           expectedInServiceNodes, expectedInServiceLoad);
 
@@ -332,10 +333,7 @@ public class TestNamenodeCapacityReport {
           expectedInServiceNodes--;
         }
         assertEquals(expectedInServiceNodes, getNumDNInService(namesystem));
-        // live nodes always report load of 1.  no nodes is load 0
-        double expectedXceiverAvg = (i == nodes-1) ? 0.0 : 1.0;
-        assertEquals((double)expectedXceiverAvg,
-            getInServiceXceiverAverage(namesystem), EPSILON);
+        assertEquals(0, getInServiceXceiverAverage(namesystem), EPSILON);
       }
       // final sanity check
       checkClusterHealth(0, namesystem, 0.0, 0, 0.0);

@@ -28,7 +28,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
-import java.io.PrintStream;
 import java.io.StringWriter;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -64,7 +63,7 @@ import static org.apache.hadoop.conf.StorageUnit.TB;
 import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.*;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration.IntegerRanges;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
@@ -1402,10 +1401,17 @@ public class TestConfiguration {
   @Test
   public void testTimeDuration() {
     Configuration conf = new Configuration(false);
+
+    assertEquals(7000L,
+        conf.getTimeDuration("test.time.a", 7L, SECONDS, MILLISECONDS));
+
     conf.setTimeDuration("test.time.a", 7L, SECONDS);
     assertEquals("7s", conf.get("test.time.a"));
     assertEquals(0L, conf.getTimeDuration("test.time.a", 30, MINUTES));
+    assertEquals(0L, conf.getTimeDuration("test.time.a", 30, SECONDS, MINUTES));
     assertEquals(7L, conf.getTimeDuration("test.time.a", 30, SECONDS));
+    assertEquals(7L,
+        conf.getTimeDuration("test.time.a", 30, MILLISECONDS, SECONDS));
     assertEquals(7000L, conf.getTimeDuration("test.time.a", 30, MILLISECONDS));
     assertEquals(7000000L,
         conf.getTimeDuration("test.time.a", 30, MICROSECONDS));
@@ -1422,6 +1428,8 @@ public class TestConfiguration {
     assertEquals(30L, conf.getTimeDuration("test.time.X", 30, SECONDS));
     conf.set("test.time.X", "30");
     assertEquals(30L, conf.getTimeDuration("test.time.X", 40, SECONDS));
+    assertEquals(30000L,
+        conf.getTimeDuration("test.time.X", 40, SECONDS, MILLISECONDS));
     assertEquals(10L, conf.getTimeDuration("test.time.c", "10", SECONDS));
     assertEquals(30L, conf.getTimeDuration("test.time.c", "30s", SECONDS));
     assertEquals(120L, conf.getTimeDuration("test.time.c", "2m", SECONDS));
@@ -2429,7 +2437,7 @@ public class TestConfiguration {
     }
     conf.set("different.prefix" + ".name", "value");
     Map<String, String> prefixedProps = conf.getPropsWithPrefix("prefix.");
-    assertEquals(prefixedProps.size(), 10);
+    assertThat(prefixedProps.size(), is(10));
     for (int i = 0; i < 10; i++) {
       assertEquals("value" + i, prefixedProps.get("name" + i));
     }
@@ -2440,7 +2448,7 @@ public class TestConfiguration {
       conf.set("subprefix." + "subname" + i, "value_${foo}" + i);
     }
     prefixedProps = conf.getPropsWithPrefix("subprefix.");
-    assertEquals(prefixedProps.size(), 10);
+    assertThat(prefixedProps.size(), is(10));
     for (int i = 0; i < 10; i++) {
       assertEquals("value_bar" + i, prefixedProps.get("subname" + i));
     }
@@ -2462,8 +2470,8 @@ public class TestConfiguration {
     try{
       out = new BufferedWriter(new FileWriter(CONFIG_CORE));
       startConfig();
-      appendProperty("hadoop.system.tags", "YARN,HDFS,NAMENODE");
-      appendProperty("hadoop.custom.tags", "MYCUSTOMTAG");
+      appendProperty("hadoop.tags.system", "YARN,HDFS,NAMENODE");
+      appendProperty("hadoop.tags.custom", "MYCUSTOMTAG");
       appendPropertyByTag("dfs.cblock.trace.io", "false", "YARN");
       appendPropertyByTag("dfs.replication", "1", "HDFS");
       appendPropertyByTag("dfs.namenode.logging.level", "INFO", "NAMENODE");
@@ -2506,33 +2514,14 @@ public class TestConfiguration {
 
   @Test
   public void testInvalidTags() throws Exception {
-    PrintStream output = System.out;
-    try {
-      ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-      System.setOut(new PrintStream(bytes));
+    Path fileResource = new Path(CONFIG);
+    conf.addResource(fileResource);
+    conf.getProps();
 
-      out = new BufferedWriter(new FileWriter(CONFIG));
-      startConfig();
-      appendPropertyByTag("dfs.cblock.trace.io", "false", "MYOWNTAG,TAG2");
-      endConfig();
-
-      Path fileResource = new Path(CONFIG);
-      conf.addResource(fileResource);
-      conf.getProps();
-
-      List<String> tagList = new ArrayList<>();
-      tagList.add("REQUIRED");
-      tagList.add("MYOWNTAG");
-      tagList.add("TAG2");
-
-      Properties properties = conf.getAllPropertiesByTags(tagList);
-      assertEq(0, properties.size());
-      assertFalse(properties.containsKey("dfs.cblock.trace.io"));
-      assertFalse(bytes.toString().contains("Invalid tag "));
-      assertFalse(bytes.toString().contains("Tag"));
-    } finally {
-      System.setOut(output);
-    }
+    assertFalse(conf.isPropertyTag("BADTAG"));
+    assertFalse(conf.isPropertyTag("CUSTOM_TAG"));
+    assertTrue(conf.isPropertyTag("DEBUG"));
+    assertTrue(conf.isPropertyTag("HDFS"));
   }
 
   /**
@@ -2563,5 +2552,42 @@ public class TestConfiguration {
     confClone.get("firstParse");
     // Thread 1
     config.get("secondParse");
+  }
+
+  @Test
+  public void testCDATA() throws IOException {
+    String xml = new String(
+        "<configuration>" +
+          "<property>" +
+            "<name>cdata</name>" +
+            "<value><![CDATA[>cdata]]></value>" +
+          "</property>\n" +
+          "<property>" +
+            "<name>cdata-multiple</name>" +
+            "<value><![CDATA[>cdata1]]> and <![CDATA[>cdata2]]></value>" +
+          "</property>\n" +
+          "<property>" +
+            "<name>cdata-multiline</name>" +
+            "<value><![CDATA[>cdata\nmultiline<>]]></value>" +
+          "</property>\n" +
+          "<property>" +
+            "<name>cdata-whitespace</name>" +
+            "<value>  prefix <![CDATA[>cdata]]>\nsuffix  </value>" +
+          "</property>\n" +
+        "</configuration>");
+    Configuration conf = checkCDATA(xml.getBytes());
+    ByteArrayOutputStream os = new ByteArrayOutputStream();
+    conf.writeXml(os);
+    checkCDATA(os.toByteArray());
+  }
+
+  private static Configuration checkCDATA(byte[] bytes) {
+    Configuration conf = new Configuration(false);
+    conf.addResource(new ByteArrayInputStream(bytes));
+    assertEquals(">cdata", conf.get("cdata"));
+    assertEquals(">cdata1 and >cdata2", conf.get("cdata-multiple"));
+    assertEquals(">cdata\nmultiline<>", conf.get("cdata-multiline"));
+    assertEquals("  prefix >cdata\nsuffix  ", conf.get("cdata-whitespace"));
+    return conf;
   }
 }

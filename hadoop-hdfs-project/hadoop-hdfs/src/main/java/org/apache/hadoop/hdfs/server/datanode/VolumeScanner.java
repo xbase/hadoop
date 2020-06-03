@@ -19,11 +19,14 @@
 package org.apache.hadoop.hdfs.server.datanode;
 
 import java.io.DataOutputStream;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -32,6 +35,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import org.apache.hadoop.hdfs.protocol.Block;
+import org.apache.hadoop.hdfs.protocol.BlockLocalPathInfo;
 import org.apache.hadoop.hdfs.protocol.ExtendedBlock;
 import org.apache.hadoop.hdfs.server.datanode.BlockScanner.Conf;
 import org.apache.hadoop.hdfs.server.datanode.fsdataset.FsVolumeReference;
@@ -45,8 +49,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * VolumeScanner scans a single volume.  Each VolumeScanner has its own thread.<p/>
- * They are all managed by the DataNode's BlockScanner.
+ * VolumeScanner scans a single volume.  Each VolumeScanner has its own thread.
+ * <p>They are all managed by the DataNode's BlockScanner.
  */
 public class VolumeScanner extends Thread {
   public static final Logger LOG =
@@ -125,7 +129,7 @@ public class VolumeScanner extends Thread {
    * Each block pool has its own BlockIterator.
    */
   private final List<BlockIterator> blockIters =
-      new LinkedList<BlockIterator>();
+      new ArrayList<BlockIterator>();
 
   /**
    * Blocks which are suspect.
@@ -228,15 +232,15 @@ public class VolumeScanner extends Thread {
         " path %s%n", volume.getStorageID(), volume));
     synchronized (stats) {
       p.append(String.format("Bytes verified in last hour       : %57d%n",
-          stats.bytesScannedInPastHour));
-      p.append(String.format("Blocks scanned in current period  : %57d%n",
-          stats.blocksScannedInCurrentPeriod));
-      p.append(String.format("Blocks scanned since restart      : %57d%n",
-          stats.blocksScannedSinceRestart));
-      p.append(String.format("Block pool scans since restart    : %57d%n",
-          stats.scansSinceRestart));
-      p.append(String.format("Block scan errors since restart   : %57d%n",
-          stats.scanErrorsSinceRestart));
+          stats.bytesScannedInPastHour))
+          .append(String.format("Blocks scanned in current period  : %57d%n",
+              stats.blocksScannedInCurrentPeriod))
+          .append(String.format("Blocks scanned since restart      : %57d%n",
+              stats.blocksScannedSinceRestart))
+          .append(String.format("Block pool scans since restart    : %57d%n",
+              stats.scansSinceRestart))
+          .append(String.format("Block scan errors since restart   : %57d%n",
+              stats.scanErrorsSinceRestart));
       if (stats.nextBlockPoolScanStartMs > 0) {
         p.append(String.format("Hours until next block pool scan  : %57.3f%n",
             positiveMsToHours(stats.nextBlockPoolScanStartMs -
@@ -290,12 +294,7 @@ public class VolumeScanner extends Thread {
         return;
       }
       LOG.warn("Reporting bad {} on {}", block, volume);
-      try {
-        scanner.datanode.reportBadBlocks(block, volume);
-      } catch (IOException ie) {
-        // This is bad, but not bad enough to shut down the scanner.
-        LOG.warn("Cannot report bad block " + block, ie);
-      }
+      scanner.datanode.handleBadBlock(block, e, true);
     }
   }
 
@@ -485,6 +484,50 @@ public class VolumeScanner extends Thread {
   }
 
   /**
+   * Get next block and check if it's needed to scan.
+   *
+   * @return  the candidate block.
+   */
+  ExtendedBlock getNextBlockToScan() {
+    ExtendedBlock block;
+    try {
+      block = curBlockIter.nextBlock();
+    } catch (IOException e) {
+      // There was an error listing the next block in the volume.  This is a
+      // serious issue.
+      LOG.warn("{}: nextBlock error on {}", this, curBlockIter);
+      // On the next loop iteration, curBlockIter#eof will be set to true, and
+      // we will pick a different block iterator.
+      return null;
+    }
+    if (block == null) {
+      // The BlockIterator is at EOF.
+      LOG.info("{}: finished scanning block pool {}",
+          this, curBlockIter.getBlockPoolId());
+      saveBlockIterator(curBlockIter);
+      return null;
+    } else if (conf.skipRecentAccessed) {
+      // Check the access time of block file to avoid scanning recently
+      // changed blocks, reducing disk IO.
+      try {
+        BlockLocalPathInfo blockLocalPathInfo =
+            volume.getDataset().getBlockLocalPathInfo(block);
+        BasicFileAttributes attr = Files.readAttributes(
+            new File(blockLocalPathInfo.getBlockPath()).toPath(),
+            BasicFileAttributes.class);
+        if (System.currentTimeMillis() - attr.lastAccessTime().
+            to(TimeUnit.MILLISECONDS) < conf.scanPeriodMs) {
+          return null;
+        }
+      } catch (IOException ioe) {
+        LOG.debug("Failed to get access time of block {}",
+            block, ioe);
+      }
+    }
+    return block;
+  }
+
+  /**
    * Run an iteration of the VolumeScanner loop.
    *
    * @param suspectBlock   A suspect block which we should scan, or null to
@@ -508,10 +551,10 @@ public class VolumeScanner extends Thread {
         return 30000L;
       }
 
-      // Find a usable block pool to scan.
       if (suspectBlock != null) {
         block = suspectBlock;
       } else {
+        // Find a usable block pool to scan.
         if ((curBlockIter == null) || curBlockIter.atEnd()) {
           long timeout = findNextUsableBlockIter();
           if (timeout > 0) {
@@ -529,22 +572,9 @@ public class VolumeScanner extends Thread {
           }
           return 0L;
         }
-        try {
-          block = curBlockIter.nextBlock();
-        } catch (IOException e) {
-          // There was an error listing the next block in the volume.  This is a
-          // serious issue.
-          LOG.warn("{}: nextBlock error on {}", this, curBlockIter);
-          // On the next loop iteration, curBlockIter#eof will be set to true, and
-          // we will pick a different block iterator.
-          return 0L;
-        }
+        block = getNextBlockToScan();
         if (block == null) {
-          // The BlockIterator is at EOF.
-          LOG.info("{}: finished scanning block pool {}",
-              this, curBlockIter.getBlockPoolId());
-          saveBlockIterator(curBlockIter);
-          return 0;
+          return 0L;
         }
       }
       if (curBlockIter != null) {

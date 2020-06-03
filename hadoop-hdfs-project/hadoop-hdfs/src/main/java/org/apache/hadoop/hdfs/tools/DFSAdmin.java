@@ -40,8 +40,8 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Joiner;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.ReconfigurationTaskStatus;
@@ -94,6 +94,7 @@ import org.apache.hadoop.ipc.RefreshResponse;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hadoop.ipc.protocolPB.GenericRefreshProtocolClientSideTranslatorPB;
 import org.apache.hadoop.ipc.protocolPB.GenericRefreshProtocolPB;
+import org.apache.hadoop.ipc.StandbyException;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.RefreshUserMappingsProtocol;
 import org.apache.hadoop.security.SecurityUtil;
@@ -114,7 +115,7 @@ public class DFSAdmin extends FsShell {
     HdfsConfiguration.init();
   }
   
-  private static final Log LOG = LogFactory.getLog(DFSAdmin.class);
+  private static final Logger LOG = LoggerFactory.getLogger(DFSAdmin.class);
 
   /**
    * An abstract class for the execution of a file system command
@@ -129,11 +130,7 @@ public class DFSAdmin extends FsShell {
     @Override
     public void run(PathData pathData) throws IOException {
       FileSystem fs = pathData.fs;
-      if (!(fs instanceof DistributedFileSystem)) {
-        throw new IllegalArgumentException("FileSystem " + fs.getUri()
-            + " is not an HDFS file system");
-      }
-      this.dfs = (DistributedFileSystem) fs;
+      this.dfs = AdminHelper.checkAndGetDFS(fs, getConf());
       run(pathData.path);
     }
   }
@@ -239,10 +236,10 @@ public class DFSAdmin extends FsShell {
         "\t\tThe storage type specific quota is cleared when -storageType " +
         "option is specified.\n" +
         "\t\tAvailable storageTypes are \n" +
-        "\t\t- RAM_DISK\n" +
         "\t\t- DISK\n" +
         "\t\t- SSD\n" +
-        "\t\t- ARCHIVE";
+        "\t\t- ARCHIVE\n" +
+        "\t\t- PROVIDED";
 
 
     private StorageType type;
@@ -303,10 +300,10 @@ public class DFSAdmin extends FsShell {
         "\t\t3. the directory does not exist or is a file.\n" +
         "\t\tThe storage type specific quota is set when -storageType option is specified.\n" +
         "\t\tAvailable storageTypes are \n" +
-        "\t\t- RAM_DISK\n" +
         "\t\t- DISK\n" +
         "\t\t- SSD\n" +
-        "\t\t- ARCHIVE";
+        "\t\t- ARCHIVE\n" +
+        "\t\t- PROVIDED";
 
     private long quota; // the quota to be set
     private StorageType type;
@@ -433,7 +430,7 @@ public class DFSAdmin extends FsShell {
   private static final String commonUsageSummary =
     "\t[-report [-live] [-dead] [-decommissioning] " +
     "[-enteringmaintenance] [-inmaintenance]]\n" +
-    "\t[-safemode <enter | leave | get | wait>]\n" +
+    "\t[-safemode <enter | leave | get | wait | forceExit>]\n" +
     "\t[-saveNamespace [-beforeShutdown]]\n" +
     "\t[-rollEdits]\n" +
     "\t[-restoreFailedStorage true|false|check]\n" +
@@ -465,7 +462,7 @@ public class DFSAdmin extends FsShell {
     "\t[-evictWriters <datanode_host:ipc_port>]\n" +
     "\t[-getDatanodeInfo <datanode_host:ipc_port>]\n" +
     "\t[-metasave filename]\n" +
-    "\t[-triggerBlockReport [-incremental] <datanode_host:ipc_port>]\n" +
+    "\t[-triggerBlockReport [-incremental] <datanode_host:ipc_port> [-namenode <namenode_host:ipc_port>]]\n" +
     "\t[-listOpenFiles [-blockingDecommission] [-path <path>]]\n" +
     "\t[-help [cmd]]\n";
 
@@ -484,12 +481,7 @@ public class DFSAdmin extends FsShell {
   }
   
   protected DistributedFileSystem getDFS() throws IOException {
-    FileSystem fs = getFS();
-    if (!(fs instanceof DistributedFileSystem)) {
-      throw new IllegalArgumentException("FileSystem " + fs.getUri() + 
-      " is not an HDFS file system");
-    }
-    return (DistributedFileSystem)fs;
+    return AdminHelper.getDFS(getConf());
   }
   
   /**
@@ -726,6 +718,13 @@ public class DFSAdmin extends FsShell {
     for (int j = 1; j < argv.length; j++) {
       args.add(argv[j]);
     }
+    // Block report to a specific namenode
+    InetSocketAddress namenodeAddr = null;
+    String nnHostPort = StringUtils.popOptionWithArgument("-namenode", args);
+    if (nnHostPort != null) {
+      namenodeAddr = NetUtils.createSocketAddr(nnHostPort);
+    }
+
     boolean incremental = StringUtils.popOption("-incremental", args);
     String hostPort = StringUtils.popFirstNonOption(args);
     if (hostPort == null) {
@@ -741,6 +740,7 @@ public class DFSAdmin extends FsShell {
     try {
       dnProxy.triggerBlockReport(
           new BlockReportOptions.Factory().
+              setNamenodeAddr(namenodeAddr).
               setIncremental(incremental).
               build());
     } catch (IOException e) {
@@ -749,7 +749,9 @@ public class DFSAdmin extends FsShell {
     }
     System.out.println("Triggering " +
         (incremental ? "an incremental " : "a full ") +
-        "block report on " + hostPort + ".");
+        "block report on " + hostPort +
+        (namenodeAddr == null ? "" : " to namenode " + nnHostPort) +
+        ".");
     return 0;
   }
 
@@ -1265,7 +1267,7 @@ public class DFSAdmin extends FsShell {
         + "\tbe used for checking if a datanode is alive.\n";
 
     String triggerBlockReport =
-      "-triggerBlockReport [-incremental] <datanode_host:ipc_port>\n"
+      "-triggerBlockReport [-incremental] <datanode_host:ipc_port> [-namenode <namenode_host:ipc_port>]\n"
         + "\tTrigger a block report for the datanode.\n"
         + "\tIf 'incremental' is specified, it will be an incremental\n"
         + "\tblock report; otherwise, it will be a full block report.\n";
@@ -1343,6 +1345,8 @@ public class DFSAdmin extends FsShell {
       System.out.println(evictWriters);
     } else if ("getDatanodeInfo".equalsIgnoreCase(cmd)) {
       System.out.println(getDatanodeInfo);
+    } else if ("triggerBlockReport".equalsIgnoreCase(cmd)) {
+      System.out.println(triggerBlockReport);
     } else if ("listOpenFiles".equalsIgnoreCase(cmd)) {
       System.out.println(listOpenFiles);
     } else if ("help".equals(cmd)) {
@@ -1535,11 +1539,20 @@ public class DFSAdmin extends FsShell {
           nsId, ClientProtocol.class);
       List<IOException> exceptions = new ArrayList<>();
       for (ProxyAndInfo<ClientProtocol> proxy : proxies) {
-        try{
+        try {
           proxy.getProxy().metaSave(pathname);
           System.out.println("Created metasave file " + pathname
               + " in the log directory of namenode " + proxy.getAddress());
-        } catch (IOException ioe){
+        } catch (RemoteException re) {
+          Exception unwrapped =  re.unwrapRemoteException(
+              StandbyException.class);
+          if (unwrapped instanceof StandbyException) {
+            System.out.println("Skip Standby NameNode, since it cannot perform"
+                + " metasave operation");
+          } else {
+            throw re;
+          }
+        } catch (IOException ioe) {
           System.out.println("Created metasave file " + pathname
               + " in the log directory of namenode " + proxy.getAddress()
               + " failed");
@@ -2164,7 +2177,7 @@ public class DFSAdmin extends FsShell {
           + " [-getDatanodeInfo <datanode_host:ipc_port>]");
     } else if ("-triggerBlockReport".equals(cmd)) {
       System.err.println("Usage: hdfs dfsadmin"
-          + " [-triggerBlockReport [-incremental] <datanode_host:ipc_port>]");
+          + " [-triggerBlockReport [-incremental] <datanode_host:ipc_port> [-namenode <namenode_host:ipc_port>]]");
     } else if ("-listOpenFiles".equals(cmd)) {
       System.err.println("Usage: hdfs dfsadmin"
           + " [-listOpenFiles [-blockingDecommission] [-path <path>]]");
@@ -2182,7 +2195,7 @@ public class DFSAdmin extends FsShell {
    * @return 0 on success, non zero on error.
    */
   @Override
-  public int run(String[] argv) throws Exception {
+  public int run(String[] argv) {
 
     if (argv.length < 1) {
       printUsage("");
@@ -2322,7 +2335,7 @@ public class DFSAdmin extends FsShell {
         return exitCode;
       }
     } else if ("-triggerBlockReport".equals(cmd)) {
-      if ((argv.length != 2) && (argv.length != 3)) {
+      if ((argv.length < 2) || (argv.length > 5)) {
         printUsage(cmd);
         return exitCode;
       }
@@ -2334,16 +2347,7 @@ public class DFSAdmin extends FsShell {
     }
     
     // initialize DFSAdmin
-    try {
-      init();
-    } catch (RPC.VersionMismatch v) {
-      System.err.println("Version Mismatch between client and server"
-                         + "... command aborted.");
-      return exitCode;
-    } catch (IOException e) {
-      System.err.println("Bad connection to DFS... command aborted.");
-      return exitCode;
-    }
+    init();
 
     Exception debugException = null;
     exitCode = 0;

@@ -22,8 +22,8 @@ package org.apache.hadoop.hdfs.server.diskbalancer;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
@@ -63,7 +63,8 @@ import static org.junit.Assert.assertTrue;
  * Tests diskbalancer with a mock mover.
  */
 public class TestDiskBalancerWithMockMover {
-  static final Log LOG = LogFactory.getLog(TestDiskBalancerWithMockMover.class);
+  static final Logger LOG =
+      LoggerFactory.getLogger(TestDiskBalancerWithMockMover.class);
 
   @Rule
   public ExpectedException thrown = ExpectedException.none();
@@ -125,7 +126,7 @@ public class TestDiskBalancerWithMockMover {
   private void executeSubmitPlan(NodePlan plan, DiskBalancer balancer,
                                  int version) throws IOException {
     String planJson = plan.toJson();
-    String planID = DigestUtils.shaHex(planJson);
+    String planID = DigestUtils.sha1Hex(planJson);
     balancer.submitPlan(planID, version, PLAN_FILE, planJson, false);
   }
 
@@ -214,7 +215,7 @@ public class TestDiskBalancerWithMockMover {
     NodePlan plan = mockMoverHelper.getPlan();
     DiskBalancer balancer = mockMoverHelper.getBalancer();
     String planJson = plan.toJson();
-    String planID = DigestUtils.shaHex(planJson);
+    String planID = DigestUtils.sha1Hex(planJson);
 
     thrown.expect(DiskBalancerException.class);
     thrown.expect(new DiskBalancerResultVerifier(DiskBalancerException
@@ -231,7 +232,7 @@ public class TestDiskBalancerWithMockMover {
 
 
     String planJson = plan.toJson();
-    String planID = DigestUtils.shaHex(planJson);
+    String planID = DigestUtils.sha1Hex(planJson);
     char repChar = planID.charAt(0);
     repChar++;
 
@@ -261,7 +262,7 @@ public class TestDiskBalancerWithMockMover {
 
 
     String planJson = plan.toJson();
-    String planID = DigestUtils.shaHex(planJson);
+    String planID = DigestUtils.sha1Hex(planJson);
     balancer.cancelPlan(planID);
 
     DiskBalancerWorkStatus status = balancer.queryWorkStatus();

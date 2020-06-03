@@ -117,8 +117,8 @@ public class ServiceManager implements EventHandler<ServiceEvent> {
 
   @Override
   public void handle(ServiceEvent event) {
+    writeLock.lock();
     try {
-      writeLock.lock();
       State oldState = getState();
       try {
         stateMachine.doTransition(event.getType(), event);
@@ -170,7 +170,8 @@ public class ServiceManager implements EventHandler<ServiceEvent> {
         } else {
           serviceManager.setServiceState(ServiceState.UPGRADING);
         }
-
+        ServiceApiUtil.checkServiceDependencySatisified(serviceManager
+            .getServiceSpec());
         return State.UPGRADING;
       } catch (Throwable e) {
         LOG.error("[SERVICE]: Upgrade to version {} failed", event.getVersion(),

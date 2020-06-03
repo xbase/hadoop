@@ -19,9 +19,16 @@ package org.apache.hadoop.security;
 
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.net.InetAddress;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Hashtable;
@@ -31,6 +38,7 @@ import java.util.HashSet;
 import java.util.Collection;
 import java.util.Set;
 
+import javax.naming.AuthenticationException;
 import javax.naming.Context;
 import javax.naming.NamingEnumeration;
 import javax.naming.NamingException;
@@ -42,9 +50,15 @@ import javax.naming.directory.SearchResult;
 import javax.naming.ldap.LdapName;
 import javax.naming.ldap.Rdn;
 import javax.naming.spi.InitialContextFactory;
+import javax.net.SocketFactory;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 
 import com.google.common.collect.Iterators;
-import com.sun.jndi.ldap.LdapCtxFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configurable;
@@ -135,19 +149,40 @@ public class LdapGroupsMapping
       LDAP_TRUSTSTORE_PASSWORD_KEY + ".file";
 
   /*
+   * User aliases to bind to the LDAP server with. Each alias will have
+   * to have its username and password configured, see core-default.xml
+   * and GroupsMapping.md for details.
+   */
+  public static final String BIND_USERS_KEY = LDAP_CONFIG_PREFIX +
+      ".bind.users";
+
+  /*
    * User to bind to the LDAP server with
    */
-  public static final String BIND_USER_KEY = LDAP_CONFIG_PREFIX + ".bind.user";
+  public static final String BIND_USER_SUFFIX = ".bind.user";
+  public static final String BIND_USER_KEY = LDAP_CONFIG_PREFIX +
+      BIND_USER_SUFFIX;
   public static final String BIND_USER_DEFAULT = "";
 
   /*
    * Password for the bind user
    */
-  public static final String BIND_PASSWORD_KEY = LDAP_CONFIG_PREFIX + ".bind.password";
+  public static final String BIND_PASSWORD_SUFFIX = ".bind.password";
+  public static final String BIND_PASSWORD_KEY = LDAP_CONFIG_PREFIX +
+      BIND_PASSWORD_SUFFIX;
   public static final String BIND_PASSWORD_DEFAULT = "";
-  
-  public static final String BIND_PASSWORD_FILE_KEY = BIND_PASSWORD_KEY + ".file";
+
+  public static final String BIND_PASSWORD_FILE_SUFFIX =
+      BIND_PASSWORD_SUFFIX + ".file";
+  public static final String BIND_PASSWORD_FILE_KEY = LDAP_CONFIG_PREFIX +
+      BIND_PASSWORD_FILE_SUFFIX;
   public static final String BIND_PASSWORD_FILE_DEFAULT = "";
+
+  public static final String BIND_PASSWORD_ALIAS_SUFFIX =
+      BIND_PASSWORD_SUFFIX + ".alias";
+  public static final String BIND_PASSWORD_ALIAS_KEY =
+      LDAP_CONFIG_PREFIX + BIND_PASSWORD_ALIAS_SUFFIX;
+  public static final String BIND_PASSWORD_ALIAS_DEFAULT = "";
 
   /*
    * Base distinguished name to use for searches
@@ -247,8 +282,16 @@ public class LdapGroupsMapping
 
   public static final String LDAP_CTX_FACTORY_CLASS_KEY =
       LDAP_CONFIG_PREFIX + ".ctx.factory.class";
-  public static final Class<? extends LdapCtxFactory>
-      LDAP_CTX_FACTORY_CLASS_DEFAULT = LdapCtxFactory.class;
+
+  public static final String LDAP_CTX_FACTORY_CLASS_DEFAULT =
+      "com.sun.jndi.ldap.LdapCtxFactory";
+
+  /**
+   * The env key used for specifying a custom socket factory to be used for
+   * creating connections to the LDAP server. This is not a Hadoop conf key.
+   */
+  private static final String LDAP_SOCKET_FACTORY_ENV_KEY =
+      "java.naming.ldap.factory.socket";
 
   private static final Logger LOG =
       LoggerFactory.getLogger(LdapGroupsMapping.class);
@@ -269,8 +312,14 @@ public class LdapGroupsMapping
   private String keystorePass;
   private String truststore;
   private String truststorePass;
-  private String bindUser;
-  private String bindPassword;
+
+  /*
+   * Users to bind to when connecting to LDAP. This will be a rotating
+   * iterator, cycling back to the first user if necessary.
+   */
+  private Iterator<BindUserInfo> bindUsers;
+  private BindUserInfo currentBindUser;
+
   private String userbaseDN;
   private String groupbaseDN;
   private String groupSearchFilter;
@@ -285,7 +334,7 @@ public class LdapGroupsMapping
   private boolean useOneQuery;
   private int numAttempts;
   private int numAttemptsBeforeFailover;
-  private Class<? extends InitialContextFactory> ldapCxtFactoryClass;
+  private String ldapCtxFactoryClassName;
 
   /**
    * Returns list of groups for a user.
@@ -314,6 +363,8 @@ public class LdapGroupsMapping
         atemptsBeforeFailover++) {
       try {
         return doGetGroups(user, groupHierarchyLevels);
+      } catch (AuthenticationException e) {
+        switchBindUser(e);
       } catch (NamingException e) {
         LOG.warn("Failed to get groups for user {} (attempt={}/{}) using {}. " +
             "Exception: ", user, attempt, numAttempts, currentLdapUrl, e);
@@ -585,34 +636,41 @@ public class LdapGroupsMapping
     return false;
   }
 
+  /**
+   * Switch to the next available user to bind to.
+   * @param e AuthenticationException encountered when contacting LDAP
+   */
+  protected void switchBindUser(AuthenticationException e) {
+    BindUserInfo oldBindUser = this.currentBindUser;
+    currentBindUser = this.bindUsers.next();
+    if (!oldBindUser.equals(currentBindUser)) {
+      LOG.info("Switched from {} to {} after an AuthenticationException: {}",
+          oldBindUser, currentBindUser, e.getMessage());
+    }
+  }
+
   private DirContext getDirContext() throws NamingException {
     if (ctx == null) {
       // Set up the initial environment for LDAP connectivity
       Hashtable<String, String> env = new Hashtable<>();
-      env.put(Context.INITIAL_CONTEXT_FACTORY, ldapCxtFactoryClass.getName());
+      env.put(Context.INITIAL_CONTEXT_FACTORY, ldapCtxFactoryClassName);
       env.put(Context.PROVIDER_URL, currentLdapUrl);
       env.put(Context.SECURITY_AUTHENTICATION, "simple");
 
       // Set up SSL security, if necessary
       if (useSsl) {
         env.put(Context.SECURITY_PROTOCOL, "ssl");
-        if (!keystore.isEmpty()) {
-          System.setProperty("javax.net.ssl.keyStore", keystore);
-        }
-        if (!keystorePass.isEmpty()) {
-          System.setProperty("javax.net.ssl.keyStorePassword", keystorePass);
-        }
-        if (!truststore.isEmpty()) {
-          System.setProperty("javax.net.ssl.trustStore", truststore);
-        }
-        if (!truststorePass.isEmpty()) {
-          System.setProperty("javax.net.ssl.trustStorePassword",
-              truststorePass);
-        }
+        // It is necessary to use a custom socket factory rather than setting
+        // system properties to configure these options to avoid interfering
+        // with other SSL factories throughout the system
+        LdapSslSocketFactory.setConfigurations(keystore, keystorePass,
+            truststore, truststorePass);
+        env.put("java.naming.ldap.factory.socket",
+            LdapSslSocketFactory.class.getName());
       }
 
-      env.put(Context.SECURITY_PRINCIPAL, bindUser);
-      env.put(Context.SECURITY_CREDENTIALS, bindPassword);
+      env.put(Context.SECURITY_PRINCIPAL, currentBindUser.username);
+      env.put(Context.SECURITY_CREDENTIALS, currentBindUser.password);
 
       env.put("com.sun.jndi.ldap.connect.timeout", conf.get(CONNECTION_TIMEOUT,
           String.valueOf(CONNECTION_TIMEOUT_DEFAULT)));
@@ -649,6 +707,7 @@ public class LdapGroupsMapping
 
   @Override
   public synchronized void setConf(Configuration conf) {
+    this.conf = conf;
     String[] urls = conf.getStrings(LDAP_URL_KEY, LDAP_URL_DEFAULT);
     if (urls == null || urls.length == 0) {
       throw new RuntimeException("LDAP URL(s) are not configured");
@@ -660,14 +719,9 @@ public class LdapGroupsMapping
     if (useSsl) {
       loadSslConf(conf);
     }
-    
-    bindUser = conf.get(BIND_USER_KEY, BIND_USER_DEFAULT);
-    bindPassword = getPassword(conf, BIND_PASSWORD_KEY, BIND_PASSWORD_DEFAULT);
-    if (bindPassword.isEmpty()) {
-      bindPassword = extractPassword(
-          conf.get(BIND_PASSWORD_FILE_KEY, BIND_PASSWORD_FILE_DEFAULT));
-    }
-    
+
+    initializeBindUsers();
+
     String baseDN = conf.getTrimmed(BASE_DN_KEY, BASE_DN_DEFAULT);
 
     // User search base which defaults to base dn.
@@ -715,16 +769,24 @@ public class LdapGroupsMapping
     }
     SEARCH_CONTROLS.setReturningAttributes(returningAttributes);
 
-    ldapCxtFactoryClass = conf.getClass(LDAP_CTX_FACTORY_CLASS_KEY,
-        LDAP_CTX_FACTORY_CLASS_DEFAULT, InitialContextFactory.class);
+    // LDAP_CTX_FACTORY_CLASS_DEFAULT is not open to unnamed modules
+    // in Java 11+, so the default value is set to null to avoid
+    // creating the instance for now.
+    Class<? extends InitialContextFactory> ldapCtxFactoryClass =
+        conf.getClass(LDAP_CTX_FACTORY_CLASS_KEY, null,
+        InitialContextFactory.class);
+    if (ldapCtxFactoryClass != null) {
+      ldapCtxFactoryClassName = ldapCtxFactoryClass.getName();
+    } else {
+      // The default value is set afterwards.
+      ldapCtxFactoryClassName = LDAP_CTX_FACTORY_CLASS_DEFAULT;
+    }
 
     this.numAttempts = conf.getInt(LDAP_NUM_ATTEMPTS_KEY,
         LDAP_NUM_ATTEMPTS_DEFAULT);
     this.numAttemptsBeforeFailover = conf.getInt(
         LDAP_NUM_ATTEMPTS_BEFORE_FAILOVER_KEY,
         LDAP_NUM_ATTEMPTS_BEFORE_FAILOVER_DEFAULT);
-
-    this.conf = conf;
   }
 
   /**
@@ -755,10 +817,10 @@ public class LdapGroupsMapping
   }
 
   String getPasswordFromCredentialProviders(
-      Configuration conf, String alias, String defaultPass) {
+      Configuration config, String alias, String defaultPass) {
     String password = defaultPass;
     try {
-      char[] passchars = conf.getPasswordFromCredentialProviders(alias);
+      char[] passchars = config.getPasswordFromCredentialProviders(alias);
       if (passchars != null) {
         password = new String(passchars);
       }
@@ -799,7 +861,7 @@ public class LdapGroupsMapping
 
     StringBuilder password = new StringBuilder();
     try (Reader reader = new InputStreamReader(
-        new FileInputStream(pwFile), StandardCharsets.UTF_8)) {
+        Files.newInputStream(Paths.get(pwFile)), StandardCharsets.UTF_8)) {
       int c = reader.read();
       while (c > -1) {
         password.append((char)c);
@@ -810,4 +872,201 @@ public class LdapGroupsMapping
       throw new RuntimeException("Could not read password file: " + pwFile, ioe);
     }
   }
+
+  private void initializeBindUsers() {
+    List<BindUserInfo> bindUsersConfigured = new ArrayList<>();
+
+    String[] bindUserAliases = conf.getStrings(BIND_USERS_KEY);
+    if (bindUserAliases != null && bindUserAliases.length > 0) {
+
+      for (String bindUserAlias : bindUserAliases) {
+        String userConfPrefix = BIND_USERS_KEY + "." + bindUserAlias;
+        String bindUsername = conf.get(userConfPrefix + BIND_USER_SUFFIX);
+        String bindPassword = getPasswordForBindUser(userConfPrefix);
+
+        if (bindUsername == null || bindPassword == null) {
+          throw new RuntimeException("Bind username or password not " +
+              "configured for user: " + bindUserAlias);
+        }
+        bindUsersConfigured.add(new BindUserInfo(bindUsername, bindPassword));
+      }
+    } else {
+      String bindUsername = conf.get(BIND_USER_KEY, BIND_USER_DEFAULT);
+      String bindPassword = getPasswordForBindUser(LDAP_CONFIG_PREFIX);
+      bindUsersConfigured.add(new BindUserInfo(bindUsername, bindPassword));
+    }
+
+    this.bindUsers = Iterators.cycle(bindUsersConfigured);
+    this.currentBindUser = this.bindUsers.next();
+  }
+
+  private String getPasswordForBindUser(String keyPrefix) {
+    String password;
+    String alias = conf.get(keyPrefix + BIND_PASSWORD_ALIAS_SUFFIX,
+        BIND_PASSWORD_ALIAS_DEFAULT);
+    password = getPasswordFromCredentialProviders(conf, alias, "");
+    if (password.isEmpty()) {
+      password = getPassword(conf, keyPrefix + BIND_PASSWORD_SUFFIX,
+          BIND_PASSWORD_DEFAULT);
+      if (password.isEmpty()) {
+        password = extractPassword(conf.get(
+            keyPrefix + BIND_PASSWORD_FILE_SUFFIX, BIND_PASSWORD_FILE_DEFAULT));
+      }
+    }
+    return password;
+  }
+
+  private final static class BindUserInfo {
+    private final String username;
+    private final String password;
+
+    private BindUserInfo(String username, String password) {
+      this.username = username;
+      this.password = password;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (!(o instanceof BindUserInfo)) {
+        return false;
+      }
+      return this.username.equals(((BindUserInfo) o).username);
+    }
+
+    @Override
+    public int hashCode() {
+      return this.username.hashCode();
+    }
+
+    @Override
+    public String toString() {
+      return this.username;
+    }
+  }
+
+  /**
+   * An private internal socket factory used to create SSL sockets with custom
+   * configuration. There is no way to pass a specific instance of a factory to
+   * the Java naming services, and the instantiated socket factory is not
+   * passed any contextual information, so all information must be encapsulated
+   * directly in the class. Static fields are used here to achieve this. This is
+   * safe since the only usage of {@link LdapGroupsMapping} is within
+   * {@link Groups}, which is a singleton (see the GROUPS field).
+   * <p>
+   * This has nearly the same behavior as an {@link SSLSocketFactory}. The only
+   * additional logic is to configure the key store and trust store.
+   * <p>
+   * This is public only to be accessible by the Java naming services.
+   */
+  @InterfaceAudience.Private
+  public static class LdapSslSocketFactory extends SocketFactory {
+
+    /** Cached value lazy-loaded by {@link #getDefault()}. */
+    private static LdapSslSocketFactory defaultSslFactory;
+
+    private static String keyStoreLocation;
+    private static String keyStorePassword;
+    private static String trustStoreLocation;
+    private static String trustStorePassword;
+
+    private final SSLSocketFactory socketFactory;
+
+    LdapSslSocketFactory(SSLSocketFactory wrappedSocketFactory) {
+      this.socketFactory = wrappedSocketFactory;
+    }
+
+    public static synchronized SocketFactory getDefault() {
+      if (defaultSslFactory == null) {
+        try {
+          SSLContext context = SSLContext.getInstance("TLS");
+          context.init(createKeyManagers(), createTrustManagers(), null);
+          defaultSslFactory =
+              new LdapSslSocketFactory(context.getSocketFactory());
+          LOG.info("Successfully instantiated LdapSslSocketFactory with "
+                  + "keyStoreLocation = {} and trustStoreLocation = {}",
+              keyStoreLocation, trustStoreLocation);
+        } catch (IOException | GeneralSecurityException e) {
+          throw new RuntimeException("Unable to create SSLSocketFactory", e);
+        }
+      }
+      return defaultSslFactory;
+    }
+
+    static synchronized void setConfigurations(String newKeyStoreLocation,
+        String newKeyStorePassword, String newTrustStoreLocation,
+        String newTrustStorePassword) {
+      LdapSslSocketFactory.keyStoreLocation = newKeyStoreLocation;
+      LdapSslSocketFactory.keyStorePassword = newKeyStorePassword;
+      LdapSslSocketFactory.trustStoreLocation = newTrustStoreLocation;
+      LdapSslSocketFactory.trustStorePassword = newTrustStorePassword;
+    }
+
+    private static KeyManager[] createKeyManagers()
+        throws IOException, GeneralSecurityException {
+      if (keyStoreLocation.isEmpty()) {
+        return null;
+      }
+      KeyManagerFactory keyMgrFactory = KeyManagerFactory
+          .getInstance(KeyManagerFactory.getDefaultAlgorithm());
+      keyMgrFactory.init(createKeyStore(keyStoreLocation, keyStorePassword),
+          getPasswordCharArray(keyStorePassword));
+      return keyMgrFactory.getKeyManagers();
+    }
+
+    private static TrustManager[] createTrustManagers()
+        throws IOException, GeneralSecurityException {
+      if (trustStoreLocation.isEmpty()) {
+        return null;
+      }
+      TrustManagerFactory trustMgrFactory = TrustManagerFactory
+          .getInstance(TrustManagerFactory.getDefaultAlgorithm());
+      trustMgrFactory.init(
+          createKeyStore(trustStoreLocation, trustStorePassword));
+      return trustMgrFactory.getTrustManagers();
+    }
+
+    private static KeyStore createKeyStore(String location, String password)
+        throws IOException, GeneralSecurityException {
+      KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+      try (InputStream keyStoreInput = new FileInputStream(location)) {
+        keyStore.load(keyStoreInput, getPasswordCharArray(password));
+      }
+      return keyStore;
+    }
+
+    private static char[] getPasswordCharArray(String password) {
+      if (password == null || password.isEmpty()) {
+        return null;
+      }
+      return password.toCharArray();
+    }
+
+    @Override
+    public Socket createSocket() throws IOException {
+      return socketFactory.createSocket();
+    }
+
+    @Override
+    public Socket createSocket(String host, int port) throws IOException {
+      return socketFactory.createSocket(host, port);
+    }
+
+    @Override
+    public Socket createSocket(String host, int port, InetAddress localHost,
+        int localPort) throws IOException {
+      return socketFactory.createSocket(host, port, localHost, localPort);
+    }
+
+    @Override
+    public Socket createSocket(InetAddress host, int port) throws IOException {
+      return socketFactory.createSocket(host, port);
+    }
+
+    @Override
+    public Socket createSocket(InetAddress address, int port,
+        InetAddress localAddress, int localPort) throws IOException {
+      return socketFactory.createSocket(address, port, localAddress, localPort);
+    }
+  }
+
 }

@@ -34,13 +34,14 @@ import java.util.Arrays;
 import java.util.Locale;
 import java.util.Random;
 import java.util.Set;
+import java.util.Enumeration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.RandomStringUtils;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.impl.Log4JLogger;
 import org.apache.hadoop.fs.FileUtil;
@@ -60,7 +61,6 @@ import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.collect.Sets;
 
@@ -189,6 +189,14 @@ public abstract class GenericTestUtils {
 
   public static void setRootLogLevel(org.slf4j.event.Level level) {
     setLogLevel(LogManager.getRootLogger(), Level.toLevel(level.toString()));
+  }
+
+  public static void setCurrentLoggersLogLevel(org.slf4j.event.Level level) {
+    for (Enumeration<?> loggers = LogManager.getCurrentLoggers();
+        loggers.hasMoreElements();) {
+      Logger logger = (Logger) loggers.nextElement();
+      logger.setLevel(Level.toLevel(level.toString()));
+    }
   }
 
   public static org.slf4j.event.Level toLevel(String level) {
@@ -344,7 +352,7 @@ public abstract class GenericTestUtils {
       throw new AssertionError(E_NULL_THROWABLE_STRING, t);
     }
     if (expectedText != null && !msg.contains(expectedText)) {
-      String prefix = org.apache.commons.lang.StringUtils.isEmpty(message)
+      String prefix = org.apache.commons.lang3.StringUtils.isEmpty(message)
           ? "" : (message + ": ");
       throw new AssertionError(
           String.format("%s Expected to find '%s' %s: %s",
@@ -369,11 +377,15 @@ public abstract class GenericTestUtils {
    * time
    * @throws InterruptedException if the method is interrupted while waiting
    */
-  public static void waitFor(Supplier<Boolean> check, int checkEveryMillis,
-      int waitForMillis) throws TimeoutException, InterruptedException {
-    Preconditions.checkNotNull(check, ERROR_MISSING_ARGUMENT);
-    Preconditions.checkArgument(waitForMillis >= checkEveryMillis,
-        ERROR_INVALID_ARGUMENT);
+  public static void waitFor(final Supplier<Boolean> check,
+      final long checkEveryMillis, final long waitForMillis)
+      throws TimeoutException, InterruptedException {
+    if (check == null) {
+      throw new NullPointerException(ERROR_MISSING_ARGUMENT);
+    }
+    if (waitForMillis < checkEveryMillis) {
+      throw new IllegalArgumentException(ERROR_INVALID_ARGUMENT);
+    }
 
     long st = Time.monotonicNow();
     boolean result = check.get();
@@ -501,7 +513,7 @@ public abstract class GenericTestUtils {
    * method is called, then waits on another before continuing.
    */
   public static class DelayAnswer implements Answer<Object> {
-    private final Log LOG;
+    private final org.slf4j.Logger LOG;
 
     private final CountDownLatch fireLatch = new CountDownLatch(1);
     private final CountDownLatch waitLatch = new CountDownLatch(1);
@@ -514,7 +526,7 @@ public abstract class GenericTestUtils {
     private volatile Throwable thrown;
     private volatile Object returnValue;
 
-    public DelayAnswer(Log log) {
+    public DelayAnswer(org.slf4j.Logger log) {
       this.LOG = log;
     }
 
@@ -611,13 +623,13 @@ public abstract class GenericTestUtils {
    */
   public static class DelegateAnswer implements Answer<Object> {
     private final Object delegate;
-    private final Log log;
+    private final org.slf4j.Logger log;
 
     public DelegateAnswer(Object delegate) {
       this(null, delegate);
     }
 
-    public DelegateAnswer(Log log, Object delegate) {
+    public DelegateAnswer(org.slf4j.Logger log, Object delegate) {
       this.log = log;
       this.delegate = delegate;
     }
@@ -661,7 +673,7 @@ public abstract class GenericTestUtils {
     public Object answer(InvocationOnMock invocation) throws Throwable {
       boolean interrupted = false;
       try {
-        Thread.sleep(r.nextInt(maxSleepTime) + minSleepTime);
+        Thread.sleep(r.nextInt(maxSleepTime - minSleepTime) + minSleepTime);
       } catch (InterruptedException ie) {
         interrupted = true;
       }

@@ -44,9 +44,12 @@ import org.apache.hadoop.yarn.server.metrics.ContainerMetricsConstants;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
 import java.util.Set;
+
+import static org.apache.hadoop.yarn.util.StringHelper.PATH_JOINER;
 
 /**
  * Utility class to generate reports from timeline entities.
@@ -56,7 +59,7 @@ public final class TimelineEntityV2Converter {
   }
 
   public static ContainerReport convertToContainerReport(
-      TimelineEntity entity) {
+      TimelineEntity entity, String serverAddress, String user) {
     int allocatedMem = 0;
     int allocatedVcore = 0;
     String allocatedHost = null;
@@ -68,6 +71,8 @@ public final class TimelineEntityV2Converter {
     int exitStatus = ContainerExitStatus.INVALID;
     ContainerState state = null;
     String nodeHttpAddress = null;
+    Map<String, List<Map<String, String>>> exposedPorts = null;
+
     Map<String, Object> entityInfo = entity.getInfo();
     if (entityInfo != null) {
       if (entityInfo
@@ -103,6 +108,12 @@ public final class TimelineEntityV2Converter {
             (String) entityInfo.get(
                 ContainerMetricsConstants.ALLOCATED_HOST_HTTP_ADDRESS_INFO);
       }
+      if (entityInfo.containsKey(
+          ContainerMetricsConstants.ALLOCATED_EXPOSED_PORTS)) {
+        exposedPorts =
+            (Map<String, List<Map<String, String>>>) entityInfo
+                .get(ContainerMetricsConstants.ALLOCATED_EXPOSED_PORTS);
+      }
       if (entityInfo.containsKey(ContainerMetricsConstants.DIAGNOSTICS_INFO)) {
         diagnosticsInfo =
             entityInfo.get(
@@ -133,15 +144,23 @@ public final class TimelineEntityV2Converter {
     }
     String logUrl = null;
     NodeId allocatedNode = null;
+    String containerId = entity.getId();
     if (allocatedHost != null) {
       allocatedNode = NodeId.newInstance(allocatedHost, allocatedPort);
+      if (serverAddress != null && user != null) {
+        logUrl = PATH_JOINER.join(serverAddress,
+            "logs", allocatedNode, containerId, containerId, user);
+      }
     }
-    return ContainerReport.newInstance(
+    ContainerReport container = ContainerReport.newInstance(
         ContainerId.fromString(entity.getId()),
         Resource.newInstance(allocatedMem, allocatedVcore), allocatedNode,
         Priority.newInstance(allocatedPriority),
         createdTime, finishedTime, diagnosticsInfo, logUrl, exitStatus, state,
         nodeHttpAddress);
+    container.setExposedPorts(exposedPorts);
+
+    return container;
   }
 
   public static ApplicationAttemptReport convertToApplicationAttemptReport(
@@ -239,6 +258,7 @@ public final class TimelineEntityV2Converter {
     String type = null;
     boolean unmanagedApplication = false;
     long createdTime = 0;
+    long launchTime = 0;
     long finishedTime = 0;
     float progress = 0.0f;
     int applicationPriority = 0;
@@ -398,6 +418,9 @@ public final class TimelineEntityV2Converter {
             ApplicationMetricsConstants.CREATED_EVENT_TYPE)) {
           createdTime = event.getTimestamp();
         } else if (event.getId().equals(
+            ApplicationMetricsConstants.LAUNCHED_EVENT_TYPE)) {
+          launchTime = event.getTimestamp();
+        } else if (event.getId().equals(
             ApplicationMetricsConstants.UPDATED_EVENT_TYPE)) {
           // This type of events are parsed in time-stamp descending order
           // which means the previous event could override the information
@@ -430,8 +453,9 @@ public final class TimelineEntityV2Converter {
     return ApplicationReport.newInstance(
         ApplicationId.fromString(entity.getId()),
         latestApplicationAttemptId, user, queue, name, null, -1, null, state,
-        diagnosticsInfo, null, createdTime, finishedTime, finalStatus,
-        appResources, null, progress, type, null, appTags, unmanagedApplication,
+        diagnosticsInfo, null, createdTime, launchTime,
+        finishedTime, finalStatus, appResources, null,
+        progress, type, null, appTags, unmanagedApplication,
         Priority.newInstance(applicationPriority), appNodeLabelExpression,
         amNodeLabelExpression);
   }

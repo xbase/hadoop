@@ -29,7 +29,7 @@ import java.util.TreeMap;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.apache.commons.lang.mutable.MutableBoolean;
+import org.apache.commons.lang3.mutable.MutableBoolean;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hdfs.ExtendedBlockId;
 import org.apache.hadoop.hdfs.net.DomainPeer;
@@ -57,9 +57,8 @@ import org.slf4j.LoggerFactory;
  * slots in the set of existing segments, falling back to getting a new segment
  * from the DataNode via {@link DataTransferProtocol#requestShortCircuitFds}.
  *
- * The counterpart to this class on the DataNode is
- * {@link ShortCircuitRegistry}. See {@link ShortCircuitRegistry} for more
- * information on the communication protocol.
+ * The counterpart to this class on the DataNode is ShortCircuitRegistry.
+ * See ShortCircuitRegistry for more information on the communication protocol.
  */
 @InterfaceAudience.Private
 public class DfsClientShmManager implements Closeable {
@@ -497,5 +496,15 @@ public class DfsClientShmManager implements Closeable {
   @VisibleForTesting
   public DomainSocketWatcher getDomainSocketWatcher() {
     return domainSocketWatcher;
+  }
+
+  @VisibleForTesting
+  public int getShmNum() {
+    int segments = 0;
+    for (EndpointShmManager endpointShmManager : datanodes.values()) {
+      segments +=
+          endpointShmManager.notFull.size() + endpointShmManager.full.size();
+    }
+    return segments;
   }
 }

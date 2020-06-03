@@ -18,7 +18,6 @@
 package org.apache.hadoop.hdfs.server.namenode;
 
 import com.google.common.base.Preconditions;
-import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.HadoopIllegalArgumentException;
 import org.apache.hadoop.fs.XAttrSetFlag;
 import org.apache.hadoop.hdfs.AddBlockFlag;
@@ -362,7 +361,8 @@ class FSDirWriteFileOp {
       EnumSet<CreateFlag> flag, boolean createParent,
       short replication, long blockSize,
       FileEncryptionInfo feInfo, INode.BlocksMapUpdateInfo toRemoveBlocks,
-      boolean shouldReplicate, String ecPolicyName, boolean logRetryEntry)
+      boolean shouldReplicate, String ecPolicyName, String storagePolicy,
+      boolean logRetryEntry)
       throws IOException {
     assert fsn.hasWriteLock();
     boolean overwrite = flag.contains(CreateFlag.OVERWRITE);
@@ -397,7 +397,7 @@ class FSDirWriteFileOp {
     if (parent != null) {
       iip = addFile(fsd, parent, iip.getLastLocalName(), permissions,
           replication, blockSize, holder, clientMachine, shouldReplicate,
-          ecPolicyName);
+          ecPolicyName, storagePolicy);
       newNode = iip != null ? iip.getLastINode().asFile() : null;
     }
     if (newNode == null) {
@@ -541,7 +541,7 @@ class FSDirWriteFileOp {
       FSDirectory fsd, INodesInPath existing, byte[] localName,
       PermissionStatus permissions, short replication, long preferredBlockSize,
       String clientName, String clientMachine, boolean shouldReplicate,
-      String ecPolicyName) throws IOException {
+      String ecPolicyName, String storagePolicy) throws IOException {
 
     Preconditions.checkNotNull(existing);
     long modTime = now();
@@ -550,14 +550,19 @@ class FSDirWriteFileOp {
     try {
       boolean isStriped = false;
       ErasureCodingPolicy ecPolicy = null;
-      if (!shouldReplicate) {
-        if (!StringUtils.isEmpty(ecPolicyName)) {
-          ecPolicy = FSDirErasureCodingOp.getErasureCodingPolicyByName(
-              fsd.getFSNamesystem(), ecPolicyName);
-        } else {
-          ecPolicy = FSDirErasureCodingOp.unprotectedGetErasureCodingPolicy(
-              fsd.getFSNamesystem(), existing);
+      byte storagepolicyid = 0;
+      if (storagePolicy != null && !storagePolicy.isEmpty()) {
+        BlockStoragePolicy policy =
+            fsd.getBlockManager().getStoragePolicy(storagePolicy);
+        if (policy == null) {
+          throw new HadoopIllegalArgumentException(
+              "Cannot find a block policy with the name " + storagePolicy);
         }
+        storagepolicyid = policy.getId();
+      }
+      if (!shouldReplicate) {
+        ecPolicy = FSDirErasureCodingOp.getErasureCodingPolicy(
+            fsd.getFSNamesystem(), ecPolicyName, existing);
         if (ecPolicy != null && (!ecPolicy.isReplicationPolicy())) {
           isStriped = true;
         }
@@ -568,7 +573,7 @@ class FSDirWriteFileOp {
       final Byte ecPolicyID = (isStriped ? ecPolicy.getId() : null);
       INodeFile newNode = newINodeFile(fsd.allocateNewInodeId(), permissions,
           modTime, modTime, replicationFactor, ecPolicyID, preferredBlockSize,
-          blockType);
+          storagepolicyid, blockType);
       newNode.setLocalName(localName);
       newNode.toUnderConstruction(clientName, clientMachine);
       newiip = fsd.addINode(existing, newNode, permissions.getPermission());
@@ -746,13 +751,6 @@ class FSDirWriteFileOp {
         storagePolicyId, blockType);
   }
 
-  private static INodeFile newINodeFile(long id, PermissionStatus permissions,
-      long mtime, long atime, Short replication, Byte ecPolicyID,
-      long preferredBlockSize, BlockType blockType) {
-    return newINodeFile(id, permissions, mtime, atime, replication, ecPolicyID,
-        preferredBlockSize, (byte)0, blockType);
-  }
-
   /**
    * Persist the new block (the last block of the given file).
    */
@@ -778,7 +776,7 @@ class FSDirWriteFileOp {
    * @param targets target datanodes where replicas of the new block is placed
    * @throws QuotaExceededException If addition of block exceeds space quota
    */
-  private static void saveAllocatedBlock(FSNamesystem fsn, String src,
+  static void saveAllocatedBlock(FSNamesystem fsn, String src,
       INodesInPath inodesInPath, Block newBlock, DatanodeStorageInfo[] targets,
       BlockType blockType) throws IOException {
     assert fsn.hasWriteLock();

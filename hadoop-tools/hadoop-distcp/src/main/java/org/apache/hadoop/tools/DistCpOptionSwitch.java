@@ -46,14 +46,18 @@ public enum DistCpOptionSwitch {
    * only the corresponding file attribute is preserved.
    */
   PRESERVE_STATUS(DistCpConstants.CONF_LABEL_PRESERVE_STATUS,
-      new Option("p", true, "preserve status (rbugpcaxt)(replication, " +
+      new Option("p", true, "preserve status (rbugpcaxte)(replication, " +
           "block-size, user, group, permission, checksum-type, ACL, XATTR, " +
-          "timestamps). If -p is specified with no <arg>, then preserves " +
+          "timestamps, erasure coding policy). If -p is specified with no "
+          + "<arg>, then "
+          + "preserves " +
           "replication, block size, user, group, permission, checksum type " +
           "and timestamps. " +
           "raw.* xattrs are preserved when both the source and destination " +
           "paths are in the /.reserved/raw hierarchy (HDFS only). raw.* xattr" +
           "preservation is independent of the -p flag. " +
+          "Erasure coding policy is only preserved when both source and "
+          + "destination are of HDFS"+
           "Refer to the DistCp documentation for more details.")),
 
   /**
@@ -192,7 +196,7 @@ public enum DistCpOptionSwitch {
       new Option("sizelimit", true, "(Deprecated!) Limit number of files " +
               "copied to <= n bytes")),
 
-  BLOCKS_PER_CHUNK("",
+  BLOCKS_PER_CHUNK(DistCpConstants.CONF_LABEL_BLOCKS_PER_CHUNK,
       new Option("blocksperchunk", true, "If set to a positive value, files"
           + "with more blocks than this value will be split into chunks of "
           + "<blocksperchunk> blocks to be transferred in parallel, and "
@@ -223,7 +227,19 @@ public enum DistCpOptionSwitch {
    */
   FILTERS(DistCpConstants.CONF_LABEL_FILTERS_FILE,
       new Option("filters", true, "The path to a file containing a list of"
-          + " strings for paths to be excluded from the copy."));
+          + " strings for paths to be excluded from the copy.")),
+
+  /**
+   * Write directly to the final location, avoiding the creation and rename
+   * of temporary files.
+   * This is typically useful in cases where the target filesystem
+   * implementation does not support atomic rename operations, such as with
+   * the S3AFileSystem which translates file renames to potentially very
+   * expensive copy-then-delete operations.
+   */
+  DIRECT_WRITE(DistCpConstants.CONF_LABEL_DIRECT_WRITE,
+      new Option("direct", false, "Write files directly to the"
+          + " target location, avoiding temporary file rename."));
 
 
   public static final String PRESERVE_STATUS_DEFAULT = "-prbugpct";

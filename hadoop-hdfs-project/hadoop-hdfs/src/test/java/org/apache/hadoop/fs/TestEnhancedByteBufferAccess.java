@@ -35,10 +35,10 @@ import java.util.Random;
 import java.util.concurrent.TimeoutException;
 
 import org.apache.commons.collections.map.LinkedMap;
-import org.apache.commons.lang.SystemUtils;
-import org.apache.commons.lang.mutable.MutableBoolean;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.apache.commons.lang3.SystemUtils;
+import org.apache.commons.lang3.mutable.MutableBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hdfs.client.impl.BlockReaderTestUtil;
 import org.apache.hadoop.hdfs.ClientContext;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
@@ -78,8 +78,8 @@ import com.google.common.base.Supplier;
  * This class tests if EnhancedByteBufferAccess works correctly.
  */
 public class TestEnhancedByteBufferAccess {
-  private static final Log LOG =
-      LogFactory.getLog(TestEnhancedByteBufferAccess.class.getName());
+  private static final Logger LOG =
+      LoggerFactory.getLogger(TestEnhancedByteBufferAccess.class.getName());
 
   static private TemporarySocketDirectory sockDir;
 
@@ -358,7 +358,7 @@ public class TestEnhancedByteBufferAccess {
     fsIn.close();
     fsIn = fs.open(TEST_PATH);
     final ShortCircuitCache cache = ClientContext.get(
-        CONTEXT, conf).getShortCircuitCache();
+        CONTEXT, conf).getShortCircuitCache(0);
     cache.accept(new CountingVisitor(0, 5, 5, 0));
     results[0] = fsIn.read(null, BLOCK_SIZE,
         EnumSet.of(ReadOption.SKIP_CHECKSUMS));
@@ -575,7 +575,7 @@ public class TestEnhancedByteBufferAccess {
       fis = new FileInputStream(testPath);
       testFallbackImpl(fis, original);
     } finally {
-      IOUtils.cleanup(LOG, fos, fis);
+      IOUtils.cleanupWithLogger(LOG, fos, fis);
       new File(testPath).delete();
     }
   }
@@ -654,12 +654,12 @@ public class TestEnhancedByteBufferAccess {
         BLOCK_SIZE), byteBufferToArray(result2));
     fsIn2.releaseBuffer(result2);
     fsIn2.close();
-    
+
     // check that the replica is anchored 
     final ExtendedBlock firstBlock =
         DFSTestUtil.getFirstBlock(fs, TEST_PATH);
     final ShortCircuitCache cache = ClientContext.get(
-        CONTEXT, conf).getShortCircuitCache();
+        CONTEXT, conf).getShortCircuitCache(0);
     waitForReplicaAnchorStatus(cache, firstBlock, true, true, 1);
     // Uncache the replica
     fs.removeCacheDirective(directiveId);

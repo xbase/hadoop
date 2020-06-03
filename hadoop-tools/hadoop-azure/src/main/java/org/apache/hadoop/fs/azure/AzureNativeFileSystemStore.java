@@ -29,6 +29,8 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.util.Calendar;
 import java.util.Date;
@@ -40,10 +42,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azure.StorageInterface.CloudBlobContainerWrapper;
 import org.apache.hadoop.fs.azure.StorageInterface.CloudBlobDirectoryWrapper;
 import org.apache.hadoop.fs.azure.StorageInterface.CloudBlobWrapper;
@@ -69,7 +72,7 @@ import com.microsoft.azure.storage.RetryNoRetry;
 import com.microsoft.azure.storage.StorageCredentials;
 import com.microsoft.azure.storage.StorageCredentialsAccountAndKey;
 import com.microsoft.azure.storage.StorageCredentialsSharedAccessSignature;
-import com.microsoft.azure.storage.StorageErrorCode;
+import com.microsoft.azure.storage.StorageErrorCodeStrings;
 import com.microsoft.azure.storage.StorageException;
 import com.microsoft.azure.storage.Constants;
 import com.microsoft.azure.storage.StorageEvent;
@@ -241,9 +244,12 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
   private static final String HTTP_SCHEME = "http";
   private static final String HTTPS_SCHEME = "https";
   private static final String WASB_AUTHORITY_DELIMITER = "@";
+  private static final char ASTERISK_SYMBOL = '*';
   private static final String AZURE_ROOT_CONTAINER = "$root";
 
   private static final int DEFAULT_CONCURRENT_WRITES = 8;
+
+  private static final Charset METADATA_ENCODING = StandardCharsets.UTF_8;
 
   // Concurrent reads reads of data written out of band are disable by default.
   //
@@ -401,6 +407,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
    * @return The JSON serializer.
    */
   private static JSON createPermissionJsonSerializer() {
+    org.eclipse.jetty.util.log.Log.getProperties().setProperty("org.eclipse.jetty.util.log.announce", "false");
     JSON serializer = new JSON();
     serializer.addConvertor(PermissionStatus.class,
         new PermissionStatusJsonSerializer());
@@ -907,15 +914,16 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
       String containerName, URI sessionUri)
           throws AzureException, StorageException, URISyntaxException {
 
+    LOG.debug("Connecting to Azure storage in Secure Mode");
     // Assertion: storageInteractionLayer instance has to be a SecureStorageInterfaceImpl
     if (!(this.storageInteractionLayer instanceof SecureStorageInterfaceImpl)) {
-      throw new AssertionError("connectToAzureStorageInSASKeyMode() should be called only"
+      throw new AssertionError("connectToAzureStorageInSecureMode() should be called only"
         + " for SecureStorageInterfaceImpl instances");
     }
 
     ((SecureStorageInterfaceImpl) this.storageInteractionLayer).
       setStorageAccountName(accountName);
-
+    connectingUsingSAS = true;
     container = storageInteractionLayer.getContainerReference(containerName);
     rootDirectory = container.getDirectoryReference("");
 
@@ -1169,7 +1177,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
     for (String currentDir : rawDirs) {
       String myDir;
       try {
-        myDir = verifyAndConvertToStandardFormat(currentDir);
+        myDir = verifyAndConvertToStandardFormat(currentDir.trim());
       } catch (URISyntaxException ex) {
         throw new AzureException(String.format(
             "The directory %s specified in the configuration entry %s is not"
@@ -1214,7 +1222,12 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
   public boolean isKeyForDirectorySet(String key, Set<String> dirSet) {
     String defaultFS = FileSystem.getDefaultUri(sessionConfiguration).toString();
     for (String dir : dirSet) {
-      if (dir.isEmpty() || key.startsWith(dir + "/")) {
+      if (dir.isEmpty()) {
+        // dir is root
+        return true;
+      }
+
+      if (matchAsteriskPattern(key, dir)) {
         return true;
       }
 
@@ -1227,7 +1240,8 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
           // Concatenate the default file system prefix with the relative
           // page blob directory path.
           //
-          if (key.startsWith(trim(defaultFS, "/") + "/" + dir + "/")){
+          String dirWithPrefix = trim(defaultFS, "/") + "/" + dir;
+          if (matchAsteriskPattern(key, dirWithPrefix)) {
             return true;
           }
         }
@@ -1236,6 +1250,54 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
       }
     }
     return false;
+  }
+
+  private boolean matchAsteriskPattern(String pathName, String pattern) {
+    if (pathName == null || pathName.length() == 0) {
+      return false;
+    }
+
+    int pathIndex = 0;
+    int patternIndex = 0;
+
+    while (pathIndex < pathName.length() && patternIndex < pattern.length()) {
+      char charToMatch = pattern.charAt(patternIndex);
+
+      // normal char:
+      if (charToMatch != ASTERISK_SYMBOL) {
+        if (charToMatch != pathName.charAt(pathIndex)) {
+          return false;
+        }
+        pathIndex++;
+        patternIndex++;
+        continue;
+      }
+
+      // ASTERISK_SYMBOL
+      // 1. * is used in path name: *a/b,a*/b, a/*b, a/b*
+      if (patternIndex > 0 && pattern.charAt(patternIndex - 1) != Path.SEPARATOR_CHAR
+              || patternIndex + 1 < pattern.length() && pattern.charAt(patternIndex + 1) != Path.SEPARATOR_CHAR) {
+        if (ASTERISK_SYMBOL != pathName.charAt(pathIndex)) {
+          return false;
+        }
+
+        pathIndex++;
+        patternIndex++;
+        continue;
+      }
+
+      // 2. * is used as wildcard: */a, a/*/b, a/*
+      patternIndex++;
+      // find next path separator
+      while (pathIndex < pathName.length() && pathName.charAt(pathIndex) != Path.SEPARATOR_CHAR) {
+        pathIndex++;
+      }
+    }
+
+    // Ensure it is not a file/dir which shares same prefix as pattern
+    // Eg: pattern: /A/B, pathName: /A/BBB should not match
+    return patternIndex == pattern.length()
+            && (pathIndex == pathName.length() || pathName.charAt(pathIndex) == Path.SEPARATOR_CHAR);
   }
 
   /**
@@ -1279,7 +1341,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
         container.downloadAttributes(getInstrumentedContext());
         currentKnownContainerState = ContainerState.Unknown;
       } catch (StorageException ex) {
-        if (StorageErrorCode.RESOURCE_NOT_FOUND.toString()
+        if (StorageErrorCodeStrings.CONTAINER_NOT_FOUND.toString()
             .equals(ex.getErrorCode())) {
           currentKnownContainerState = ContainerState.DoesntExist;
         } else {
@@ -1604,17 +1666,30 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
     removeMetadataAttribute(blob, OLD_IS_FOLDER_METADATA_KEY);
   }
 
-  private static void storeLinkAttribute(CloudBlobWrapper blob,
-      String linkTarget) throws UnsupportedEncodingException {
-    // We have to URL encode the link attribute as the link URI could
+  private static String encodeMetadataAttribute(String value) throws UnsupportedEncodingException {
+    // We have to URL encode the attribute as it could
     // have URI special characters which unless encoded will result
     // in 403 errors from the server. This is due to metadata properties
     // being sent in the HTTP header of the request which is in turn used
     // on the server side to authorize the request.
-    String encodedLinkTarget = null;
-    if (linkTarget != null) {
-      encodedLinkTarget = URLEncoder.encode(linkTarget, "UTF-8");
-    }
+    return value == null ? null : URLEncoder.encode(value, METADATA_ENCODING.name());
+  }
+
+  private static String decodeMetadataAttribute(String encoded) throws UnsupportedEncodingException {
+    return encoded == null ? null : URLDecoder.decode(encoded, METADATA_ENCODING.name());
+  }
+
+  private static String ensureValidAttributeName(String attribute) {
+    // Attribute names must be valid C# identifiers so we have to
+    // convert the namespace dots (e.g. "user.something") in the
+    // attribute names. Using underscores here to be consistent with
+    // the constant metadata keys defined earlier in the file
+    return attribute.replace('.', '_');
+  }
+
+  private static void storeLinkAttribute(CloudBlobWrapper blob,
+      String linkTarget) throws UnsupportedEncodingException {
+    String encodedLinkTarget = encodeMetadataAttribute(linkTarget);
     storeMetadataAttribute(blob,
         LINK_BACK_TO_UPLOAD_IN_PROGRESS_METADATA_KEY,
         encodedLinkTarget);
@@ -1628,11 +1703,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
     String encodedLinkTarget = getMetadataAttribute(blob,
         LINK_BACK_TO_UPLOAD_IN_PROGRESS_METADATA_KEY,
         OLD_LINK_BACK_TO_UPLOAD_IN_PROGRESS_METADATA_KEY);
-    String linkTarget = null;
-    if (encodedLinkTarget != null) {
-      linkTarget = URLDecoder.decode(encodedLinkTarget, "UTF-8");
-    }
-    return linkTarget;
+    return decodeMetadataAttribute(encodedLinkTarget);
   }
 
   private static boolean retrieveFolderAttribute(CloudBlobWrapper blob) {
@@ -1704,7 +1775,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
       throw new AzureException(e);
     } catch (IOException e) {
       Throwable t = e.getCause();
-      if (t != null && t instanceof StorageException) {
+      if (t instanceof StorageException) {
         StorageException se = (StorageException) t;
         // If we got this exception, the blob should have already been created
         if (!"LeaseIdMissing".equals(se.getErrorCode())) {
@@ -2154,6 +2225,36 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
   }
 
   @Override
+  public byte[] retrieveAttribute(String key, String attribute) throws IOException {
+    try {
+      checkContainer(ContainerAccessType.PureRead);
+      CloudBlobWrapper blob = getBlobReference(key);
+      blob.downloadAttributes(getInstrumentedContext());
+
+      String value = getMetadataAttribute(blob, ensureValidAttributeName(attribute));
+      value = decodeMetadataAttribute(value);
+      return value == null ? null : value.getBytes(METADATA_ENCODING);
+    } catch (Exception e) {
+      throw new AzureException(e);
+    }
+  }
+
+  @Override
+  public void storeAttribute(String key, String attribute, byte[] value) throws IOException {
+    try {
+      checkContainer(ContainerAccessType.ReadThenWrite);
+      CloudBlobWrapper blob = getBlobReference(key);
+      blob.downloadAttributes(getInstrumentedContext());
+
+      String encodedValue = encodeMetadataAttribute(new String(value, METADATA_ENCODING));
+      storeMetadataAttribute(blob, ensureValidAttributeName(attribute), encodedValue);
+      blob.uploadMetadata(getInstrumentedContext());
+    } catch (Exception e) {
+      throw new AzureException(e);
+    }
+  }
+
+  @Override
   public InputStream retrieve(String key) throws AzureException, IOException {
     return retrieve(key, 0);
   }
@@ -2580,7 +2681,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
       return delete(key, null);
     } catch (IOException e) {
       Throwable t = e.getCause();
-      if (t != null && t instanceof StorageException) {
+      if (t instanceof StorageException) {
         StorageException se = (StorageException) t;
         if ("LeaseIdMissing".equals(se.getErrorCode())){
           SelfRenewingLease lease = null;

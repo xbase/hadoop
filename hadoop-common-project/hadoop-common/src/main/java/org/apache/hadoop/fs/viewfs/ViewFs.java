@@ -25,10 +25,12 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import java.util.Set;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
@@ -75,16 +77,16 @@ import org.apache.hadoop.util.Time;
  * one or more individual file systems (a localFs or Hdfs, S3fs, etc).
  * For example one could have a mount table that provides links such as
  * <ul>
- * <li>  /user          -> hdfs://nnContainingUserDir/user
- * <li>  /project/foo   -> hdfs://nnProject1/projects/foo
- * <li>  /project/bar   -> hdfs://nnProject2/projects/bar
- * <li>  /tmp           -> hdfs://nnTmp/privateTmpForUserXXX
+ * <li>  /user          {@literal ->} hdfs://nnContainingUserDir/user
+ * <li>  /project/foo   {@literal ->} hdfs://nnProject1/projects/foo
+ * <li>  /project/bar   {@literal ->} hdfs://nnProject2/projects/bar
+ * <li>  /tmp           {@literal ->} hdfs://nnTmp/privateTmpForUserXXX
  * </ul> 
  * 
  * ViewFs is specified with the following URI: <b>viewfs:///</b> 
  * <p>
  * To use viewfs one would typically set the default file system in the
- * config  (i.e. fs.defaultFS < = viewfs:///) along with the
+ * config  (i.e. fs.defaultFS {@literal <} = viewfs:///) along with the
  * mount table config variables as described below. 
  * 
  * <p>
@@ -132,7 +134,7 @@ import org.apache.hadoop.util.Time;
  *   (because they do not fit on one) then one could specify a mount
  *   entry such as following merges two dirs:
  *   <ul>
- *   <li> /user -> hdfs://nnUser1/user,hdfs://nnUser2/user
+ *   <li> /user {@literal ->} hdfs://nnUser1/user,hdfs://nnUser2/user
  *   </ul>
  *  Such a mergeLink can be specified with the following config var where ","
  *  is used as the separator for each of links to be merged:
@@ -162,9 +164,9 @@ public class ViewFs extends AbstractFileSystem {
 
   static AccessControlException readOnlyMountTable(final String operation,
       final String p) {
-    return new AccessControlException( 
-        "InternalDir of ViewFileSystem is readonly; operation=" + operation + 
-        "Path=" + p);
+    return new AccessControlException(
+        "InternalDir of ViewFileSystem is readonly, operation " + operation +
+            " not permitted on path " + p + ".");
   }
   static AccessControlException readOnlyMountTable(final String operation,
       final Path p) {
@@ -752,6 +754,13 @@ public class ViewFs extends AbstractFileSystem {
   }
 
   @Override
+  public void satisfyStoragePolicy(final Path path) throws IOException {
+    InodeTree.ResolveResult<AbstractFileSystem> res =
+        fsState.resolve(getUriPath(path), true);
+    res.targetFileSystem.satisfyStoragePolicy(res.remainingPath);
+  }
+
+  @Override
   public void setStoragePolicy(final Path path, final String policyName)
       throws IOException {
     InodeTree.ResolveResult<AbstractFileSystem> res =
@@ -943,10 +952,19 @@ public class ViewFs extends AbstractFileSystem {
       return -1;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * Note: listStatus on root("/") considers listing from fallbackLink if
+     * available. If the same directory name is present in configured mount
+     * path as well as in fallback link, then only the configured mount path
+     * will be listed in the returned result.
+     */
     @Override
     public FileStatus[] listStatus(final Path f) throws AccessControlException,
         IOException {
       checkPathIsSlash(f);
+      FileStatus[] fallbackStatuses = listStatusForFallbackLink();
       FileStatus[] result = new FileStatus[theInternalDir.getChildren().size()];
       int i = 0;
       for (Entry<String, INode<AbstractFileSystem>> iEntry :
@@ -972,7 +990,45 @@ public class ViewFs extends AbstractFileSystem {
                 myUri, null));
         }
       }
-      return result;
+      if (fallbackStatuses.length > 0) {
+        return consolidateFileStatuses(fallbackStatuses, result);
+      } else {
+        return result;
+      }
+    }
+
+    private FileStatus[] consolidateFileStatuses(FileStatus[] fallbackStatuses,
+        FileStatus[] mountPointStatuses) {
+      ArrayList<FileStatus> result = new ArrayList<>();
+      Set<String> pathSet = new HashSet<>();
+      for (FileStatus status : mountPointStatuses) {
+        result.add(status);
+        pathSet.add(status.getPath().getName());
+      }
+      for (FileStatus status : fallbackStatuses) {
+        if (!pathSet.contains(status.getPath().getName())) {
+          result.add(status);
+        }
+      }
+      return result.toArray(new FileStatus[0]);
+    }
+
+    private FileStatus[] listStatusForFallbackLink() throws IOException {
+      if (theInternalDir.isRoot() &&
+          theInternalDir.getFallbackLink() != null) {
+        AbstractFileSystem linkedFs =
+            theInternalDir.getFallbackLink().getTargetFileSystem();
+        // Fallback link is only applicable for root
+        FileStatus[] statuses = linkedFs.listStatus(new Path("/"));
+        for (FileStatus status : statuses) {
+          // Fix the path back to viewfs scheme
+          status.setPath(
+              new Path(myUri.toString(), status.getPath().getName()));
+        }
+        return statuses;
+      } else {
+        return new FileStatus[0];
+      }
     }
 
     @Override
@@ -1152,6 +1208,11 @@ public class ViewFs extends AbstractFileSystem {
         throws IOException {
       checkPathIsSlash(path);
       throw readOnlyMountTable("deleteSnapshot", path);
+    }
+
+    @Override
+    public void satisfyStoragePolicy(final Path path) throws IOException {
+      throw readOnlyMountTable("satisfyStoragePolicy", path);
     }
 
     @Override

@@ -34,6 +34,8 @@ import org.apache.hadoop.yarn.server.nodemanager.Context;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerImpl;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerChain;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerModule;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.monitor
     .ChangeMonitoringContainerResourceEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerState;
@@ -41,7 +43,6 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.monitor.Contai
 
 
 import org.apache.hadoop.yarn.server.nodemanager.metrics.NodeManagerMetrics;
-import org.apache.hadoop.yarn.server.nodemanager.recovery.NMStateStoreService;
 import org.apache.hadoop.yarn.server.nodemanager.recovery.NMStateStoreService
         .RecoveredContainerState;
 import org.apache.hadoop.yarn.server.nodemanager.recovery.NMStateStoreService.RecoveredContainerStatus;
@@ -108,6 +109,9 @@ public class ContainerScheduler extends AbstractService implements
 
   private Boolean usePauseEventForPreemption = false;
 
+  @VisibleForTesting
+  ResourceHandlerChain resourceHandlerChain = null;
+
   /**
    * Instantiate a Container Scheduler.
    * @param context NodeManager Context.
@@ -126,6 +130,15 @@ public class ContainerScheduler extends AbstractService implements
   @Override
   public void serviceInit(Configuration conf) throws Exception {
     super.serviceInit(conf);
+    if (resourceHandlerChain == null) {
+      resourceHandlerChain = ResourceHandlerModule
+          .getConfiguredResourceHandlerChain(conf, context);
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Resource handler chain enabled = " + (resourceHandlerChain
+          != null));
+
+    }
     this.usePauseEventForPreemption =
         conf.getBoolean(
             YarnConfiguration.NM_CONTAINER_QUEUING_USE_PAUSE_FOR_PREEMPTION,
@@ -175,6 +188,9 @@ public class ContainerScheduler extends AbstractService implements
       break;
     case RECOVERY_COMPLETED:
       startPendingContainers(maxOppQueueLength <= 0);
+      metrics.setQueuedContainers(queuedOpportunisticContainers.size(),
+          queuedGuaranteedContainers.size());
+      break;
     default:
       LOG.error("Unknown event arrived at ContainerScheduler: "
           + event.toString());
@@ -221,7 +237,15 @@ public class ContainerScheduler extends AbstractService implements
               updateEvent.getContainer());
         }
       }
+      try {
+        resourceHandlerChain.updateContainer(updateEvent.getContainer());
+      } catch (Exception ex) {
+        LOG.warn(String.format("Could not update resources on " +
+            "continer update of %s", containerId), ex);
+      }
       startPendingContainers(maxOppQueueLength <= 0);
+      metrics.setQueuedContainers(queuedOpportunisticContainers.size(),
+          queuedGuaranteedContainers.size());
     }
   }
 
@@ -247,6 +271,8 @@ public class ContainerScheduler extends AbstractService implements
             "UnKnown execution type received " + container.getContainerId()
                 + ", execType " + execType);
       }
+      metrics.setQueuedContainers(queuedOpportunisticContainers.size(),
+          queuedGuaranteedContainers.size());
     } else if (rcs.getStatus() == RecoveredContainerStatus.LAUNCHED) {
       runningContainers.put(container.getContainerId(), container);
       utilizationTracker.addContainerResources(container);
@@ -348,6 +374,8 @@ public class ContainerScheduler extends AbstractService implements
       boolean forceStartGuaranteedContainers = (maxOppQueueLength <= 0);
       startPendingContainers(forceStartGuaranteedContainers);
     }
+    this.metrics.setQueuedContainers(queuedOpportunisticContainers.size(),
+        queuedGuaranteedContainers.size());
   }
 
   /**
@@ -478,6 +506,8 @@ public class ContainerScheduler extends AbstractService implements
         startPendingContainers(false);
       }
     }
+    metrics.setQueuedContainers(queuedOpportunisticContainers.size(),
+        queuedGuaranteedContainers.size());
   }
 
   @SuppressWarnings("unchecked")
@@ -488,7 +518,7 @@ public class ContainerScheduler extends AbstractService implements
     // Kill the opportunistic containers that were chosen.
     for (Container contToReclaim : extraOppContainersToReclaim) {
       String preemptionAction = usePauseEventForPreemption == true ? "paused" :
-          "resumed";
+          "killed";
       LOG.info(
           "Container {} will be {} to start the "
               + "execution of guaranteed container {}.",
@@ -564,10 +594,7 @@ public class ContainerScheduler extends AbstractService implements
       ResourceUtilization resourcesToFreeUp) {
     return resourcesToFreeUp.getPhysicalMemory() <= 0 &&
         resourcesToFreeUp.getVirtualMemory() <= 0 &&
-        // Convert the number of cores to nearest integral number, due to
-        // imprecision of direct float comparison.
-        Math.round(resourcesToFreeUp.getCPU()
-            * getContainersMonitor().getVCoresAllocatedForContainers()) <= 0;
+        resourcesToFreeUp.getCPU() <= 0;
   }
 
   private ResourceUtilization resourcesToFreeUp(
@@ -635,6 +662,8 @@ public class ContainerScheduler extends AbstractService implements
         numAllowed--;
       }
     }
+    this.metrics.setQueuedContainers(queuedOpportunisticContainers.size(),
+        queuedGuaranteedContainers.size());
   }
 
   public ContainersMonitor getContainersMonitor() {

@@ -17,22 +17,17 @@
  */
 package org.apache.hadoop.hdfs.server.namenode;
 
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hdfs.server.namenode.INodeWithAdditionalFields.PermissionStatusFormat;
 import org.apache.hadoop.hdfs.util.LongBitFormat;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_IMAGE_EXPANDED_STRING_TABLES_DEFAULT;
-import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_IMAGE_EXPANDED_STRING_TABLES_KEY;
-
 /** Manage name-to-serial-number maps for various string tables. */
 public enum SerialNumberManager {
-  GLOBAL(), // NEVER EVER directly access!
+  GLOBAL(),
   USER(PermissionStatusFormat.USER, AclEntryStatusFormat.NAME),
   GROUP(PermissionStatusFormat.GROUP, AclEntryStatusFormat.NAME),
   XATTR(XAttrFormat.NAME);
@@ -41,11 +36,9 @@ public enum SerialNumberManager {
   private static final int maxEntryBits;
   private static final int maxEntryNumber;
   private static final int maskBits;
-  private static boolean initialized;
 
   private SerialNumberMap<String> serialMap;
   private int bitLength = Integer.SIZE;
-  private boolean enabled;
 
   static {
     maxEntryBits = Integer.numberOfLeadingZeros(values.length);
@@ -54,47 +47,9 @@ public enum SerialNumberManager {
     for (SerialNumberManager snm : values) {
       // account for string table mask bits.
       snm.updateLength(maxEntryBits);
-      // find max allowed length in case global is enabled.
-      GLOBAL.updateLength(snm.getLength());
-    }
-    // can reinitialize once later.
-    initializeSerialMaps(DFS_IMAGE_EXPANDED_STRING_TABLES_DEFAULT);
-  }
-
-  static synchronized void initialize(Configuration conf) {
-    boolean useExpanded = conf.getBoolean(
-        DFS_IMAGE_EXPANDED_STRING_TABLES_KEY,
-        DFS_IMAGE_EXPANDED_STRING_TABLES_DEFAULT);
-    if (initialized) {
-      if (useExpanded ^ !GLOBAL.enabled) {
-        throw new IllegalStateException("Cannot change serial maps");
-      }
-      return;
-    }
-    initializeSerialMaps(useExpanded);
-    for (SerialNumberManager snm : values) {
-      if (snm.enabled) {
-        FSDirectory.LOG.info(snm + " serial map: bits=" + snm.getLength() +
-            " maxEntries=" + snm.serialMap.getMax());
-      }
-    }
-    initialized = true;
-  }
-
-  private static void initializeSerialMaps(boolean useExpanded) {
-    if (useExpanded) {
-      // initialize per-manager serial maps for all but global.
-      for (SerialNumberManager snm : values) {
-        snm.enabled = (snm != GLOBAL);
-        snm.serialMap = snm.enabled ? new SerialNumberMap<String>(snm) : null;
-      }
-    } else {
-      // initialize all managers to use the global serial map.
-      SerialNumberMap<String> globalSerialMap = new SerialNumberMap<>(GLOBAL);
-      for (SerialNumberManager snm : values) {
-        snm.enabled = (snm == GLOBAL);
-        snm.serialMap = globalSerialMap;
-      }
+      snm.serialMap = new SerialNumberMap<String>(snm);
+      FSDirectory.LOG.info(snm + " serial map: bits=" + snm.getLength() +
+          " maxEntries=" + snm.serialMap.getMax());
     }
   }
 
@@ -131,17 +86,14 @@ public enum SerialNumberManager {
   }
 
   private static int getMaskBits() {
-    return GLOBAL.enabled ? 0 : maskBits;
+    return maskBits;
   }
 
   private int size() {
-    return enabled ? serialMap.size() : 0;
+    return serialMap.size();
   }
 
   private Iterable<Entry<Integer, String>> entrySet() {
-    if (!enabled) {
-      return Collections.emptySet();
-    }
     return serialMap.entrySet();
   }
 

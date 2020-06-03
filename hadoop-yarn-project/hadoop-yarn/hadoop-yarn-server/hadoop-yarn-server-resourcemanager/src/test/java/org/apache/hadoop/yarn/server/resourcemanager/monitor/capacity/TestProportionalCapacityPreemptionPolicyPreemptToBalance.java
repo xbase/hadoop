@@ -27,8 +27,9 @@ import org.junit.Test;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.argThat;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -63,11 +64,11 @@ public class TestProportionalCapacityPreemptionPolicyPreemptToBalance
         new TestProportionalCapacityPreemptionPolicy.IsPreemptionRequestFor(
             getAppAttemptId(3))));
 
-    assertEquals(30, policy.getQueuePartitions().get("a")
+    assertEquals(30, policy.getQueuePartitions().get("root.a")
         .get("").getIdealAssigned().getMemorySize());
-    assertEquals(35, policy.getQueuePartitions().get("b")
+    assertEquals(35, policy.getQueuePartitions().get("root.b")
         .get("").getIdealAssigned().getMemorySize());
-    assertEquals(35, policy.getQueuePartitions().get("c")
+    assertEquals(35, policy.getQueuePartitions().get("root.c")
         .get("").getIdealAssigned().getMemorySize());
   }
 
@@ -105,11 +106,11 @@ public class TestProportionalCapacityPreemptionPolicyPreemptToBalance
         new TestProportionalCapacityPreemptionPolicy.IsPreemptionRequestFor(
             getAppAttemptId(3))));
 
-    assertEquals(33, policy.getQueuePartitions().get("a")
+    assertEquals(33, policy.getQueuePartitions().get("root.a")
         .get("").getIdealAssigned().getMemorySize());
-    assertEquals(33, policy.getQueuePartitions().get("b")
+    assertEquals(33, policy.getQueuePartitions().get("root.b")
         .get("").getIdealAssigned().getMemorySize());
-    assertEquals(33, policy.getQueuePartitions().get("c")
+    assertEquals(33, policy.getQueuePartitions().get("root.c")
         .get("").getIdealAssigned().getMemorySize());
   }
 
@@ -145,11 +146,11 @@ public class TestProportionalCapacityPreemptionPolicyPreemptToBalance
         new TestProportionalCapacityPreemptionPolicy.IsPreemptionRequestFor(
             getAppAttemptId(3))));
 
-    assertEquals(16, policy.getQueuePartitions().get("a")
+    assertEquals(16, policy.getQueuePartitions().get("root.a")
         .get("").getIdealAssigned().getMemorySize());
-    assertEquals(42, policy.getQueuePartitions().get("b")
+    assertEquals(42, policy.getQueuePartitions().get("root.b")
         .get("").getIdealAssigned().getMemorySize());
-    assertEquals(42, policy.getQueuePartitions().get("c")
+    assertEquals(42, policy.getQueuePartitions().get("root.c")
         .get("").getIdealAssigned().getMemorySize());
   }
 
@@ -181,13 +182,13 @@ public class TestProportionalCapacityPreemptionPolicyPreemptToBalance
         new TestProportionalCapacityPreemptionPolicy.
             IsPreemptionRequestFor(getAppAttemptId(2))));
 
-    assertEquals(60, policy.getQueuePartitions().get("a")
+    assertEquals(60, policy.getQueuePartitions().get("root.a")
         .get("").getIdealAssigned().getMemorySize());
-    assertEquals(60, policy.getQueuePartitions().get("a")
+    assertEquals(60, policy.getQueuePartitions().get("root.a")
         .get("").getIdealAssigned().getVirtualCores());
-    assertEquals(40, policy.getQueuePartitions().get("b")
+    assertEquals(40, policy.getQueuePartitions().get("root.b")
         .get("").getIdealAssigned().getMemorySize());
-    assertEquals(40, policy.getQueuePartitions().get("b")
+    assertEquals(40, policy.getQueuePartitions().get("root.b")
         .get("").getIdealAssigned().getVirtualCores());
   }
 
@@ -230,7 +231,8 @@ public class TestProportionalCapacityPreemptionPolicyPreemptToBalance
         FifoCandidatesSelector pcs = (FifoCandidatesSelector) pc.getKey();
         if (pcs.getAllowQueuesBalanceAfterAllQueuesSatisfied() == true) {
           hasFifoSelector = true;
-          assertEquals(pcs.getMaximumKillWaitTimeMs(), FB_MAX_BEFORE_KILL);
+          assertThat(pcs.getMaximumKillWaitTimeMs()).
+              isEqualTo(FB_MAX_BEFORE_KILL);
         }
       }
     }
@@ -242,13 +244,13 @@ public class TestProportionalCapacityPreemptionPolicyPreemptToBalance
         new TestProportionalCapacityPreemptionPolicy.
             IsPreemptionRequestFor(getAppAttemptId(2))));
 
-    assertEquals(60, policy.getQueuePartitions().get("a")
+    assertEquals(60, policy.getQueuePartitions().get("root.a")
         .get("").getIdealAssigned().getMemorySize());
-    assertEquals(60, policy.getQueuePartitions().get("a")
+    assertEquals(60, policy.getQueuePartitions().get("root.a")
         .get("").getIdealAssigned().getVirtualCores());
-    assertEquals(40, policy.getQueuePartitions().get("b")
+    assertEquals(40, policy.getQueuePartitions().get("root.b")
         .get("").getIdealAssigned().getMemorySize());
-    assertEquals(40, policy.getQueuePartitions().get("b")
+    assertEquals(40, policy.getQueuePartitions().get("root.b")
         .get("").getIdealAssigned().getVirtualCores());
   }
 }

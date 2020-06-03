@@ -22,7 +22,6 @@ import static org.apache.hadoop.security.LdapGroupsMapping.LDAP_CTX_FACTORY_CLAS
 import static org.apache.hadoop.security.LdapGroupsMapping.LDAP_CTX_FACTORY_CLASS_KEY;
 import static org.apache.hadoop.security.LdapGroupsMapping.LDAP_URL_KEY;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -36,6 +35,7 @@ import javax.naming.directory.BasicAttributes;
 import javax.naming.directory.DirContext;
 import javax.naming.directory.SearchControls;
 import javax.naming.directory.SearchResult;
+import javax.naming.ldap.InitialLdapContext;
 import javax.naming.spi.InitialContextFactory;
 
 import org.apache.hadoop.conf.Configuration;
@@ -69,6 +69,7 @@ public class TestLdapGroupsMappingBase {
 
   @Before
   public void setupMocksBase() throws NamingException {
+    DummyLdapCtxFactory.reset();
     MockitoAnnotations.initMocks(this);
     DirContext ctx = getContext();
 
@@ -189,6 +190,8 @@ public class TestLdapGroupsMappingBase {
 
     private static DirContext contextToReturn;
     private static String expectedLdapUrl;
+    private static String expectedBindUser;
+    private static String expectedBindPassword;
 
     public DummyLdapCtxFactory() {
     }
@@ -201,6 +204,20 @@ public class TestLdapGroupsMappingBase {
       expectedLdapUrl = url;
     }
 
+    public static void setExpectedBindUser(String bindUser) {
+      expectedBindUser = bindUser;
+    }
+
+    public static void setExpectedBindPassword(String bindPassword) {
+      expectedBindPassword = bindPassword;
+    }
+
+    public static void reset() {
+      expectedLdapUrl = null;
+      expectedBindUser = null;
+      expectedBindPassword = null;
+    }
+
     @Override
     public Context getInitialContext(Hashtable<?, ?> env)
         throws NamingException {
@@ -208,14 +225,20 @@ public class TestLdapGroupsMappingBase {
         String actualLdapUrl = (String) env.get(Context.PROVIDER_URL);
         assertEquals(expectedLdapUrl, actualLdapUrl);
       }
+      if (expectedBindUser != null) {
+        String actualBindUser = (String) env.get(Context.SECURITY_PRINCIPAL);
+        assertEquals(expectedBindUser, actualBindUser);
+      }
+      if (expectedBindPassword != null) {
+        String actualBindPassword = (String) env.get(
+            Context.SECURITY_CREDENTIALS);
+        assertEquals(expectedBindPassword, actualBindPassword);
+      }
       if (contextToReturn == null) {
-        InitialContextFactory defaultFactory = null;
-        try {
-          defaultFactory = LDAP_CTX_FACTORY_CLASS_DEFAULT.newInstance();
-        } catch (ReflectiveOperationException e) {
-          fail("Could not initialize the default factory");
-        }
-        return defaultFactory.getInitialContext(env);
+        Hashtable<Object, Object> newEnv = new Hashtable<>(env);
+        newEnv.put(Context.INITIAL_CONTEXT_FACTORY,
+            LDAP_CTX_FACTORY_CLASS_DEFAULT);
+        contextToReturn = new InitialLdapContext(newEnv, null);
       }
       return contextToReturn;
     }

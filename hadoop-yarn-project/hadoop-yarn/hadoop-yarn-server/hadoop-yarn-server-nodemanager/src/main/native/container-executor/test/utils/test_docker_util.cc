@@ -22,6 +22,7 @@
 
 extern "C" {
 #include "utils/docker-util.c"
+#include "utils/mount-utils.c"
 }
 
 namespace ContainerExecutor {
@@ -121,7 +122,7 @@ namespace ContainerExecutor {
       for (itr = file_cmd_vec.begin(); itr != file_cmd_vec.end(); ++itr) {
         write_command_file(itr->first);
         int ret = (*docker_func)(docker_command_file.c_str(), &container_executor_cfg, &tmp);
-        ASSERT_EQ(0, ret) << "error message: " << get_docker_error_message(ret) << " for input " << itr->first;
+        ASSERT_EQ(0, ret) << "error message: " << get_error_message(ret) << " for input " << itr->first;
         char *actual = flatten(&tmp);
         ASSERT_STREQ(itr->second.c_str(), actual);
         reset_args(&tmp);
@@ -136,7 +137,7 @@ namespace ContainerExecutor {
         reset_args(&tmp);
       }
       int ret = (*docker_func)("unknown-file", &container_executor_cfg, &tmp);
-      ASSERT_EQ(static_cast<int>(INVALID_COMMAND_FILE), ret);
+      ASSERT_EQ(static_cast<int>(INVALID_DOCKER_COMMAND_FILE), ret);
       reset_args(&tmp);
     }
 
@@ -171,14 +172,20 @@ namespace ContainerExecutor {
             "  format={{range(.NetworkSettings.Networks)}}{{.IPAddress}},{{end}}{{.Config.Hostname}}\n"
             "  name=container_e1_12312_11111_02_000001",
         "inspect --format={{range(.NetworkSettings.Networks)}}{{.IPAddress}},{{end}}{{.Config.Hostname}} container_e1_12312_11111_02_000001"));
+    file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
+        "[docker-command-execution]\n  docker-command=inspect\n  format={{json .NetworkSettings.Ports}}\n  name=container_e1_12312_11111_02_000001",
+        "inspect --format={{json .NetworkSettings.Ports}} container_e1_12312_11111_02_000001"));
+    file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
+        "[docker-command-execution]\n  docker-command=inspect\n  format={{.State.Status}},{{.Config.StopSignal}}\n  name=container_e1_12312_11111_02_000001",
+        "inspect --format={{.State.Status}},{{.Config.StopSignal}} container_e1_12312_11111_02_000001"));
 
     std::vector<std::pair<std::string, int> > bad_file_cmd_vec;
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n  format='{{.State.Status}}'",
-        static_cast<int>(INCORRECT_COMMAND)));
-    bad_file_cmd_vec.push_back(
-        std::make_pair<std::string, int>("docker-command=inspect\n  format='{{.State.Status}}'",
-                                         static_cast<int>(INCORRECT_COMMAND)));
+        static_cast<int>(INCORRECT_DOCKER_COMMAND)));
+    bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
+        "docker-command=inspect\n  format='{{.State.Status}}'",
+        static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=inspect\n  format={{.State.Status}}\n  name=",
         static_cast<int>(INVALID_DOCKER_CONTAINER_NAME)));
@@ -194,6 +201,12 @@ namespace ContainerExecutor {
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=inspect\n format={{.IPAddress}}\n  name=container_e1_12312_11111_02_000001",
         static_cast<int>(INVALID_DOCKER_INSPECT_FORMAT)));
+    bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
+        "[docker-command-execution]\n  docker-command=inspect\n format={{.NetworkSettings.Ports}}\n  name=container_e1_12312_11111_02_000001",
+        static_cast<int>(INVALID_DOCKER_INSPECT_FORMAT)));
+    bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
+        "[docker-command-execution]\n  docker-command=inspect\n format={{.Config.StopSignal}}\n  name=container_e1_12312_11111_02_000001",
+        static_cast<int>(INVALID_DOCKER_INSPECT_FORMAT)));
 
     run_docker_command_test(file_cmd_vec, bad_file_cmd_vec, get_docker_inspect_command);
   }
@@ -206,9 +219,9 @@ namespace ContainerExecutor {
 
     std::vector<std::pair<std::string, int> > bad_file_cmd_vec;
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
-        "[docker-command-execution]\n  docker-command=run\n  image=image-id", static_cast<int>(INCORRECT_COMMAND)));
+        "[docker-command-execution]\n  docker-command=run\n  image=image-id", static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
-        "docker-command=load\n  image=image-id", static_cast<int>(INCORRECT_COMMAND)));
+        "docker-command=load\n  image=image-id", static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=load\n  image=", static_cast<int>(INVALID_DOCKER_IMAGE_NAME)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>("[docker-command-execution]\n  docker-command=load",
@@ -276,9 +289,9 @@ namespace ContainerExecutor {
 
     std::vector<std::pair<std::string, int> > bad_file_cmd_vec;
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
-        "[docker-command-execution]\n  docker-command=run\n  image=image-id", static_cast<int>(INCORRECT_COMMAND)));
+        "[docker-command-execution]\n  docker-command=run\n  image=image-id", static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
-        "docker-command=pull\n  image=image-id", static_cast<int>(INCORRECT_COMMAND)));
+        "docker-command=pull\n  image=image-id", static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=pull\n  image=", static_cast<int>(INVALID_DOCKER_IMAGE_NAME)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>("[docker-command-execution]\n  docker-command=pull",
@@ -292,14 +305,14 @@ namespace ContainerExecutor {
     file_cmd_vec.push_back(
         std::make_pair<std::string, std::string>(
             "[docker-command-execution]\n  docker-command=rm\n  name=container_e1_12312_11111_02_000001",
-            "rm container_e1_12312_11111_02_000001"));
+            "rm -f container_e1_12312_11111_02_000001"));
 
     std::vector<std::pair<std::string, int> > bad_file_cmd_vec;
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n  name=container_e1_12312_11111_02_000001",
-        static_cast<int>(INCORRECT_COMMAND)));
+        static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
-        "docker-command=rm\n  name=ctr-id", static_cast<int>(INCORRECT_COMMAND)));
+        "docker-command=rm\n  name=ctr-id", static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=rm\n  name=", static_cast<int>(INVALID_DOCKER_CONTAINER_NAME)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
@@ -320,9 +333,9 @@ namespace ContainerExecutor {
     std::vector<std::pair<std::string, int> > bad_file_cmd_vec;
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n  name=container_e1_12312_11111_02_000001",
-        static_cast<int>(INCORRECT_COMMAND)));
+        static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
-        "docker-command=stop\n  name=ctr-id", static_cast<int>(INCORRECT_COMMAND)));
+        "docker-command=stop\n  name=ctr-id", static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=stop\n  name=", static_cast<int>(INVALID_DOCKER_CONTAINER_NAME)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
@@ -347,9 +360,9 @@ namespace ContainerExecutor {
     std::vector<std::pair<std::string, int> > bad_file_cmd_vec;
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n  name=container_e1_12312_11111_02_000001",
-        static_cast<int>(INCORRECT_COMMAND)));
+        static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
-        "docker-command=kill\n  name=ctr-id", static_cast<int>(INCORRECT_COMMAND)));
+        "docker-command=kill\n  name=ctr-id", static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=kill\n  name=", static_cast<int>(INVALID_DOCKER_CONTAINER_NAME)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
@@ -370,9 +383,9 @@ namespace ContainerExecutor {
     std::vector<std::pair<std::string, int> > bad_file_cmd_vec;
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n  name=container_e1_12312_11111_02_000001",
-        static_cast<int>(INCORRECT_COMMAND)));
+        static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
-        "docker-command=start\n  name=ctr-id", static_cast<int>(INCORRECT_COMMAND)));
+        "docker-command=start\n  name=ctr-id", static_cast<int>(INCORRECT_DOCKER_COMMAND)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=start\n  name=", static_cast<int>(INVALID_DOCKER_CONTAINER_NAME)));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
@@ -462,7 +475,7 @@ namespace ContainerExecutor {
       }
       ret = set_runtime(&cmd_cfg, &container_cfg, &buff);
       char *actual = flatten(&buff);
-      ASSERT_EQ(0, ret) << "error message: " << get_docker_error_message(ret) << " for input " << itr->first;
+      ASSERT_EQ(0, ret) << "error message: " << get_error_message(ret) << " for input " << itr->first;
       ASSERT_STREQ(itr->second.c_str(), actual);
       reset_args(&buff);
       free(actual);
@@ -587,7 +600,7 @@ namespace ContainerExecutor {
       }
       ret = add_ports_mapping_to_command(&cmd_cfg, &buff);
       char *actual = flatten(&buff);
-      ASSERT_EQ(0, ret) << "error message: " << get_docker_error_message(ret) << " for input " << itr->first;
+      ASSERT_EQ(0, ret) << "error message: " << get_error_message(ret) << " for input " << itr->first;
       ASSERT_STREQ(itr->second.c_str(), actual);
       reset_args(&buff);
       free(actual);
@@ -643,7 +656,7 @@ namespace ContainerExecutor {
         "[docker-command-execution]\n  docker-command=run", ""));
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n pid=other",
-        static_cast<int>(INVALID_PID_NAMESPACE)));
+        static_cast<int>(INVALID_DOCKER_PID_NAMESPACE)));
 
     for (int i = 1; i < 3; ++i) {
       write_container_executor_cfg(container_executor_cfg_contents[0]);
@@ -707,10 +720,10 @@ namespace ContainerExecutor {
       bad_file_cmd_vec.clear();
       bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n pid=other",
-        static_cast<int>(INVALID_PID_NAMESPACE)));
+        static_cast<int>(INVALID_DOCKER_PID_NAMESPACE)));
       bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n pid=host",
-        static_cast<int>(PID_HOST_DISABLED)));
+        static_cast<int>(DOCKER_PID_HOST_DISABLED)));
       for (itr2 = bad_file_cmd_vec.begin(); itr2 != bad_file_cmd_vec.end(); ++itr2) {
         write_command_file(itr2->first);
         ret = read_config(docker_command_file.c_str(), &cmd_cfg);
@@ -770,7 +783,9 @@ namespace ContainerExecutor {
     struct configuration container_cfg, cmd_cfg;
     struct args buff = ARGS_INITIAL_VALUE;
     int ret = 0;
-    std::string container_executor_cfg_contents[] = {"[docker]\n  docker.privileged-containers.enabled=1\n  docker.trusted.registries=hadoop",
+    std::string container_executor_cfg_contents[] = {"[docker]\n  docker.privileged-containers.enabled=1\n"
+                                                     "  docker.trusted.registries=library\n"
+                                                     "  docker.privileged-containers.registries=hadoop",
                                                      "[docker]\n  docker.privileged-containers.enabled=true\n  docker.trusted.registries=hadoop",
                                                      "[docker]\n  docker.privileged-containers.enabled=True\n  docker.trusted.registries=hadoop",
                                                      "[docker]\n  docker.privileged-containers.enabled=0",
@@ -779,7 +794,7 @@ namespace ContainerExecutor {
     std::vector<std::pair<std::string, std::string> > file_cmd_vec;
     std::vector<std::pair<std::string, std::string> >::const_iterator itr;
     file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
-        "[docker-command-execution]\n  docker-command=run\n  privileged=true\n  image=hadoop/image", "--privileged "));
+        "[docker-command-execution]\n  docker-command=run\n  privileged=true\n  image=hadoop/image\n  use-entry-point=true", "--privileged "));
     file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
         "[docker-command-execution]\n  docker-command=run\n  privileged=false\n image=hadoop/image", ""));
     file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
@@ -802,7 +817,7 @@ namespace ContainerExecutor {
           FAIL();
         }
         ret = set_privileged(&cmd_cfg, &container_cfg, &buff);
-        ASSERT_EQ(6, ret);
+        ASSERT_EQ(INVALID_DOCKER_USER_NAME, ret);
         ASSERT_EQ(0, buff.length);
         reset_args(&buff);
         free_configuration(&cmd_cfg);
@@ -813,7 +828,7 @@ namespace ContainerExecutor {
         FAIL();
       }
       ret = set_privileged(&cmd_cfg, &container_cfg, &buff);
-      ASSERT_EQ(PRIVILEGED_CONTAINERS_DISABLED, ret);
+      ASSERT_EQ(PRIVILEGED_DOCKER_CONTAINERS_DISABLED, ret);
       ASSERT_EQ(0, buff.length);
       reset_args(&buff);
       free_configuration(&cmd_cfg);
@@ -850,7 +865,7 @@ namespace ContainerExecutor {
         FAIL();
       }
       ret = set_privileged(&cmd_cfg, &container_cfg, &buff);
-      ASSERT_EQ(PRIVILEGED_CONTAINERS_DISABLED, ret);
+      ASSERT_EQ(PRIVILEGED_DOCKER_CONTAINERS_DISABLED, ret);
       ASSERT_EQ(0, buff.length);
       reset_args(&buff);
       free_configuration(&cmd_cfg);
@@ -1055,7 +1070,7 @@ namespace ContainerExecutor {
   }
 
 
-  TEST_F(TestDockerUtil, test_add_mounts) {
+  TEST_F(TestDockerUtil, test_add_docker_mounts) {
     struct configuration container_cfg, cmd_cfg;
     struct args buff = ARGS_INITIAL_VALUE;
     int ret = 0;
@@ -1111,7 +1126,7 @@ namespace ContainerExecutor {
       if (ret != 0) {
         FAIL();
       }
-      ret = add_mounts(&cmd_cfg, &container_cfg, &buff);
+      ret = add_docker_mounts(&cmd_cfg, &container_cfg, &buff);
       char *actual = flatten(&buff);
       ASSERT_EQ(0, ret);
       ASSERT_STREQ(itr->second.c_str(), actual);
@@ -1123,22 +1138,22 @@ namespace ContainerExecutor {
     std::vector<std::pair<std::string, int> > bad_file_cmds_vec;
     bad_file_cmds_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n  image=hadoop/image\n  mounts=/lib:/lib:rw",
-        static_cast<int>(INVALID_DOCKER_RW_MOUNT)));
+        static_cast<int>(INVALID_RW_MOUNT)));
     bad_file_cmds_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n  image=hadoop/image\n  mounts=/usr/bin/:/usr/bin:rw",
-        static_cast<int>(INVALID_DOCKER_RW_MOUNT)));
+        static_cast<int>(INVALID_RW_MOUNT)));
     bad_file_cmds_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n  image=hadoop/image\n  mounts=/blah:/blah:rw",
-        static_cast<int>(INVALID_DOCKER_MOUNT)));
+        static_cast<int>(INVALID_MOUNT)));
     bad_file_cmds_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n image=hadoop/image\n mounts=/tmp:/tmp:shared",
-        static_cast<int>(INVALID_DOCKER_MOUNT)));
+        static_cast<int>(INVALID_MOUNT)));
     bad_file_cmds_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n image=hadoop/image\n mounts=/lib:/lib",
-        static_cast<int>(INVALID_DOCKER_MOUNT)));
+        static_cast<int>(INVALID_MOUNT)));
     bad_file_cmds_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n image=hadoop/image\n mounts=/lib:/lib:other",
-        static_cast<int>(INVALID_DOCKER_MOUNT)));
+        static_cast<int>(INVALID_MOUNT)));
 
     std::vector<std::pair<std::string, int> >::const_iterator itr2;
 
@@ -1148,7 +1163,7 @@ namespace ContainerExecutor {
       if (ret != 0) {
         FAIL();
       }
-      ret = add_mounts(&cmd_cfg, &container_cfg, &buff);
+      ret = add_docker_mounts(&cmd_cfg, &container_cfg, &buff);
       char *actual = flatten(&buff);
       ASSERT_EQ(itr2->second, ret);
       ASSERT_STREQ("", actual);
@@ -1167,8 +1182,8 @@ namespace ContainerExecutor {
       if (ret != 0) {
         FAIL();
       }
-      ret = add_mounts(&cmd_cfg, &container_cfg, &buff);
-      ASSERT_EQ(INVALID_DOCKER_RW_MOUNT, ret) << " for input " << cmd_file_contents;
+      ret = add_docker_mounts(&cmd_cfg, &container_cfg, &buff);
+      ASSERT_EQ(INVALID_RW_MOUNT, ret) << " for input " << cmd_file_contents;
       char *actual = flatten(&buff);
       ASSERT_STREQ("", actual);
       reset_args(&buff);
@@ -1182,7 +1197,7 @@ namespace ContainerExecutor {
     free(ce_path);
     free_configuration(&container_cfg);
 
-    // For untrusted image, container add_mounts will pass through
+    // For untrusted image, container add_docker_mounts will pass through
     // without mounting or report error code.
     container_executor_cfg_contents = "[docker]\n";
     write_container_executor_cfg(container_executor_cfg_contents);
@@ -1190,7 +1205,7 @@ namespace ContainerExecutor {
     if (ret != 0) {
       FAIL();
     }
-    ret = add_mounts(&cmd_cfg, &container_cfg, &buff);
+    ret = add_docker_mounts(&cmd_cfg, &container_cfg, &buff);
     char *actual = flatten(&buff);
     ASSERT_EQ(0, ret);
     ASSERT_STREQ("", actual);
@@ -1252,7 +1267,7 @@ namespace ContainerExecutor {
       if (ret != 0) {
         FAIL();
       }
-      ret = add_mounts(&cmd_cfg, &container_cfg, &buff);
+      ret = add_docker_mounts(&cmd_cfg, &container_cfg, &buff);
       char *actual = flatten(&buff);
       ASSERT_EQ(0, ret);
       ASSERT_STREQ(itr->second.c_str(), actual);
@@ -1264,10 +1279,10 @@ namespace ContainerExecutor {
     std::vector<std::pair<std::string, int> > bad_file_cmds_vec;
     bad_file_cmds_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n  image=hadoop/image\n  mounts=/etc:/etc:ro",
-        static_cast<int>(INVALID_DOCKER_RO_MOUNT)));
+        static_cast<int>(INVALID_RO_MOUNT)));
     bad_file_cmds_vec.push_back(std::make_pair<std::string, int>(
         "[docker-command-execution]\n  docker-command=run\n  image=hadoop/image\n  mounts=/blah:/blah:ro",
-        static_cast<int>(INVALID_DOCKER_MOUNT)));
+        static_cast<int>(INVALID_MOUNT)));
 
     std::vector<std::pair<std::string, int> >::const_iterator itr2;
 
@@ -1277,7 +1292,7 @@ namespace ContainerExecutor {
       if (ret != 0) {
         FAIL();
       }
-      ret = add_mounts(&cmd_cfg, &container_cfg, &buff);
+      ret = add_docker_mounts(&cmd_cfg, &container_cfg, &buff);
       char *actual = flatten(&buff);
       ASSERT_EQ(itr2->second, ret);
       ASSERT_STREQ("", actual);
@@ -1298,8 +1313,8 @@ namespace ContainerExecutor {
     if (ret != 0) {
       FAIL();
     }
-    ret = add_mounts(&cmd_cfg, &container_cfg, &buff);
-    ASSERT_EQ(INVALID_DOCKER_RO_MOUNT, ret);
+    ret = add_docker_mounts(&cmd_cfg, &container_cfg, &buff);
+    ASSERT_EQ(INVALID_RO_MOUNT, ret);
     ASSERT_EQ(0, buff.length);
     reset_args(&buff);
     free_configuration(&cmd_cfg);
@@ -1447,7 +1462,7 @@ namespace ContainerExecutor {
         "[docker-command-execution]\n"
             "  docker-command=run\n  name=container_e1_12312_11111_02_000001\n  image=hadoop/docker-image\n  user=root\n  hostname=host-id\n"
             "  mounts=/var/log:/var/log:ro,/var/lib:/lib:ro,/usr/bin/cut:/usr/bin/cut:ro,/tmp:/tmp:rw\n"
-            "  network=bridge\n  devices=/dev/test:/dev/test\n  privileged=true\n"
+            "  network=bridge\n  devices=/dev/test:/dev/test\n  privileged=true\n  use-entry-point=true\n"
             "  cap-add=CHOWN,SETUID\n  cgroup-parent=ctr-cgroup\n  detach=true\n  rm=true\n"
             "  launch-command=bash,test_script.sh,arg1,arg2",
         "run --name=container_e1_12312_11111_02_000001 -d --rm -v /var/log:/var/log:ro -v /var/lib:/lib:ro"
@@ -1459,7 +1474,7 @@ namespace ContainerExecutor {
         "[docker-command-execution]\n"
             "  docker-command=run\n  name=container_e1_12312_11111_02_000001\n  image=hadoop/docker-image\n  user=root\n  hostname=host-id\n"
             "  mounts=/var/log:/var/log:ro,/var/lib:/lib:ro,/usr/bin/cut:/usr/bin/cut:ro,/tmp:/tmp:rw\n"
-            "  network=bridge\n  devices=/dev/test:/dev/test\n  privileged=true\n"
+            "  network=bridge\n  devices=/dev/test:/dev/test\n  privileged=true\n  use-entry-point=true\n"
             "  cap-add=CHOWN,SETUID\n  cgroup-parent=ctr-cgroup\n  detach=true\n  rm=true\n  group-add=1000,1001\n"
             "  launch-command=bash,test_script.sh,arg1,arg2",
         "run --name=container_e1_12312_11111_02_000001 -d --rm -v /var/log:/var/log:ro -v /var/lib:/lib:ro"
@@ -1494,7 +1509,7 @@ namespace ContainerExecutor {
             "  network=bridge\n  privileged=true\n"
             "  cap-add=CHOWN,SETUID\n  cgroup-parent=ctr-cgroup\n  detach=true\n  rm=true\n  group-add=1000,1001\n"
             "  launch-command=bash,test_script.sh,arg1,arg2",
-        PRIVILEGED_CONTAINERS_DISABLED));
+        PRIVILEGED_DOCKER_CONTAINERS_DISABLED));
 
     // invalid rw mount
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
@@ -1504,7 +1519,7 @@ namespace ContainerExecutor {
             "  network=bridge\n  devices=/dev/test:/dev/test\n"
             "  cap-add=CHOWN,SETUID\n  cgroup-parent=ctr-cgroup\n  detach=true\n  rm=true\n"
             "  launch-command=bash,test_script.sh,arg1,arg2",
-        static_cast<int>(INVALID_DOCKER_RW_MOUNT)));
+        static_cast<int>(INVALID_RW_MOUNT)));
 
     // invalid ro mount
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
@@ -1514,7 +1529,7 @@ namespace ContainerExecutor {
             "  network=bridge\n  devices=/dev/test:/dev/test\n"
             "  cap-add=CHOWN,SETUID\n  cgroup-parent=ctr-cgroup\n  detach=true\n  rm=true\n"
             "  launch-command=bash,test_script.sh,arg1,arg2",
-        static_cast<int>(INVALID_DOCKER_RO_MOUNT)));
+        static_cast<int>(INVALID_RO_MOUNT)));
 
     // invalid capability
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
@@ -1534,7 +1549,7 @@ namespace ContainerExecutor {
             "  network=bridge\n  devices=/dev/dev1:/dev/dev1\n  privileged=true\n"
             "  cap-add=CHOWN,SETUID\n  cgroup-parent=ctr-cgroup\n  detach=true\n  rm=true\n"
             "  launch-command=bash,test_script.sh,arg1,arg2",
-        static_cast<int>(PRIVILEGED_CONTAINERS_DISABLED)));
+        static_cast<int>(PRIVILEGED_DOCKER_CONTAINERS_DISABLED)));
 
     // invalid network
     bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
@@ -1676,7 +1691,7 @@ namespace ContainerExecutor {
               "  network=bridge\n  devices=/dev/test:/dev/test\n  privileged=true\n"
               "  cap-add=CHOWN,SETUID\n  cgroup-parent=ctr-cgroup\n  detach=true\n  rm=true\n"
               "  launch-command=bash,test_script.sh,arg1,arg2",
-          static_cast<int>(PRIVILEGED_CONTAINERS_DISABLED)));
+          static_cast<int>(PRIVILEGED_DOCKER_CONTAINERS_DISABLED)));
 
       run_docker_command_test(file_cmd_vec, bad_file_cmd_vec, get_docker_run_command);
       free_configuration(&container_executor_cfg);
@@ -1697,7 +1712,7 @@ namespace ContainerExecutor {
         "/usr/bin/docker --config=/my-config pull image-id"));
     input_output_map.push_back(std::make_pair<std::string, std::string>(
         "[docker-command-execution]\n  docker-command=rm\n  docker-config=/my-config\n  name=container_e1_12312_11111_02_000001",
-        "/usr/bin/docker --config=/my-config rm container_e1_12312_11111_02_000001"));
+        "/usr/bin/docker --config=/my-config rm -f container_e1_12312_11111_02_000001"));
     input_output_map.push_back(std::make_pair<std::string, std::string>(
         "[docker-command-execution]\n  docker-command=stop\n  docker-config=/my-config\n  name=container_e1_12312_11111_02_000001",
         "/usr/bin/docker --config=/my-config stop container_e1_12312_11111_02_000001"));
@@ -1848,7 +1863,7 @@ namespace ContainerExecutor {
 
       std::vector<std::pair<std::string, std::string> > file_cmd_vec;
       file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
-          "[docker-command-execution]\n  docker-command=run\n privileged=true\n"
+          "[docker-command-execution]\n  docker-command=run\n privileged=true\n  use-entry-point=true\n"
           "name=container_e1_12312_11111_02_000001\n  image=hadoop/docker-image\n  user=root",
           "run --name=container_e1_12312_11111_02_000001 --privileged --cap-drop=ALL hadoop/docker-image"));
 
@@ -1880,4 +1895,98 @@ namespace ContainerExecutor {
       free_configuration(&container_executor_cfg);
     }
   }
+
+  TEST_F(TestDockerUtil, test_docker_exec) {
+    std::string container_executor_contents = "[docker]\n"
+        "  docker.allowed.devices=/dev/test\n  docker.trusted.registries=hadoop\n";
+    write_file(container_executor_cfg_file, container_executor_contents);
+    int ret = read_config(container_executor_cfg_file.c_str(), &container_executor_cfg);
+    if (ret != 0) {
+      FAIL();
+    }
+    ret = create_ce_file();
+    if (ret != 0) {
+      std::cerr << "Could not create ce file, skipping test" << std::endl;
+      return;
+    }
+
+    std::vector<std::pair<std::string, std::string> > file_cmd_vec;
+    file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
+        "[docker-command-execution]\n"
+            "  docker-command=exec\n  name=container_e1_12312_11111_02_000001\n  launch-command=bash",
+        "exec -it container_e1_12312_11111_02_000001 bash"));
+
+    std::vector<std::pair<std::string, int> > bad_file_cmd_vec;
+
+    bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
+        "[docker-command-execution]\n  docker-command=exec\n  image=hadoop/docker-image\n  user=nobody",
+        static_cast<int>(INVALID_DOCKER_CONTAINER_NAME)));
+    run_docker_command_test(file_cmd_vec, bad_file_cmd_vec, get_docker_exec_command);
+    free_configuration(&container_executor_cfg);
+  }
+
+  TEST_F(TestDockerUtil, test_trusted_top_level_image) {
+    struct configuration container_cfg, cmd_cfg;
+    std::string container_executor_contents = "[docker]\n"
+        "  docker.trusted.registries=library\n";
+    write_file(container_executor_cfg_file, container_executor_contents);
+    int ret = read_config(container_executor_cfg_file.c_str(), &container_cfg);
+    if (ret != 0) {
+      FAIL();
+    }
+    ret = create_ce_file();
+    if (ret != 0) {
+      std::cerr << "Could not create ce file, skipping test" << std::endl;
+      return;
+    }
+    std::vector<std::pair<std::string, std::string> > file_cmd_vec;
+    file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
+        "[docker-command-execution]\n"
+            "  image=centos",
+        "centos"));
+    file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
+        "[docker-command-execution]\n"
+            "  image=ubuntu:latest",
+        "centos"));
+    file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
+        "[docker-command-execution]\n"
+            "  image=library/centos",
+        "centos"));
+    std::vector<std::pair<std::string, std::string> >::const_iterator itr;
+
+    for (itr = file_cmd_vec.begin(); itr != file_cmd_vec.end(); ++itr) {
+      write_command_file(itr->first);
+      ret = read_config(docker_command_file.c_str(), &cmd_cfg);
+      if (ret != 0) {
+        FAIL();
+      }
+      ret = check_trusted_image(&cmd_cfg, &container_cfg);
+      ASSERT_EQ(0, ret);
+    }
+    free_configuration(&container_cfg);
+  }
+
+  TEST_F(TestDockerUtil, test_docker_images) {
+    std::vector<std::pair<std::string, std::string> > file_cmd_vec;
+    file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
+        "[docker-command-execution]\n  docker-command=images",
+        "images --format={{json .}} --filter=dangling=false"));
+
+    file_cmd_vec.push_back(std::make_pair<std::string, std::string>(
+        "[docker-command-execution]\n  docker-command=images\n  image=image-id",
+        "images image-id --format={{json .}} --filter=dangling=false"));
+
+    std::vector<std::pair<std::string, int> > bad_file_cmd_vec;
+    bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
+        "[docker-command-execution]\n  docker-command=run\n  image=image-id",
+        static_cast<int>(INCORRECT_DOCKER_COMMAND)));
+    bad_file_cmd_vec.push_back(std::make_pair<std::string, int>(
+        "docker-command=images\n  image=image-id",
+        static_cast<int>(INCORRECT_DOCKER_COMMAND)));
+
+    run_docker_command_test(file_cmd_vec, bad_file_cmd_vec,
+      get_docker_images_command);
+    free_configuration(&container_executor_cfg);
+  }
+
 }

@@ -31,11 +31,13 @@ import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 
 import org.apache.hadoop.io.erasurecode.CodecUtil;
 import org.apache.hadoop.io.erasurecode.ErasureCodeConstants;
+import org.apache.hadoop.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -55,6 +57,9 @@ public final class ErasureCodingPolicyManager {
       ErasureCodingPolicyManager.class);
   private int maxCellSize =
       DFSConfigKeys.DFS_NAMENODE_EC_POLICIES_MAX_CELLSIZE_DEFAULT;
+
+  private boolean userDefinedAllowed =
+      DFSConfigKeys.DFS_NAMENODE_EC_POLICIES_USERPOLICIES_ALLOWED_KEY_DEFAULT;
 
   // Supported storage policies for striped EC files
   private static final byte[] SUITABLE_STORAGE_POLICIES_FOR_EC_STRIPED_MODE =
@@ -141,6 +146,11 @@ public final class ErasureCodingPolicyManager {
     maxCellSize = conf.getInt(
         DFSConfigKeys.DFS_NAMENODE_EC_POLICIES_MAX_CELLSIZE_KEY,
         DFSConfigKeys.DFS_NAMENODE_EC_POLICIES_MAX_CELLSIZE_DEFAULT);
+
+    userDefinedAllowed = conf.getBoolean(
+        DFSConfigKeys.DFS_NAMENODE_EC_POLICIES_USERPOLICIES_ALLOWED_KEY,
+        DFSConfigKeys.
+            DFS_NAMENODE_EC_POLICIES_USERPOLICIES_ALLOWED_KEY_DEFAULT);
   }
 
   /**
@@ -203,6 +213,14 @@ public final class ErasureCodingPolicyManager {
         .toArray(new ErasureCodingPolicyInfo[0]);
   }
 
+  public ErasureCodingPolicy[] getCopyOfEnabledPolicies() {
+    ErasureCodingPolicy[] copy;
+    synchronized (this) {
+      copy = Arrays.copyOf(enabledPolicies, enabledPolicies.length);
+    }
+    return copy;
+  }
+
   /**
    * Get a {@link ErasureCodingPolicy} by policy ID, including system policy
    * and user defined policy.
@@ -238,6 +256,22 @@ public final class ErasureCodingPolicyManager {
   }
 
   /**
+   * Get a {@link ErasureCodingPolicy} by policy name, including system
+   * policy, user defined policy and Replication policy.
+   * @return ecPolicy, or null if not found
+   */
+  public ErasureCodingPolicy getErasureCodingPolicyByName(String name) {
+    final ErasureCodingPolicyInfo ecpi = getPolicyInfoByName(name);
+    if (ecpi == null) {
+      if (name.equalsIgnoreCase(ErasureCodeConstants.REPLICATION_POLICY_NAME)) {
+        return SystemErasureCodingPolicies.getReplicationPolicy();
+      }
+      return null;
+    }
+    return ecpi.getPolicy();
+  }
+
+  /**
    * Get a {@link ErasureCodingPolicyInfo} by policy name, including system
    * policy and user defined policy.
    * @return ecPolicy, or null if not found
@@ -260,6 +294,11 @@ public final class ErasureCodingPolicyManager {
    */
   public synchronized ErasureCodingPolicy addPolicy(
       ErasureCodingPolicy policy) {
+    if (!userDefinedAllowed) {
+      throw new HadoopIllegalArgumentException(
+          "Addition of user defined erasure coding policy is disabled.");
+    }
+
     if (!CodecUtil.hasCodec(policy.getCodecName())) {
       throw new HadoopIllegalArgumentException("Codec name "
           + policy.getCodecName() + " is not supported");
@@ -481,6 +520,11 @@ public final class ErasureCodingPolicyManager {
         enabledPoliciesByName.values().toArray(new ErasureCodingPolicy[0]);
     allPolicies =
         policiesByName.values().toArray(new ErasureCodingPolicyInfo[0]);
+  }
+
+  public String getEnabledPoliciesMetric() {
+    return StringUtils.join(", ",
+            enabledPoliciesByName.keySet());
   }
 
   private ErasureCodingPolicyInfo createPolicyInfo(ErasureCodingPolicy p,

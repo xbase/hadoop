@@ -208,7 +208,7 @@ public class QueueManagementDynamicEditPolicy implements SchedulingEditPolicy {
               policyClazz.getClass().getName(), clock.getTime() - startTime);
           if (queueManagementChanges.size() > 0) {
             LOG.debug(" Updated queue management changes for parent queue" + " "
-                    + "{}: [{}]", parentQueue.getQueueName(),
+                    + "{}: [{}]", parentQueue.getQueuePath(),
                 queueManagementChanges.size() < 25 ?
                     queueManagementChanges.toString() :
                     queueManagementChanges.size());
@@ -218,18 +218,13 @@ public class QueueManagementDynamicEditPolicy implements SchedulingEditPolicy {
         LOG.error(
             "Could not compute child queue management updates for parent "
                 + "queue "
-                + parentQueue.getQueueName(), e);
+                + parentQueue.getQueuePath(), e);
       }
     } else{
-      if (LOG.isDebugEnabled()) {
-        LOG.debug(
-            "Skipping queue management updates for parent queue "
-                + parentQueue
-                .getQueuePath() + " "
-                + "since configuration for auto creating queues beyond "
-                + "parent's "
-                + "guaranteed capacity is disabled");
-      }
+      LOG.debug("Skipping queue management updates for parent queue {} "
+          + "since configuration for auto creating queues beyond "
+          + "parent's guaranteed capacity is disabled",
+          parentQueue.getQueuePath());
     }
     return queueManagementChanges;
   }

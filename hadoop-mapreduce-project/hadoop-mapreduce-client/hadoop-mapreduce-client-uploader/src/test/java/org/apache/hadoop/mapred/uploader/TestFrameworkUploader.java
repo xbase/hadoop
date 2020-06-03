@@ -53,6 +53,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.zip.GZIPInputStream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.apache.hadoop.fs.FileSystem.FS_DEFAULT_NAME_KEY;
 
 /**
@@ -82,12 +83,15 @@ public class TestFrameworkUploader {
     FrameworkUploader uploader = new FrameworkUploader();
     boolean success = uploader.parseArguments(args);
     Assert.assertFalse("Expected to print help", success);
-    Assert.assertEquals("Expected ignore run", null,
-        uploader.input);
-    Assert.assertEquals("Expected ignore run", null,
-        uploader.whitelist);
-    Assert.assertEquals("Expected ignore run", null,
-        uploader.target);
+    assertThat(uploader.input)
+        .withFailMessage("Expected ignore run")
+        .isNull();
+    assertThat(uploader.whitelist)
+        .withFailMessage("Expected ignore run")
+        .isNull();
+    assertThat(uploader.target)
+        .withFailMessage("Expected ignore run")
+        .isNull();
   }
 
   /**
@@ -438,6 +442,19 @@ public class TestFrameworkUploader {
 
       // Create a symlink to the target
       File symlinkToTarget = new File(parent, "symlinkToTarget.txt");
+      try {
+        Files.createSymbolicLink(
+            Paths.get(symlinkToTarget.getAbsolutePath()),
+            Paths.get(targetFile.getAbsolutePath()));
+      } catch (UnsupportedOperationException e) {
+        // Symlinks are not supported, so ignore the test
+        Assume.assumeTrue(false);
+      }
+      Assert.assertTrue(uploader.checkSymlink(symlinkToTarget));
+
+      // Create a symlink to the target with /./ in the path
+      symlinkToTarget = new File(parent.getAbsolutePath() +
+            "/./symlinkToTarget2.txt");
       try {
         Files.createSymbolicLink(
             Paths.get(symlinkToTarget.getAbsolutePath()),

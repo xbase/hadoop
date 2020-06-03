@@ -27,8 +27,6 @@ import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlSeeAlso;
 import javax.xml.bind.annotation.XmlTransient;
-
-import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair.AllocationConfiguration;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair.FSLeafQueue;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair.FSQueue;
@@ -60,7 +58,9 @@ public class FairSchedulerQueueInfo {
   private ResourceInfo fairResources;
   private ResourceInfo clusterResources;
   private ResourceInfo reservedResources;
+  private ResourceInfo maxContainerAllocation;
 
+  private long pendingContainers;
   private long allocatedContainers;
   private long reservedContainers;
 
@@ -82,12 +82,8 @@ public class FairSchedulerQueueInfo {
     
     clusterResources = new ResourceInfo(scheduler.getClusterResource());
     
-    amUsedResources = new ResourceInfo(Resource.newInstance(
-        queue.getMetrics().getAMResourceUsageMB(),
-        queue.getMetrics().getAMResourceUsageVCores()));
-    amMaxResources = new ResourceInfo(Resource.newInstance(
-        queue.getMetrics().getMaxAMShareMB(),
-        queue.getMetrics().getMaxAMShareVCores()));
+    amUsedResources = new ResourceInfo(queue.getMetrics().getAMResourceUsage());
+    amMaxResources = new ResourceInfo(queue.getMetrics().getMaxAMShare());
     usedResources = new ResourceInfo(queue.getResourceUsage());
     demandResources = new ResourceInfo(queue.getDemand());
     fractionMemUsed = (float)usedResources.getMemorySize() /
@@ -99,6 +95,8 @@ public class FairSchedulerQueueInfo {
     maxResources = new ResourceInfo(
         Resources.componentwiseMin(queue.getMaxShare(),
             scheduler.getClusterResource()));
+    maxContainerAllocation =
+        new ResourceInfo(scheduler.getMaximumResourceCapability(queueName));
     reservedResources = new ResourceInfo(queue.getReservedResource());
 
     fractionMemSteadyFairShare =
@@ -111,6 +109,7 @@ public class FairSchedulerQueueInfo {
 
     allocatedContainers = queue.getMetrics().getAllocatedContainers();
     reservedContainers = queue.getMetrics().getReservedContainers();
+    pendingContainers = queue.getMetrics().getPendingContainers();
 
     if (allocConf.isReservable(queueName) &&
         !allocConf.getShowReservationAsQueues(queueName)) {
@@ -124,6 +123,8 @@ public class FairSchedulerQueueInfo {
   public long getAllocatedContainers() {
     return allocatedContainers;
   }
+
+  public long getPendingContainers() { return pendingContainers; }
 
   public long getReservedContainers() {
     return reservedContainers;
@@ -186,7 +187,11 @@ public class FairSchedulerQueueInfo {
   public ResourceInfo getMaxResources() {
     return maxResources;
   }
-  
+
+  public ResourceInfo getMaxContainerAllocation() {
+    return maxContainerAllocation;
+  }
+
   public ResourceInfo getReservedResources() {
     return reservedResources;
   }

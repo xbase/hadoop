@@ -195,20 +195,28 @@
 
       var processPreview = function(url) {
         url += "&noredirect=true";
-        $.ajax({
+        if(request && request.readyState != 4){
+         request.abort();
+        }
+      request =  $.ajax({
+           cache: false,
           type: 'GET',
           url: url,
+          async: false,
           processData: false,
           crossDomain: true
-        }).done(function(data) {
+        }).done(function(data, textStatus, jqXHR) {
+
           url = data.Location;
           $.ajax({
+            cache: false,
             type: 'GET',
             url: url,
+            async: false,
             processData: false,
             crossDomain: true
-          }).always(function(data) {
-            $('#file-info-preview-body').val(data);
+          }).always(function(data, textStatus, jqXHR) {
+            $('#file-info-preview-body').val(jqXHR.responseText);
             $('#file-info-tail').show();
           }).fail(function(jqXHR, textStatus, errorThrown) {
             show_err_msg("Couldn't preview the file. " + errorThrown);
@@ -218,12 +226,17 @@
         });
       }
 
-      $('#file-info-preview-tail').click(function() {
+      var request = null;
+      $('#file-info-preview-tail')
+	   .off('click')
+	   .on('click', function() {
         var offset = d.fileLength - TAIL_CHUNK_SIZE;
         var url = offset > 0 ? download_url + '&offset=' + offset : download_url;
         processPreview(url);
       });
-      $('#file-info-preview-head').click(function() {
+      $('#file-info-preview-head')
+	   .off('click')
+	   .on('click', function() {
         var url = d.fileLength > TAIL_CHUNK_SIZE ? download_url + '&length=' + TAIL_CHUNK_SIZE : download_url;
         processPreview(url);
       });
@@ -287,6 +300,11 @@
   }
 
   function browse_directory(dir) {
+    if (dir.match('^/+$')) {
+      $('#parentDir').prop('disabled', true);
+    } else {
+      $('#parentDir').prop('disabled', false);
+    }
     var HELPERS = {
       'helper_date_tostring' : function (chunk, ctx, bodies, params) {
         var value = dust.helpers.tap(params.value, chunk, ctx);
@@ -363,6 +381,12 @@
     }).fail(network_error_handler(url));
   }
 
+  $('#parentDir').click(function () {
+    var current = current_directory;
+    var parent = current.replace(/\/+[^/]+\/*$/,"") || '/';
+    browse_directory(parent);
+  });
+
 
   function init() {
     dust.loadSource(dust.compile($('#tmpl-explorer').html(), 'explorer'));
@@ -405,6 +429,34 @@
     });
   })
 
+  $('#btn-upload-files').click(function() {
+        $('#modal-upload-file-button').prop('disabled', true).button('reset');
+        $('#modal-upload-file-input').val(null);
+      });
+
+  $('#btn-create-dir').click(function() {
+        $('#btn-create-directory-send').prop('disabled', true).button('reset');
+        $('#new_directory').val(null);
+      });
+
+  $('#modal-upload-file-input').change(function() {
+      if($('#modal-upload-file-input').prop('files').length >0) {
+         $('#modal-upload-file-button').prop('disabled', false);
+        }
+      else {
+        $('#modal-upload-file-button').prop('disabled', true);
+        }
+      });
+
+  $('#new_directory').on('keyup keypress blur change',function() {
+      if($('#new_directory').val() == '' ||  $('#new_directory').val() == null) {
+         $('#btn-create-directory-send').prop('disabled', true);
+        }
+      else {
+         $('#btn-create-directory-send').prop('disabled', false);
+        }
+      });
+
   $('#modal-upload-file-button').click(function() {
     $(this).prop('disabled', true);
     $(this).button('complete');
@@ -414,8 +466,7 @@
     for(var i = 0; i < $('#modal-upload-file-input').prop('files').length; i++) {
       (function() {
         var file = $('#modal-upload-file-input').prop('files')[i];
-        var url = '/webhdfs/v1' + current_directory;
-        url = encode_path(append_path(url, file.name));
+        var url = '/webhdfs/v1' + encode_path(append_path(current_directory, file.name));
         url += '?op=CREATE&noredirect=true';
         files.push( { file: file } )
         files[i].request = $.ajax({

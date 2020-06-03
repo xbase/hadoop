@@ -19,10 +19,12 @@ package org.apache.hadoop.hdfs.qjournal.server;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.util.VersionInfo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
@@ -57,7 +59,9 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * The JournalNode is a daemon which allows namenodes using
@@ -68,7 +72,7 @@ import java.util.Map;
  */
 @InterfaceAudience.Private
 public class JournalNode implements Tool, Configurable, JournalNodeMXBean {
-  public static final Log LOG = LogFactory.getLog(JournalNode.class);
+  public static final Logger LOG = LoggerFactory.getLogger(JournalNode.class);
   private Configuration conf;
   private JournalNodeRpcServer rpcServer;
   private JournalNodeHttpServer httpServer;
@@ -285,7 +289,7 @@ public class JournalNode implements Tool, Configurable, JournalNodeMXBean {
     }
     
     for (Journal j : journalsById.values()) {
-      IOUtils.cleanup(LOG, j);
+      IOUtils.cleanupWithLogger(LOG, j);
     }
 
     DefaultMetricsSystem.shutdown();
@@ -392,7 +396,25 @@ public class JournalNode implements Tool, Configurable, JournalNodeMXBean {
 
     return JSON.toString(status);
   }
-  
+
+  @Override // JournalNodeMXBean
+  public String getHostAndPort() {
+    return NetUtils.getHostPortString(rpcServer.getAddress());
+  }
+
+  @Override // JournalNodeMXBean
+  public List<String> getClusterIds() {
+    return journalsById.values().stream()
+        .map(j -> j.getStorage().getClusterID())
+        .filter(cid -> !Strings.isNullOrEmpty(cid))
+        .distinct().collect(Collectors.toList());
+  }
+
+  @Override // JournalNodeMXBean
+  public String getVersion() {
+    return VersionInfo.getVersion() + ", r" + VersionInfo.getRevision();
+  }
+
   /**
    * Register JournalNodeMXBean
    */
@@ -403,7 +425,7 @@ public class JournalNode implements Tool, Configurable, JournalNodeMXBean {
   private class ErrorReporter implements StorageErrorReporter {
     @Override
     public void reportErrorOnFile(File f) {
-      LOG.fatal("Error reported on file " + f + "... exiting",
+      LOG.error("Error reported on file " + f + "... exiting",
           new Exception());
       stop(1);
     }

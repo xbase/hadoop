@@ -20,6 +20,7 @@ package org.apache.hadoop.crypto.key;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -33,8 +34,8 @@ import java.util.Map;
 
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
-import org.apache.commons.lang.builder.EqualsBuilder;
-import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.commons.lang3.builder.EqualsBuilder;
+import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
@@ -49,12 +50,12 @@ import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.HADOOP_SECURITY
  * abstraction to separate key storage from users of encryption. It
  * is intended to support getting or storing keys in a variety of ways,
  * including third party bindings.
- * <P/>
+ * <p>
  * <code>KeyProvider</code> implementations must be thread safe.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Unstable
-public abstract class KeyProvider {
+public abstract class KeyProvider implements Closeable {
   public static final String DEFAULT_CIPHER_NAME =
       CommonConfigurationKeysPublic.HADOOP_SECURITY_KEY_DEFAULT_CIPHER_KEY;
   public static final String DEFAULT_CIPHER =
@@ -549,7 +550,7 @@ public abstract class KeyProvider {
   /**
    * Create a new key generating the material for it.
    * The given key must not already exist.
-   * <p/>
+   * <p>
    * This implementation generates the key material and calls the
    * {@link #createKey(String, byte[], Options)} method.
    *
@@ -593,7 +594,7 @@ public abstract class KeyProvider {
 
   /**
    * Roll a new version of the given key generating the material for it.
-   * <p/>
+   * <p>
    * This implementation generates the key material and calls the
    * {@link #rollNewVersion(String, byte[])} method.
    *

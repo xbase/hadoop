@@ -30,6 +30,7 @@ import org.apache.hadoop.yarn.api.protocolrecords.GetContainersRequest;
 import org.apache.hadoop.yarn.api.records.*;
 import org.apache.hadoop.yarn.client.api.YarnClient;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.apache.hadoop.yarn.exceptions.ApplicationNotFoundException;
 import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.server.resourcemanager.ResourceManager;
 import org.apache.hadoop.yarn.service.api.records.Component;
@@ -61,6 +62,7 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.TimeoutException;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.apache.hadoop.yarn.api.records.YarnApplicationState.FINISHED;
 import static org.apache.hadoop.yarn.service.conf.YarnServiceConf.*;
 import static org.apache.hadoop.yarn.service.exceptions.LauncherExitCodes.EXIT_COMMAND_ARGUMENT_ERROR;
@@ -325,6 +327,8 @@ public class TestYarnNativeServices extends ServiceTestUtils {
 
     conf.setBoolean(YarnConfiguration.YARN_MINICLUSTER_FIXED_PORTS, true);
     conf.setBoolean(YarnConfiguration.YARN_MINICLUSTER_USE_RPC, true);
+    conf.setInt(YarnConfiguration.RM_MAX_COMPLETED_APPLICATIONS,
+        YarnConfiguration.DEFAULT_RM_MAX_COMPLETED_APPLICATIONS);
     setConf(conf);
     setupInternal(NUM_NMS);
 
@@ -439,9 +443,13 @@ public class TestYarnNativeServices extends ServiceTestUtils {
     component2.getConfiguration().getEnv().put("key2", "val2");
     client.actionUpgradeExpress(service);
 
+    waitForServiceToBeExpressUpgrading(client, service);
+
     // wait for upgrade to complete
     waitForServiceToBeStable(client, service);
     Service active = client.getStatus(service.getName());
+    Assert.assertEquals("version mismatch", service.getVersion(),
+        active.getVersion());
     Assert.assertEquals("component not stable", ComponentState.STABLE,
         active.getComponent(component.getName()).getState());
     Assert.assertEquals("compa does not have new env", "val1",
@@ -513,6 +521,8 @@ public class TestYarnNativeServices extends ServiceTestUtils {
     YarnConfiguration conf = new YarnConfiguration();
     conf.set(YarnConfiguration.RM_PLACEMENT_CONSTRAINTS_HANDLER,
         YarnConfiguration.SCHEDULER_RM_PLACEMENT_CONSTRAINTS_HANDLER);
+    conf.setInt(YarnConfiguration.RM_MAX_COMPLETED_APPLICATIONS,
+        YarnConfiguration.DEFAULT_RM_MAX_COMPLETED_APPLICATIONS);
     setConf(conf);
     setupInternal(3);
     ServiceClient client = createClient(getConf());
@@ -722,6 +732,9 @@ public class TestYarnNativeServices extends ServiceTestUtils {
     YarnConfiguration conf = new YarnConfiguration();
     conf.set(YarnConfiguration.RM_PLACEMENT_CONSTRAINTS_HANDLER,
         YarnConfiguration.SCHEDULER_RM_PLACEMENT_CONSTRAINTS_HANDLER);
+    conf.setInt(YarnConfiguration.RM_MAX_COMPLETED_APPLICATIONS,
+        YarnConfiguration.DEFAULT_RM_MAX_COMPLETED_APPLICATIONS);
+    conf.setInt(YarnConfiguration.NM_VCORES, 1);
     setConf(conf);
     setupInternal(3);
     ServiceClient client = createClient(getConf());
@@ -857,16 +870,32 @@ public class TestYarnNativeServices extends ServiceTestUtils {
   private void checkCompInstancesInOrder(ServiceClient client,
       Service exampleApp) throws IOException, YarnException,
       TimeoutException, InterruptedException {
+    waitForContainers(client, exampleApp);
     Service service = client.getStatus(exampleApp.getName());
     for (Component comp : service.getComponents()) {
       checkEachCompInstancesInOrder(comp, exampleApp.getName());
     }
   }
 
+  private void waitForContainers(ServiceClient client, Service exampleApp)
+      throws TimeoutException, InterruptedException {
+    GenericTestUtils.waitFor(() -> {
+      try {
+        Service service = client.getStatus(exampleApp.getName());
+        for (Component comp : service.getComponents()) {
+          if (comp.getContainers().size() != comp.getNumberOfContainers()) {
+            return false;
+          }
+        }
+        return true;
+      } catch (Exception e) {
+        return false;
+      }
+    }, 2000, 200000);
+  }
+
   private void checkEachCompInstancesInOrder(Component component, String
       serviceName) throws TimeoutException, InterruptedException {
-    long expectedNumInstances = component.getNumberOfContainers();
-    Assert.assertEquals(expectedNumInstances, component.getContainers().size());
     TreeSet<String> instances = new TreeSet<>();
     for (Container container : component.getContainers()) {
       instances.add(container.getComponentInstanceName());
@@ -884,8 +913,73 @@ public class TestYarnNativeServices extends ServiceTestUtils {
 
     int i = 0;
     for (String s : instances) {
-      Assert.assertEquals(component.getName() + "-" + i, s);
+      assertThat(s).isEqualTo(component.getName() + "-" + i);
       i++;
     }
+  }
+
+  @Test (timeout = 200000)
+  public void testRestartServiceForNonExistingInRM() throws Exception {
+    YarnConfiguration conf = new YarnConfiguration();
+    conf.setInt(YarnConfiguration.RM_MAX_COMPLETED_APPLICATIONS, 0);
+    setConf(conf);
+    setupInternal(NUM_NMS);
+    ServiceClient client = createClient(getConf());
+    Service exampleApp = createExampleApplication();
+    client.actionCreate(exampleApp);
+    waitForServiceToBeStable(client, exampleApp);
+    try {
+      client.actionStop(exampleApp.getName(), true);
+    } catch (ApplicationNotFoundException e) {
+      LOG.info("ignore ApplicationNotFoundException during stopping");
+    }
+    client.actionStart(exampleApp.getName());
+    waitForServiceToBeStable(client, exampleApp);
+    Service service = client.getStatus(exampleApp.getName());
+    Assert.assertEquals("Restarted service state should be STABLE",
+        ServiceState.STABLE, service.getState());
+  }
+
+  @Test(timeout = 200000)
+  public void testAMFailureValidity() throws Exception {
+    setupInternal(NUM_NMS);
+    ServiceClient client = createClient(getConf());
+    Service exampleApp = new Service();
+    exampleApp.setName("example-app");
+    exampleApp.setVersion("v1");
+    exampleApp.addComponent(createComponent("compa", 2, "sleep 1000"));
+    Configuration serviceConfig = new Configuration();
+    serviceConfig.setProperty(AM_RESTART_MAX, "2");
+    serviceConfig.setProperty(AM_FAILURES_VALIDITY_INTERVAL, "1000");
+    exampleApp.setConfiguration(serviceConfig);
+    client.actionCreate(exampleApp);
+    waitForServiceToBeStable(client, exampleApp);
+
+    Service appStatus1 = client.getStatus(exampleApp.getName());
+    ApplicationId exampleAppId = ApplicationId.fromString(appStatus1.getId());
+    YarnClient yarnClient = createYarnClient(getConf());
+
+    // kill AM1
+    ApplicationReport applicationReport = yarnClient.getApplicationReport(
+        exampleAppId);
+    ApplicationAttemptReport attemptReport = yarnClient
+        .getApplicationAttemptReport(applicationReport
+            .getCurrentApplicationAttemptId());
+    yarnClient.signalToContainer(attemptReport.getAMContainerId(),
+        SignalContainerCommand.GRACEFUL_SHUTDOWN);
+    waitForServiceToBeStable(client, exampleApp);
+    Assert.assertEquals(ServiceState.STABLE, client.getStatus(
+        exampleApp.getName()).getState());
+
+    // kill AM2 after 'yarn.service.am-failure.validity-interval-ms'
+    Thread.sleep(2000);
+    applicationReport = yarnClient.getApplicationReport(exampleAppId);
+    attemptReport = yarnClient.getApplicationAttemptReport(applicationReport
+        .getCurrentApplicationAttemptId());
+    yarnClient.signalToContainer(attemptReport.getAMContainerId(),
+        SignalContainerCommand.GRACEFUL_SHUTDOWN);
+    waitForServiceToBeStable(client, exampleApp);
+    Assert.assertEquals(ServiceState.STABLE, client.getStatus(
+        exampleApp.getName()).getState());
   }
 }

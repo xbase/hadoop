@@ -41,6 +41,7 @@ import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.http.JettyUtils;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.util.Time;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.timelineservice.ApplicationAttemptEntity;
 import org.apache.hadoop.yarn.api.records.timelineservice.ApplicationEntity;
@@ -49,10 +50,12 @@ import org.apache.hadoop.yarn.api.records.timelineservice.ContainerEntity;
 import org.apache.hadoop.yarn.api.records.timelineservice.FlowRunEntity;
 import org.apache.hadoop.yarn.api.records.timelineservice.QueueEntity;
 import org.apache.hadoop.yarn.api.records.timelineservice.SubApplicationEntity;
+import org.apache.hadoop.yarn.api.records.timelineservice.TimelineDomain;
 import org.apache.hadoop.yarn.api.records.timelineservice.TimelineEntities;
 import org.apache.hadoop.yarn.api.records.timelineservice.TimelineEntity;
 import org.apache.hadoop.yarn.api.records.timelineservice.TimelineEntityType;
 import org.apache.hadoop.yarn.api.records.timelineservice.UserEntity;
+import org.apache.hadoop.yarn.server.timelineservice.metrics.PerNodeAggTimelineCollectorMetrics;
 import org.apache.hadoop.yarn.webapp.ForbiddenException;
 import org.apache.hadoop.yarn.webapp.NotFoundException;
 
@@ -77,6 +80,8 @@ public class TimelineCollectorWebService {
       LoggerFactory.getLogger(TimelineCollectorWebService.class);
 
   private @Context ServletContext context;
+  private static final PerNodeAggTimelineCollectorMetrics METRICS =
+      PerNodeAggTimelineCollectorMetrics.getInstance();
 
   /**
    * Gives information about timeline collector.
@@ -151,6 +156,78 @@ public class TimelineCollectorWebService {
       TimelineEntities entities) {
     init(res);
     UserGroupInformation callerUgi = getUser(req);
+    boolean isAsync = async != null && async.trim().equalsIgnoreCase("true");
+    if (callerUgi == null) {
+      String msg = "The owner of the posted timeline entities is not set";
+      LOG.error(msg);
+      throw new ForbiddenException(msg);
+    }
+
+    long startTime = Time.monotonicNow();
+    boolean succeeded = false;
+    try {
+      ApplicationId appID = parseApplicationId(appId);
+      if (appID == null) {
+        return Response.status(Response.Status.BAD_REQUEST).build();
+      }
+      NodeTimelineCollectorManager collectorManager =
+          (NodeTimelineCollectorManager) context.getAttribute(
+              NodeTimelineCollectorManager.COLLECTOR_MANAGER_ATTR_KEY);
+      TimelineCollector collector = collectorManager.get(appID);
+      if (collector == null) {
+        LOG.error("Application: "+ appId + " is not found");
+        throw new NotFoundException("Application: "+ appId + " is not found");
+      }
+
+      if (isAsync) {
+        collector.putEntitiesAsync(processTimelineEntities(entities, appId,
+            Boolean.valueOf(isSubAppEntities)), callerUgi);
+      } else {
+        collector.putEntities(processTimelineEntities(entities, appId,
+            Boolean.valueOf(isSubAppEntities)), callerUgi);
+      }
+
+      succeeded = true;
+      return Response.ok().build();
+    } catch (NotFoundException | ForbiddenException e) {
+      throw new WebApplicationException(e,
+          Response.Status.INTERNAL_SERVER_ERROR);
+    } catch (IOException e) {
+      LOG.error("Error putting entities", e);
+      throw new WebApplicationException(e,
+          Response.Status.INTERNAL_SERVER_ERROR);
+    } catch (Exception e) {
+      LOG.error("Unexpected error while putting entities", e);
+      throw new WebApplicationException(e,
+          Response.Status.INTERNAL_SERVER_ERROR);
+    } finally {
+      long latency = Time.monotonicNow() - startTime;
+      if (isAsync) {
+        METRICS.addAsyncPutEntitiesLatency(latency, succeeded);
+      } else {
+        METRICS.addPutEntitiesLatency(latency, succeeded);
+      }
+    }
+  }
+
+  /**
+   * @param req    Servlet request.
+   * @param res    Servlet response.
+   * @param domain timeline domain to be put.
+   * @param appId Application Id to which the domain to be put belong to. If
+   *     appId is not there or it cannot be parsed, HTTP 400 will be sent back.
+   * @return a Response with appropriate HTTP status.
+   */
+  @PUT
+  @Path("/domain")
+  @Consumes({ MediaType.APPLICATION_JSON /* , MediaType.APPLICATION_XML */ })
+  public Response putDomain(
+      @Context HttpServletRequest req,
+      @Context HttpServletResponse res,
+      @QueryParam("appid") String appId,
+      TimelineDomain domain) {
+    init(res);
+    UserGroupInformation callerUgi = getUser(req);
     if (callerUgi == null) {
       String msg = "The owner of the posted timeline entities is not set";
       LOG.error(msg);
@@ -167,21 +244,15 @@ public class TimelineCollectorWebService {
               NodeTimelineCollectorManager.COLLECTOR_MANAGER_ATTR_KEY);
       TimelineCollector collector = collectorManager.get(appID);
       if (collector == null) {
-        LOG.error("Application: "+ appId + " is not found");
-        throw new NotFoundException("Application: "+ appId + " is not found");
+        LOG.error("Application: " + appId + " is not found");
+        throw new NotFoundException("Application: " + appId + " is not found");
       }
 
-      boolean isAsync = async != null && async.trim().equalsIgnoreCase("true");
-      if (isAsync) {
-        collector.putEntitiesAsync(processTimelineEntities(entities, appId,
-            Boolean.valueOf(isSubAppEntities)), callerUgi);
-      } else {
-        collector.putEntities(processTimelineEntities(entities, appId,
-            Boolean.valueOf(isSubAppEntities)), callerUgi);
-      }
+      domain.setOwner(callerUgi.getShortUserName());
+      collector.putDomain(domain, callerUgi);
 
       return Response.ok().build();
-    } catch (NotFoundException | ForbiddenException e) {
+    } catch (NotFoundException e) {
       throw new WebApplicationException(e,
           Response.Status.INTERNAL_SERVER_ERROR);
     } catch (IOException e) {

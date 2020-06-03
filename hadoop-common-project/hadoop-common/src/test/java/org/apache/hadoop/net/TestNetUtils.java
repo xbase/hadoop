@@ -38,7 +38,7 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.security.KerberosAuthException;
@@ -95,7 +95,25 @@ public class TestNetUtils {
       assertInException(se, "Invalid argument");
     }
   }
-  
+
+  @Test
+  public void testInvalidAddress() throws Throwable {
+    Configuration conf = new Configuration();
+
+    Socket socket = NetUtils.getDefaultSocketFactory(conf)
+        .createSocket();
+    socket.bind(new InetSocketAddress("127.0.0.1", 0));
+    try {
+      NetUtils.connect(socket,
+          new InetSocketAddress("invalid-test-host",
+              0), 20000);
+      socket.close();
+      fail("Should not have connected");
+    } catch (UnknownHostException uhe) {
+      LOG.info("Got exception: ", uhe);
+    }
+  }
+
   @Test
   public void testSocketReadTimeoutWithChannel() throws Exception {
     doSocketReadTimeoutTest(true);
@@ -279,11 +297,9 @@ public class TestNetUtils {
   @Test
   public void testWrapIOEWithNoStringConstructor() throws Throwable {
     IOException e = new CharacterCodingException();
-    IOException wrapped = verifyExceptionClass(e, IOException.class);
-    assertInException(wrapped, "Failed on local exception");
-    assertNotInException(wrapped, NetUtils.HADOOP_WIKI);
-    assertInException(wrapped, "Host Details ");
-    assertRemoteDetailsIncluded(wrapped);
+    IOException wrapped =
+        verifyExceptionClass(e, CharacterCodingException.class);
+    assertEquals(null, wrapped.getMessage());
   }
 
   @Test
@@ -295,11 +311,8 @@ public class TestNetUtils {
       }
     }
     IOException e = new TestIOException();
-    IOException wrapped = verifyExceptionClass(e, IOException.class);
-    assertInException(wrapped, "Failed on local exception");
-    assertNotInException(wrapped, NetUtils.HADOOP_WIKI);
-    assertInException(wrapped, "Host Details ");
-    assertRemoteDetailsIncluded(wrapped);
+    IOException wrapped = verifyExceptionClass(e, TestIOException.class);
+    assertEquals(null, wrapped.getMessage());
   }
 
   @Test

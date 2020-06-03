@@ -21,9 +21,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.argThat;
-import static org.mockito.Matchers.refEq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.refEq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
@@ -82,7 +82,6 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.AuxServicesEve
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.Application;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.ApplicationEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.ApplicationEventType;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.deletion.task.DockerContainerDeletionMatcher;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainersLauncher;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainersLauncherEvent;
@@ -117,7 +116,7 @@ public class TestContainer {
   final NodeManagerMetrics metrics = NodeManagerMetrics.create();
   final Configuration conf = new YarnConfiguration();
   final String FAKE_LOCALIZATION_ERROR = "Fake localization error";
-  
+
   /**
    * Verify correct container request events sent to localizer.
    */
@@ -168,13 +167,7 @@ public class TestContainer {
       final WrappedContainer wcf = wc;
       // verify container launch
       ArgumentMatcher<ContainersLauncherEvent> matchesContainerLaunch =
-        new ArgumentMatcher<ContainersLauncherEvent>() {
-          @Override
-          public boolean matches(Object o) {
-            ContainersLauncherEvent launchEvent = (ContainersLauncherEvent) o;
-            return wcf.c == launchEvent.getContainer();
-          }
-        };
+          event -> wcf.c == event.getContainer();
       verify(wc.launcherBus).handle(argThat(matchesContainerLaunch));
     } finally {
       if (wc != null) {
@@ -253,13 +246,16 @@ public class TestContainer {
       wc.initContainer();
       wc.localizeResources();
       int running = metrics.getRunningContainers();
+      int paused = metrics.getPausedContainers();
       wc.launchContainer();
       assertEquals(running + 1, metrics.getRunningContainers());
       reset(wc.localizerBus);
       wc.pauseContainer();
       assertEquals(ContainerState.PAUSED,
           wc.c.getContainerState());
+      assertEquals(paused + 1, metrics.getPausedContainers());
       wc.resumeContainer();
+      assertEquals(paused, metrics.getPausedContainers());
       assertEquals(ContainerState.RUNNING,
           wc.c.getContainerState());
       wc.containerKilledOnRequest();
@@ -592,9 +588,8 @@ public class TestContainer {
       Assert.assertEquals(ContainerExitStatus.KILLED_BY_RESOURCEMANAGER,
           containerMetrics.exitCode.value());
       Assert.assertTrue(containerMetrics.startTime.value() > 0);
-      Assert.assertTrue(
-          containerMetrics.finishTime.value() > containerMetrics.startTime
-              .value());
+      Assert.assertTrue(containerMetrics.finishTime.value() >=
+              containerMetrics.startTime.value());
       Assert.assertEquals(ContainerEventType.KILL_CONTAINER,
           wc.initStateToEvent.get(ContainerState.NEW));
       Assert.assertEquals(ContainerState.DONE,
@@ -951,28 +946,16 @@ public class TestContainer {
       
       for (final Map.Entry<String,ByteBuffer> e : wc.serviceData.entrySet()) {
         ArgumentMatcher<AuxServicesEvent> matchesServiceReq =
-          new ArgumentMatcher<AuxServicesEvent>() {
-            @Override
-            public boolean matches(Object o) {
-              AuxServicesEvent evt = (AuxServicesEvent) o;
-              return e.getKey().equals(evt.getServiceID())
+            evt -> e.getKey().equals(evt.getServiceID())
                 && 0 == e.getValue().compareTo(evt.getServiceData());
-            }
-          };
         verify(wc.auxBus).handle(argThat(matchesServiceReq));
       }
 
       final WrappedContainer wcf = wc;
       // verify launch on empty resource request
       ArgumentMatcher<ContainersLauncherEvent> matchesLaunchReq =
-        new ArgumentMatcher<ContainersLauncherEvent>() {
-          @Override
-          public boolean matches(Object o) {
-            ContainersLauncherEvent evt = (ContainersLauncherEvent) o;
-            return evt.getType() == ContainersLauncherEventType.LAUNCH_CONTAINER
+          evt -> evt.getType() == ContainersLauncherEventType.LAUNCH_CONTAINER
               && wcf.cId.equals(evt.getContainer().getContainerId());
-          }
-        };
       verify(wc.launcherBus).handle(argThat(matchesLaunchReq));
     } finally {
       if (wc != null) {
@@ -1169,14 +1152,14 @@ public class TestContainer {
 
   private void verifyDockerContainerCleanupCall(WrappedContainer wc)
       throws Exception {
-    DeletionService delService = wc.context.getDeletionService();
-    verify(delService, times(1)).delete(argThat(
-        new DockerContainerDeletionMatcher(delService,
-            wc.c.getContainerId().toString())));
+    // check if containerlauncher cleans up the container launch.
+    verify(wc.launcherBus)
+        .handle(refEq(new ContainersLauncherEvent(wc.c,
+            ContainersLauncherEventType.CLEANUP_CONTAINER), "timestamp"));
   }
 
   // Argument matcher for matching container localization cleanup event.
-  private static class LocalizationCleanupMatcher extends
+  private static class LocalizationCleanupMatcher implements
       ArgumentMatcher<LocalizationEvent> {
     Container c;
 
@@ -1185,12 +1168,12 @@ public class TestContainer {
     }
 
     @Override
-    public boolean matches(Object o) {
-      if (!(o instanceof ContainerLocalizationCleanupEvent)) {
+    public boolean matches(LocalizationEvent e) {
+      if (!(e instanceof ContainerLocalizationCleanupEvent)) {
         return false;
       }
       ContainerLocalizationCleanupEvent evt =
-          (ContainerLocalizationCleanupEvent) o;
+          (ContainerLocalizationCleanupEvent) e;
 
       return (evt.getContainer() == c);
     }
@@ -1212,15 +1195,15 @@ public class TestContainer {
     }
 
     @Override
-    public boolean matches(Object o) {
+    public boolean matches(LocalizationEvent e) {
       // match event type and container.
-      if(!super.matches(o)){
+      if(!super.matches(e)){
         return false;
       }
 
       // match resources.
       ContainerLocalizationCleanupEvent evt =
-          (ContainerLocalizationCleanupEvent) o;
+          (ContainerLocalizationCleanupEvent) e;
       final HashSet<LocalResourceRequest> expected =
           new HashSet<LocalResourceRequest>(resources);
       for (Collection<LocalResourceRequest> rc : evt.getResources().values()) {
@@ -1235,7 +1218,7 @@ public class TestContainer {
   }
 
   // Accept iff the resource payload matches.
-  private static class ResourcesRequestedMatcher extends
+  private static class ResourcesRequestedMatcher implements
       ArgumentMatcher<LocalizationEvent> {
     final HashSet<LocalResourceRequest> resources =
         new HashSet<LocalResourceRequest>();
@@ -1250,9 +1233,9 @@ public class TestContainer {
     }
 
     @Override
-    public boolean matches(Object o) {
+    public boolean matches(LocalizationEvent e) {
       ContainerLocalizationRequestEvent evt =
-          (ContainerLocalizationRequestEvent) o;
+          (ContainerLocalizationRequestEvent) e;
       final HashSet<LocalResourceRequest> expected =
           new HashSet<LocalResourceRequest>(resources);
       for (Collection<LocalResourceRequest> rc : evt.getRequestedResources()
@@ -1333,6 +1316,7 @@ public class TestContainer {
         new HashMap<>();
     private final Map<ContainerEventType, ContainerState> eventToFinalState =
         new HashMap<>();
+    private final ContainerExecutor exec;
 
     WrappedContainer(int appId, long timestamp, int id, String user)
         throws IOException {
@@ -1369,6 +1353,7 @@ public class TestContainer {
           container.sendLaunchEvent();
         }
       };
+      exec = mock(ContainerExecutor.class);
       dispatcher.register(LocalizationEventType.class, localizerBus);
       dispatcher.register(ContainersLauncherEventType.class, launcherBus);
       dispatcher.register(ContainersMonitorEventType.class, monitorBus);
@@ -1428,6 +1413,9 @@ public class TestContainer {
         localResources = Collections.<String, LocalResource> emptyMap();
       }
       when(ctxt.getLocalResources()).thenReturn(localResources);
+
+      when(exec.getLocalResources(any())).thenReturn(localResources);
+      when(context.getContainerExecutor()).thenReturn(exec);
 
       if (withServiceData) {
         Random r = new Random();
@@ -1581,14 +1569,17 @@ public class TestContainer {
     public void dockerContainerResourcesCleanup() {
       c.handle(new ContainerEvent(cId,
           ContainerEventType.CONTAINER_RESOURCES_CLEANEDUP));
-      verify(delService, times(1)).delete(argThat(
-          new DockerContainerDeletionMatcher(delService, cId.toString())));
+      // check if containerlauncher cleans up the container launch.
+      verify(this.launcherBus)
+          .handle(refEq(new ContainersLauncherEvent(this.c,
+              ContainersLauncherEventType.CLEANUP_CONTAINER), "timestamp"));
       drainDispatcherEvents();
     }
 
     public void setupDockerContainerEnv() {
       Map<String, String> env = new HashMap<>();
-      env.put(ContainerRuntimeConstants.ENV_CONTAINER_TYPE, "docker");
+      env.put(ContainerRuntimeConstants.ENV_CONTAINER_TYPE,
+          ContainerRuntimeConstants.CONTAINER_RUNTIME_DOCKER);
       when(this.ctxt.getEnvironment()).thenReturn(env);
     }
 
@@ -1650,4 +1641,5 @@ public class TestContainer {
       return ((ContainerImpl)c).getRetryPolicy();
     }
   }
+
 }
