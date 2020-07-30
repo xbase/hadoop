@@ -39,7 +39,7 @@ import org.apache.hadoop.util.Time;
  * This supports input and output streams for a socket channels. 
  * These streams can have a timeout.
  */
-abstract class SocketIOWithTimeout {
+abstract class SocketIOWithTimeout { // socket NIO 支持读写超时工具类
   // This is intentionally package private.
 
   static final Log LOG = LogFactory.getLog(SocketIOWithTimeout.class);    
