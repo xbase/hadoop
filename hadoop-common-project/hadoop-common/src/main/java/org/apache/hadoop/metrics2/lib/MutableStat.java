@@ -33,7 +33,7 @@ import static org.apache.hadoop.metrics2.lib.Interns.*;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class MutableStat extends MutableMetric {
+public class MutableStat extends MutableMetric { // 最大、最小、平均值、标准差
   private final MetricsInfo numInfo;
   private final MetricsInfo avgInfo;
   private final MetricsInfo stdevInfo;
@@ -64,15 +64,15 @@ public class MutableStat extends MutableMetric {
     String desc = StringUtils.uncapitalize(description);
     String lsName = StringUtils.uncapitalize(sampleName);
     String lvName = StringUtils.uncapitalize(valueName);
-    numInfo = info(ucName +"Num"+ usName, "Number of "+ lsName +" for "+ desc);
+    numInfo = info(ucName +"Num"+ usName, "Number of "+ lsName +" for "+ desc); // 指标名=变量名 + 统计方式(Num、Avg、Min、Max等) + 指标类型(Ops、Time等)
     avgInfo = info(ucName +"Avg"+ uvName, "Average "+ lvName +" for "+ desc);
     stdevInfo = info(ucName +"Stdev"+ uvName,
                      "Standard deviation of "+ lvName +" for "+ desc);
     iMinInfo = info(ucName +"IMin"+ uvName,
-                    "Interval min "+ lvName +" for "+ desc);
+                    "Interval min "+ lvName +" for "+ desc); // 一段时间段内的最小值
     iMaxInfo = info(ucName + "IMax"+ uvName,
                     "Interval max "+ lvName +" for "+ desc);
-    minInfo = info(ucName +"Min"+ uvName, "Min "+ lvName +" for "+ desc);
+    minInfo = info(ucName +"Min"+ uvName, "Min "+ lvName +" for "+ desc); // 整个时间内的最小值
     maxInfo = info(ucName +"Max"+ uvName, "Max "+ lvName +" for "+ desc);
     this.extended = extended;
   }

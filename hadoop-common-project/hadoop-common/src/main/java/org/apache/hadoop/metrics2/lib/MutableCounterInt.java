@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class MutableCounterInt extends MutableCounter {
+public class MutableCounterInt extends MutableCounter { // 累增型指标
   private AtomicInteger value = new AtomicInteger();
 
   MutableCounterInt(MetricsInfo info, int initValue) {

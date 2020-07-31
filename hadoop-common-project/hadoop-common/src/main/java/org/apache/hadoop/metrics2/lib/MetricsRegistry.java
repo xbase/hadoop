@@ -48,7 +48,7 @@ public class MetricsRegistry {
    * @param name  of the record of the metrics
    */
   public MetricsRegistry(String name) {
-    metricsInfo = Interns.info(name, name);
+    metricsInfo = Interns.info(name, name); // 获取一个metric
   }
 
   /**
@@ -345,7 +345,7 @@ public class MetricsRegistry {
    */
   public synchronized
   MetricsRegistry tag(MetricsInfo info, String value, boolean override) {
-    if (!override) checkTagName(info.name());
+    if (!override) checkTagName(info.name()); // 如果不覆盖，则检查tag name是否重复
     tagsMap.put(info.name(), Interns.tag(info, value));
     return this;
   }

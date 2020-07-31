@@ -43,7 +43,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class MutableQuantiles extends MutableMetric {
+public class MutableQuantiles extends MutableMetric { // 百分位型指标
 
   @VisibleForTesting
   public static final Quantile[] quantiles = { new Quantile(0.50, 0.050),
@@ -81,10 +81,10 @@ public class MutableQuantiles extends MutableMetric {
    */
   public MutableQuantiles(String name, String description, String sampleName,
       String valueName, int interval) {
-    String ucName = StringUtils.capitalize(name);
+    String ucName = StringUtils.capitalize(name); // 变大写
     String usName = StringUtils.capitalize(sampleName);
     String uvName = StringUtils.capitalize(valueName);
-    String desc = StringUtils.uncapitalize(description);
+    String desc = StringUtils.uncapitalize(description); // 变小写
     String lsName = StringUtils.uncapitalize(sampleName);
     String lvName = StringUtils.uncapitalize(valueName);
 

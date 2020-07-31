@@ -38,13 +38,13 @@ public class Interns {
 
   // A simple intern cache with two keys
   // (to avoid creating new (combined) key objects for lookup)
-  private static abstract class CacheWith2Keys<K1, K2, V> {
+  private static abstract class CacheWith2Keys<K1, K2, V> { // 通过两个map，实现两key map
     private final Map<K1, Map<K2, V>> k1Map =
         new LinkedHashMap<K1, Map<K2, V>>() {
       private static final long serialVersionUID = 1L;
       private boolean gotOverflow = false;
       @Override
-      protected boolean removeEldestEntry(Map.Entry<K1, Map<K2, V>> e) {
+      protected boolean removeEldestEntry(Map.Entry<K1, Map<K2, V>> e) { // 有容量限制的map
         boolean overflow = expireKey1At(size());
         if (overflow && !gotOverflow) {
           LOG.warn("Metrics intern cache overflow at "+ size() +" for "+ e);
@@ -60,11 +60,11 @@ public class Interns {
 
     synchronized V add(K1 k1, K2 k2) {
       Map<K2, V> k2Map = k1Map.get(k1);
-      if (k2Map == null) {
+      if (k2Map == null) { // step 1 : 如果k1Map中没有，则new一个k2Map，并放到k1Map中
         k2Map = new LinkedHashMap<K2, V>() {
           private static final long serialVersionUID = 1L;
           private boolean gotOverflow = false;
-          @Override protected boolean removeEldestEntry(Map.Entry<K2, V> e) {
+          @Override protected boolean removeEldestEntry(Map.Entry<K2, V> e) { // 有容量限制的map
             boolean overflow = expireKey2At(size());
             if (overflow && !gotOverflow) {
               LOG.warn("Metrics intern cache overflow at "+ size() +" for "+ e);
@@ -76,7 +76,7 @@ public class Interns {
         k1Map.put(k1, k2Map);
       }
       V v = k2Map.get(k2);
-      if (v == null) {
+      if (v == null) { // step 2 : 如果k2Map中没有，则new一个新对象，并放入到k2Map中
         v = newValue(k1, k2);
         k2Map.put(k2, v);
       }
@@ -114,7 +114,7 @@ public class Interns {
    * @param description
    * @return an interned metric info object
    */
-  public static MetricsInfo info(String name, String description) {
+  public static MetricsInfo info(String name, String description) { // 通过metric的name和描述，获取一个MetricsInfo对象
     return Info.INSTANCE.cache.add(name, description);
   }
 

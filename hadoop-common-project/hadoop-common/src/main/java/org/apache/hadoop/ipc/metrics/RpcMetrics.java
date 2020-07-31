@@ -50,12 +50,12 @@ public class RpcMetrics {
     String port = String.valueOf(server.getListenerAddress().getPort());
     name = "RpcActivityForPort" + port;
     this.server = server;
-    registry = new MetricsRegistry("rpc").tag("port", "RPC port", port);
+    registry = new MetricsRegistry("rpc").tag("port", "RPC port", port); // 创建一个metric，并打一个tag
     int[] intervals = conf.getInts(
-        CommonConfigurationKeys.RPC_METRICS_PERCENTILES_INTERVALS_KEY);
+        CommonConfigurationKeys.RPC_METRICS_PERCENTILES_INTERVALS_KEY); // 百分位指标聚合粒度，比如：每60s计算一次P95指标
     rpcQuantileEnable = (intervals.length > 0) && conf.getBoolean(
         CommonConfigurationKeys.RPC_METRICS_QUANTILE_ENABLE,
-        CommonConfigurationKeys.RPC_METRICS_QUANTILE_ENABLE_DEFAULT);
+        CommonConfigurationKeys.RPC_METRICS_QUANTILE_ENABLE_DEFAULT); // 是否开启百分位指标
     if (rpcQuantileEnable) {
       rpcQueueTimeMillisQuantiles =
           new MutableQuantiles[intervals.length];

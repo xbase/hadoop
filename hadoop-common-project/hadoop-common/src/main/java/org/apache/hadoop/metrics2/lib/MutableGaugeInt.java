@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class MutableGaugeInt extends MutableGauge {
+public class MutableGaugeInt extends MutableGauge { // 可增、可减型指标
 
   private AtomicInteger value = new AtomicInteger();
 

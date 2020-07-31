@@ -26,7 +26,7 @@ import org.apache.hadoop.metrics2.MetricsInfo;
  * Making implementing metric info a little easier
  */
 class MetricsInfoImpl implements MetricsInfo {
-  private final String name, description;
+  private final String name, description; // metric 的名字和描述
 
   MetricsInfoImpl(String name, String description) {
     this.name = checkNotNull(name, "name");
