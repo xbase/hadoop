@@ -147,12 +147,12 @@ public class Dispatcher {
     }
   }
 
-  public static class StorageGroupMap<G extends StorageGroup> {
+  public static class StorageGroupMap<G extends StorageGroup> { // <datanodeUuid:storageType, StorageGroup>
     private static String toKey(String datanodeUuid, StorageType storageType) {
       return datanodeUuid + ":" + storageType;
     }
 
-    private final Map<String, G> map = new HashMap<String, G>();
+    private final Map<String, G> map = new HashMap<String, G>(); // <datanodeUuid:storageType, StorageGroup>
 
     public G get(String datanodeUuid, StorageType storageType) {
       return map.get(toKey(datanodeUuid, storageType));
@@ -178,7 +178,7 @@ public class Dispatcher {
   }
 
   /** This class keeps track of a scheduled block move */
-  public class PendingMove {
+  public class PendingMove { // 一个物理move计划
     private DBlock block;
     private Source source;
     private DDatanode proxySource;
@@ -493,9 +493,9 @@ public class Dispatcher {
     }
 
     final DatanodeInfo datanode;
-    private final EnumMap<StorageType, Source> sourceMap
+    private final EnumMap<StorageType, Source> sourceMap // move源
         = new EnumMap<StorageType, Source>(StorageType.class);
-    private final EnumMap<StorageType, StorageGroup> targetMap
+    private final EnumMap<StorageType, StorageGroup> targetMap // move目的地
         = new EnumMap<StorageType, StorageGroup>(StorageType.class);
     protected long delayUntil = 0L;
     /** blocks being moved but not confirmed yet */
@@ -863,7 +863,7 @@ public class Dispatcher {
 
   /** Get live datanode storage reports and then build the network topology. */
   public List<DatanodeStorageReport> init() throws IOException {
-    final DatanodeStorageReport[] reports = nnc.getLiveDatanodeStorageReport();
+    final DatanodeStorageReport[] reports = nnc.getLiveDatanodeStorageReport(); // DN存储目录信息
     final List<DatanodeStorageReport> trimmed = new ArrayList<DatanodeStorageReport>(); 
     // create network topology and classify utilization collections:
     // over-utilized, above-average, below-average and under-utilized.

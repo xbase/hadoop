@@ -68,9 +68,9 @@ public class Mover {
   static final Path MOVER_ID_PATH = new Path("/system/mover.id");
 
   private static class StorageMap {
-    private final StorageGroupMap<Source> sources
+    private final StorageGroupMap<Source> sources // 按存储类型区分，可以作为source的DN
         = new StorageGroupMap<Source>();
-    private final StorageGroupMap<StorageGroup> targets
+    private final StorageGroupMap<StorageGroup> targets // 按存储类型区分，可以作为target的DN
         = new StorageGroupMap<StorageGroup>();
     private final EnumMap<StorageType, List<StorageGroup>> targetStorageTypeMap
         = new EnumMap<StorageType, List<StorageGroup>>(StorageType.class);
@@ -108,7 +108,7 @@ public class Mover {
 
   private final Dispatcher dispatcher;
   private final StorageMap storages;
-  private final List<Path> targetPaths;
+  private final List<Path> targetPaths; // 待move的path
   private final int retryMaxAttempts;
   private final AtomicInteger retryCount;
 
@@ -139,20 +139,20 @@ public class Mover {
 
   void init() throws IOException {
     initStoragePolicies();
-    final List<DatanodeStorageReport> reports = dispatcher.init();
+    final List<DatanodeStorageReport> reports = dispatcher.init(); // 所有DN的存储目录
     for(DatanodeStorageReport r : reports) {
-      final DDatanode dn = dispatcher.newDatanode(r.getDatanodeInfo());
+      final DDatanode dn = dispatcher.newDatanode(r.getDatanodeInfo()); // 包装一下
       for(StorageType t : StorageType.getMovableTypes()) {
         final Source source = dn.addSource(t, Long.MAX_VALUE, dispatcher);
         final long maxRemaining = getMaxRemaining(r, t);
         final StorageGroup target = maxRemaining > 0L ? dn.addTarget(t,
             maxRemaining) : null;
-        storages.add(source, target);
+        storages.add(source, target); // 可以作为source或target的DN
       }
     }
   }
 
-  private void initStoragePolicies() throws IOException {
+  private void initStoragePolicies() throws IOException { // 支持的存储策略
     BlockStoragePolicy[] policies = dispatcher.getDistributedFileSystem()
         .getStoragePolicies();
     for (BlockStoragePolicy policy : policies) {
@@ -187,7 +187,7 @@ public class Mover {
     return db;
   }
 
-  private static long getMaxRemaining(DatanodeStorageReport report, StorageType t) {
+  private static long getMaxRemaining(DatanodeStorageReport report, StorageType t) { // 此DN这种StorageType最大的剩余存储空间是多少
     long max = 0L;
     for(StorageReport r : report.getStorageReports()) {
       if (r.getStorage().getStorageType() == t) {
@@ -295,7 +295,7 @@ public class Mover {
       for (byte[] lastReturnedName = HdfsFileStatus.EMPTY_NAME;;) {
         final DirectoryListing children;
         try {
-          children = dfs.listPaths(fullPath, lastReturnedName, true);
+          children = dfs.listPaths(fullPath, lastReturnedName, true); // 从lastReturnedName开始，获取一部分children
         } catch(IOException e) {
           LOG.warn("Failed to list directory " + fullPath
               + ". Ignore the directory and continue.", e);
@@ -308,7 +308,7 @@ public class Mover {
           hasRemaining |= processRecursively(fullPath, child);
         }
         if (children.hasMore()) {
-          lastReturnedName = children.getLastName();
+          lastReturnedName = children.getLastName(); // 如果还有children，就从lastName开始，接着获取
         } else {
           return hasRemaining;
         }
@@ -350,7 +350,7 @@ public class Mover {
     private boolean processFile(String fullPath, HdfsLocatedFileStatus status) {
       final byte policyId = status.getStoragePolicy();
       // currently we ignore files with unspecified storage policy
-      if (policyId == BlockStoragePolicySuite.ID_UNSPECIFIED) {
+      if (policyId == BlockStoragePolicySuite.ID_UNSPECIFIED) { // 忽略未设置存储策略的文件
         return false;
       }
       final BlockStoragePolicy policy = blockStoragePolicies[policyId];
@@ -359,21 +359,21 @@ public class Mover {
         return false;
       }
       final List<StorageType> types = policy.chooseStorageTypes(
-          status.getReplication());
+          status.getReplication()); // 各个replica的期望存储类型
 
       final LocatedBlocks locatedBlocks = status.getBlockLocations();
       boolean hasRemaining = false;
-      final boolean lastBlkComplete = locatedBlocks.isLastBlockComplete();
+      final boolean lastBlkComplete = locatedBlocks.isLastBlockComplete(); // 最后一个block是否complete
       List<LocatedBlock> lbs = locatedBlocks.getLocatedBlocks();
-      for(int i = 0; i < lbs.size(); i++) {
-        if (i == lbs.size() - 1 && !lastBlkComplete) {
+      for(int i = 0; i < lbs.size(); i++) { // 一个block一个block判断，是否有replica需要move
+        if (i == lbs.size() - 1 && !lastBlkComplete) { // 如果最后一个block没有complete
           // last block is incomplete, skip it
           continue;
         }
         LocatedBlock lb = lbs.get(i);
         final StorageTypeDiff diff = new StorageTypeDiff(types,
-            lb.getStorageTypes());
-        if (!diff.removeOverlap(true)) {
+            lb.getStorageTypes()); // 各个replica的存储类型，和期望的有哪些不同
+        if (!diff.removeOverlap(true)) { // 是否需要move
           if (scheduleMoves4Block(diff, lb)) {
             hasRemaining |= (diff.existing.size() > 1 &&
                 diff.expected.size() > 1);
@@ -384,7 +384,7 @@ public class Mover {
     }
 
     boolean scheduleMoves4Block(StorageTypeDiff diff, LocatedBlock lb) {
-      final List<MLocation> locations = MLocation.toLocations(lb);
+      final List<MLocation> locations = MLocation.toLocations(lb); //  replica列表
       Collections.shuffle(locations);
       final DBlock db = newDBlock(lb.getBlock().getLocalBlock(), locations);
 
@@ -411,20 +411,20 @@ public class Mover {
     }
 
     boolean scheduleMoveReplica(DBlock db, Source source,
-        List<StorageType> targetTypes) {
+        List<StorageType> targetTypes) { // 生成move任务
       // Match storage on the same node
-      if (chooseTargetInSameNode(db, source, targetTypes)) {
+      if (chooseTargetInSameNode(db, source, targetTypes)) { // source和target在同一个节点
         return true;
       }
 
       if (dispatcher.getCluster().isNodeGroupAware()) {
-        if (chooseTarget(db, source, targetTypes, Matcher.SAME_NODE_GROUP)) {
+        if (chooseTarget(db, source, targetTypes, Matcher.SAME_NODE_GROUP)) { // source和target在同一个node group
           return true;
         }
       }
       
       // Then, match nodes on the same rack
-      if (chooseTarget(db, source, targetTypes, Matcher.SAME_RACK)) {
+      if (chooseTarget(db, source, targetTypes, Matcher.SAME_RACK)) { // source和target在同一个rack
         return true;
       }
       // At last, match all remaining nodes
@@ -470,10 +470,10 @@ public class Mover {
     }
   }
 
-  static class MLocation {
-    final DatanodeInfo datanode;
-    final StorageType storageType;
-    final long size;
+  static class MLocation { // replica信息
+    final DatanodeInfo datanode; // replica所在DN
+    final StorageType storageType; // 对应的存储类型
+    final long size; // replica大小
     
     MLocation(DatanodeInfo datanode, StorageType storageType, long size) {
       this.datanode = datanode;
@@ -481,7 +481,7 @@ public class Mover {
       this.size = size;
     }
     
-    static List<MLocation> toLocations(LocatedBlock lb) {
+    static List<MLocation> toLocations(LocatedBlock lb) { // 重新组织每个replica的信息
       final DatanodeInfo[] datanodeInfos = lb.getLocations();
       final StorageType[] storageTypes = lb.getStorageTypes();
       final long size = lb.getBlockSize();
@@ -514,11 +514,11 @@ public class Mover {
     boolean removeOverlap(boolean ignoreNonMovable) {
       for(Iterator<StorageType> i = existing.iterator(); i.hasNext(); ) {
         final StorageType t = i.next();
-        if (expected.remove(t)) {
+        if (expected.remove(t)) { // 和期望存储类型一致，则移除
           i.remove();
         }
       }
-      if (ignoreNonMovable) {
+      if (ignoreNonMovable) { // 移除不支持move的
         removeNonMovable(existing);
         removeNonMovable(expected);
       }
@@ -541,6 +541,7 @@ public class Mover {
     }
   }
 
+  // 每个NS，一个mover
   static int run(Map<URI, List<Path>> namenodes, Configuration conf)
       throws IOException, InterruptedException {
     final long sleeptime =
@@ -555,7 +556,7 @@ public class Mover {
     try {
       connectors = NameNodeConnector.newNameNodeConnectors(namenodes,
           Mover.class.getSimpleName(), MOVER_ID_PATH, conf,
-          NameNodeConnector.DEFAULT_MAX_IDLE_ITERATIONS);
+          NameNodeConnector.DEFAULT_MAX_IDLE_ITERATIONS); // 创建到NN的RPC
 
       while (connectors.size() > 0) {
         Collections.shuffle(connectors);
@@ -563,10 +564,10 @@ public class Mover {
         while (iter.hasNext()) {
           NameNodeConnector nnc = iter.next();
           final Mover m = new Mover(nnc, conf, retryCount);
-          final ExitStatus r = m.run();
+          final ExitStatus r = m.run(); // 开始move
 
           if (r == ExitStatus.SUCCESS) {
-            IOUtils.cleanup(LOG, nnc);
+            IOUtils.cleanup(LOG, nnc); // 关闭到NN的连接
             iter.remove();
           } else if (r != ExitStatus.IN_PROGRESS) {
             // must be an error statue, return
@@ -621,10 +622,11 @@ public class Mover {
       return list.toArray(new String[list.size()]);
     }
 
+    // 获取每个NN，待迁移的path列表
     private static Map<URI, List<Path>> getNameNodePaths(CommandLine line,
         Configuration conf) throws Exception {
-      Map<URI, List<Path>> map = Maps.newHashMap();
-      String[] paths = null;
+      Map<URI, List<Path>> map = Maps.newHashMap(); // <NN_URI, 待迁移path列表>
+      String[] paths = null; // 待迁移文件/目录列表
       if (line.hasOption("f")) {
         paths = readPathFile(line.getOptionValue("f"));
       } else if (line.hasOption("p")) {
@@ -641,13 +643,13 @@ public class Mover {
           namenodes.iterator().next() : null;
       for (String path : paths) {
         Path target = new Path(path);
-        if (!target.isUriPathAbsolute()) {
+        if (!target.isUriPathAbsolute()) { // 必须是绝对路径
           throw new IllegalArgumentException("The path " + target
               + " is not absolute");
         }
         URI targetUri = target.toUri();
         if ((targetUri.getAuthority() == null || targetUri.getScheme() ==
-            null) && singleNs == null) {
+            null) && singleNs == null) { // 必须是一个完整的全路径
           // each path must contains both scheme and authority information
           // unless there is only one name service specified in the
           // configuration
@@ -659,7 +661,7 @@ public class Mover {
         if (singleNs == null) {
           key = new URI(targetUri.getScheme(), targetUri.getAuthority(),
               null, null, null);
-          if (!namenodes.contains(key)) {
+          if (!namenodes.contains(key)) { // 待迁移路径，指定的nn是否在配置中
             throw new IllegalArgumentException("Cannot resolve the path " +
                 target + ". The namenode services specified in the " +
                 "configuration: " + namenodes);
@@ -680,7 +682,7 @@ public class Mover {
         String... args) throws Exception {
       final Options opts = buildCliOptions();
       CommandLineParser parser = new GnuParser();
-      CommandLine commandLine = parser.parse(opts, args, true);
+      CommandLine commandLine = parser.parse(opts, args, true); // 解析此工具的命令行参数
       return getNameNodePaths(commandLine, conf);
     }
 
@@ -690,7 +692,7 @@ public class Mover {
       final Configuration conf = getConf();
 
       try {
-        final Map<URI, List<Path>> map = getNameNodePathsToMove(conf, args);
+        final Map<URI, List<Path>> map = getNameNodePathsToMove(conf, args); // 获取每个NN，待迁移的path列表
         return Mover.run(map, conf);
       } catch (IOException e) {
         System.out.println(e + ".  Exiting ...");

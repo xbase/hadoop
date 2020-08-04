@@ -77,7 +77,7 @@ public class BlockStoragePolicy {
   /**
    * @return a list of {@link StorageType}s for storing the replicas of a block.
    */
-  public List<StorageType> chooseStorageTypes(final short replication) {
+  public List<StorageType> chooseStorageTypes(final short replication) { // 根据副本数，返回各个block的存储类型
     final List<StorageType> types = new LinkedList<StorageType>();
     int i = 0, j = 0;
 

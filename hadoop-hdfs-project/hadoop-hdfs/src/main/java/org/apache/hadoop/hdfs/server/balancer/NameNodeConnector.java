@@ -126,9 +126,9 @@ public class NameNodeConnector implements Closeable {
     this.maxNotChangedIterations = maxNotChangedIterations;
 
     this.namenode = NameNodeProxies.createProxy(conf, nameNodeUri,
-        NamenodeProtocol.class).getProxy();
+        NamenodeProtocol.class).getProxy(); // NN之间的RPC
     this.client = NameNodeProxies.createProxy(conf, nameNodeUri,
-        ClientProtocol.class, fallbackToSimpleAuth).getProxy();
+        ClientProtocol.class, fallbackToSimpleAuth).getProxy(); // client->NN 的RPC
     this.fs = (DistributedFileSystem)FileSystem.get(nameNodeUri, conf);
 
     final NamespaceInfo namespaceinfo = namenode.versionRequest();

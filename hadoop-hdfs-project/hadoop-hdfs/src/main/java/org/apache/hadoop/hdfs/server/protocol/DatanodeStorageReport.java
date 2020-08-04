@@ -22,7 +22,7 @@ import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
 /**
  * Class captures information of a datanode and its storages.
  */
-public class DatanodeStorageReport {
+public class DatanodeStorageReport { // DN上的存储目录信息(没有block信息)
   final DatanodeInfo datanodeInfo;
   final StorageReport[] storageReports;
 

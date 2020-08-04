@@ -116,8 +116,8 @@ public class MovedBlocks<L> {
     // check if old win is older than winWidth
     if (lastCleanupTime + winTimeInterval <= curTime) {
       // purge the old window
-      movedBlocks.set(OLD_WIN, movedBlocks.get(CUR_WIN));
-      movedBlocks.set(CUR_WIN, newMap());
+      movedBlocks.set(OLD_WIN, movedBlocks.get(CUR_WIN)); // OLD_WIN 设置为 CUR_WIN
+      movedBlocks.set(CUR_WIN, newMap()); // CUR_WIN 设置为一个 新的map
       lastCleanupTime = curTime;
     }
   }

@@ -110,7 +110,7 @@ import org.apache.hadoop.security.UserGroupInformation;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
-public class GenericOptionsParser {
+public class GenericOptionsParser { // 解析Hadoop命令行参数，并设置到conf对象
 
   private static final Log LOG = LogFactory.getLog(GenericOptionsParser.class);
   private Configuration conf;

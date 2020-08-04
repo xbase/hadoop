@@ -559,7 +559,7 @@ public class DistributedFileSystem extends FileSystem {
   /** Get all the existing storage policies */
   public BlockStoragePolicy[] getStoragePolicies() throws IOException {
     statistics.incrementReadOps(1);
-    return dfs.getStoragePolicies();
+    return dfs.getStoragePolicies(); // 获取NN支持的所有存储策略
   }
 
   /**

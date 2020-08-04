@@ -61,7 +61,7 @@ public class ToolRunner {
     if(conf == null) {
       conf = new Configuration();
     }
-    GenericOptionsParser parser = new GenericOptionsParser(conf, args);
+    GenericOptionsParser parser = new GenericOptionsParser(conf, args); // 解析Hadoop命令行参数
     //set the configuration back, so that Tool can configure itself
     tool.setConf(conf);
     
