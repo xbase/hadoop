@@ -1654,7 +1654,10 @@ public class BlockManager {
       // If so, do not select the node as src node
       if ((nodesCorrupt != null) && nodesCorrupt.contains(node))
         continue;
-      if(priority != UnderReplicatedBlocks.QUEUE_HIGHEST_PRIORITY 
+      // block副本数不足时，需要执行补副本操作，以达到期望的副本数
+      // 如果此block只剩一个副本了，那就需要以最高优先级执行补副本操作
+      // 就算DN达到了maxReplicationStreams，但没达到replicationStreamsHardLimit，也可以选择此DN
+      if(priority != UnderReplicatedBlocks.QUEUE_HIGHEST_PRIORITY
           && !node.isDecommissionInProgress() 
           && node.getNumberOfBlocksToBeReplicated() >= maxReplicationStreams)
       {

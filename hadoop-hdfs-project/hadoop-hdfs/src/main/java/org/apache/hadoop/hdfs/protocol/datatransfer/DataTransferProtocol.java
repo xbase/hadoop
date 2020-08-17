@@ -95,6 +95,8 @@ public interface DataTransferProtocol {
    * @param pinning whether to pin the block, so Balancer won't move it.
    * @param targetPinnings whether to pin the block on target datanode
    */
+  // client写文件
+  // DN收到NN的DNA_TRANSFER指令，也是通过此方法，写数据到其他DN
   public void writeBlock(final ExtendedBlock blk,
       final StorageType storageType, 
       final Token<BlockTokenIdentifier> blockToken,
@@ -177,6 +179,7 @@ public interface DataTransferProtocol {
    * @param delHint the hint for deleting the block in the original datanode.
    * @param source the source datanode for receiving the block.
    */
+  // balance使用
   public void replaceBlock(final ExtendedBlock blk,
       final StorageType storageType, 
       final Token<BlockTokenIdentifier> blockToken,
@@ -190,6 +193,7 @@ public interface DataTransferProtocol {
    * @param blk the block being copied.
    * @param blockToken security token for accessing the block.
    */
+  // balance使用
   public void copyBlock(final ExtendedBlock blk,
       final Token<BlockTokenIdentifier> blockToken) throws IOException;
 
