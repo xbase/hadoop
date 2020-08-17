@@ -1160,7 +1160,7 @@ public class DFSOutputStream extends FSOutputSummer
           DFSClient.LOG.warn("Error Recovery for block " + block +
               " in pipeline " + pipelineMsg + 
               ": bad datanode " + nodes[errorIndex]);
-          failed.add(nodes[errorIndex]); // 加入失败队列
+          failed.add(nodes[errorIndex]); // 加入失败队列，pipeline recovery的时候不选失败队列中的节点
 
           DatanodeInfo[] newnodes = new DatanodeInfo[nodes.length-1];
           arraycopy(nodes, newnodes, errorIndex); // 移除出错节点
