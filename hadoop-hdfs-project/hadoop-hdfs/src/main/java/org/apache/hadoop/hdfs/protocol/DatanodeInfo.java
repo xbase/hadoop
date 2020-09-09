@@ -39,9 +39,10 @@ import static org.apache.hadoop.hdfs.DFSUtil.percent2String;
  * state, eg usage information, current administrative state, and the
  * network location that is communicated to clients.
  */
+// 描述一个DN，包含DN目前的使用情况，比如：容量、机架、xceiver数量等
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
-public class DatanodeInfo extends DatanodeID implements Node { // 描述一个DN
+public class DatanodeInfo extends DatanodeID implements Node {
   private long capacity;
   private long dfsUsed;
   private long remaining;

@@ -59,15 +59,16 @@ import com.google.common.annotations.VisibleForTesting;
  * health, capacity, what blocks are associated with the Datanode) that is
  * private to the Namenode, ie this class is not exposed to clients.
  */
+// NN端描述一个DN
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
-public class DatanodeDescriptor extends DatanodeInfo { // 描述一个DN
+public class DatanodeDescriptor extends DatanodeInfo {
   public static final Log LOG = LogFactory.getLog(DatanodeDescriptor.class);
   public static final DatanodeDescriptor[] EMPTY_ARRAY = {};
 
   // Stores status of decommissioning.
   // If node is not decommissioning, do not use this object for anything.
-  public final DecommissioningStatus decommissioningStatus = new DecommissioningStatus();
+  public final DecommissioningStatus decommissioningStatus = new DecommissioningStatus(); // decommission状态
 
   private long curBlockReportId = 0;
 
@@ -172,20 +173,20 @@ public class DatanodeDescriptor extends DatanodeInfo { // 描述一个DN
    * The blocks which we want to cache on this DataNode.
    */
   private final CachedBlocksList pendingCached = 
-      new CachedBlocksList(this, CachedBlocksList.Type.PENDING_CACHED);
+      new CachedBlocksList(this, CachedBlocksList.Type.PENDING_CACHED); // 将要在此DN上缓存的block
 
   /**
    * The blocks which we know are cached on this datanode.
    * This list is updated by periodic cache reports.
    */
   private final CachedBlocksList cached = 
-      new CachedBlocksList(this, CachedBlocksList.Type.CACHED);
+      new CachedBlocksList(this, CachedBlocksList.Type.CACHED); // 已经在此DN上缓存的block
 
   /**
    * The blocks which we want to uncache on this DataNode.
    */
   private final CachedBlocksList pendingUncached = 
-      new CachedBlocksList(this, CachedBlocksList.Type.PENDING_UNCACHED);
+      new CachedBlocksList(this, CachedBlocksList.Type.PENDING_UNCACHED); // 将要在此DN上取消缓存的block
 
   public CachedBlocksList getPendingCached() {
     return pendingCached;
@@ -217,22 +218,22 @@ public class DatanodeDescriptor extends DatanodeInfo { // 描述一个DN
   // following 'bandwidth' variable gets updated with the new value for each
   // node. Once the heartbeat command is issued to update the value on the
   // specified datanode, this value will be set back to 0.
-  private long bandwidth;
+  private long bandwidth; // 设置balance带宽
 
   /** A queue of blocks to be replicated by this datanode */
-  private final BlockQueue<BlockTargetPair> replicateBlocks = new BlockQueue<BlockTargetPair>();
+  private final BlockQueue<BlockTargetPair> replicateBlocks = new BlockQueue<BlockTargetPair>(); // 需要向其他节点复制的Block
   /** A queue of blocks to be recovered by this datanode */
-  private final BlockQueue<BlockInfoContiguousUnderConstruction> recoverBlocks =
+  private final BlockQueue<BlockInfoContiguousUnderConstruction> recoverBlocks = // 此Replica所在的DN将主导Block的recover过程
                                 new BlockQueue<BlockInfoContiguousUnderConstruction>();
   /** A set of blocks to be invalidated by this datanode */
-  private final LightWeightHashSet<Block> invalidateBlocks = new LightWeightHashSet<Block>();
+  private final LightWeightHashSet<Block> invalidateBlocks = new LightWeightHashSet<Block>(); // 需要从此节点删除的Block
 
   /* Variables for maintaining number of blocks scheduled to be written to
    * this storage. This count is approximate and might be slightly bigger
    * in case of errors (e.g. datanode does not report if an error occurs
    * while writing the block).
    */
-  private EnumCounters<StorageType> currApproxBlocksScheduled // 将要写到此DN上的块数量
+  private EnumCounters<StorageType> currApproxBlocksScheduled // 将要写到此DN上的块数量，用于估计DN的负载
       = new EnumCounters<StorageType>(StorageType.class);
   private EnumCounters<StorageType> prevApproxBlocksScheduled
       = new EnumCounters<StorageType>(StorageType.class);

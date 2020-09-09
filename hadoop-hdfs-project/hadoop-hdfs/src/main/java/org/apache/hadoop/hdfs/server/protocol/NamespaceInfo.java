@@ -49,7 +49,7 @@ public class NamespaceInfo extends StorageInfo {
   // clients.  enum will update the supported values
   private static final long CAPABILITIES_SUPPORTED = getSupportedCapabilities();
 
-  private static long getSupportedCapabilities() {
+  private static long getSupportedCapabilities() { // 获取支持的功能
     long mask = 0;
     for (Capability c : Capability.values()) {
       if (c.supported) {

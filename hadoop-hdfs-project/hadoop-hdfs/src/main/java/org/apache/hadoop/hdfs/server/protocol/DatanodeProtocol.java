@@ -85,6 +85,7 @@ public interface DatanodeProtocol {
    * @return the given {@link org.apache.hadoop.hdfs.server.protocol.DatanodeRegistration} with
    *  updated registration information
    */
+  // DN启动时，注册自己
   @Idempotent
   public DatanodeRegistration registerDatanode(DatanodeRegistration registration
       ) throws IOException;
@@ -104,6 +105,7 @@ public interface DatanodeProtocol {
    * @param volumeFailureSummary info about volume failures
    * @throws IOException on error
    */
+  // 发送心跳信息
   @Idempotent
   public HeartbeatResponse sendHeartbeat(DatanodeRegistration registration,
                                        StorageReport[] reports,
@@ -133,6 +135,7 @@ public interface DatanodeProtocol {
    * @return - the next command for DN to process.
    * @throws IOException
    */
+  // 全量块汇报
   @Idempotent
   public DatanodeCommand blockReport(DatanodeRegistration registration,
             String poolId, StorageBlockReport[] reports,
@@ -152,6 +155,7 @@ public interface DatanodeProtocol {
    * @return           The DatanodeCommand.
    * @throws IOException
    */
+  // 汇报缓存块信息
   @Idempotent
   public DatanodeCommand cacheReport(DatanodeRegistration registration,
       String poolId, List<Long> blockIds) throws IOException;
@@ -166,6 +170,7 @@ public interface DatanodeProtocol {
    * writes a new Block here, or another DataNode copies a Block to
    * this DataNode, it will call blockReceived().
    */
+  // 增量块汇报
   @Idempotent
   public void blockReceivedAndDeleted(DatanodeRegistration registration,
                             String poolId,
@@ -176,11 +181,13 @@ public interface DatanodeProtocol {
    * errorReport() tells the NameNode about something that has gone
    * awry.  Useful for debugging.
    */
+  // 向NN汇报一下异常信息（坏盘、无效块等），NN只是输出一下log
   @Idempotent
   public void errorReport(DatanodeRegistration registration,
                           int errorCode, 
                           String msg) throws IOException;
-    
+
+  // DN启动时，请求一下namespace信息
   @Idempotent
   public NamespaceInfo versionRequest() throws IOException;
 
@@ -188,6 +195,7 @@ public interface DatanodeProtocol {
    * same as {@link org.apache.hadoop.hdfs.protocol.ClientProtocol#reportBadBlocks(LocatedBlock[])}
    * }
    */
+  // 汇报checksum错误的块（从其他DN接到的）
   @Idempotent
   public void reportBadBlocks(LocatedBlock[] blocks) throws IOException;
   

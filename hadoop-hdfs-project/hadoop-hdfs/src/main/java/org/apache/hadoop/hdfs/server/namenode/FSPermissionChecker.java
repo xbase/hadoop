@@ -117,7 +117,7 @@ class FSPermissionChecker implements AccessControlEnforcer {
    * an exception if the caller is not allowed to access the resource.
    */
   public void checkSuperuserPrivilege()
-      throws AccessControlException {
+      throws AccessControlException { // 检查是否是超级用户
     if (!isSuperUser()) {
       throw new AccessControlException("Access denied for user " 
           + getUser() + ". Superuser privilege is required");

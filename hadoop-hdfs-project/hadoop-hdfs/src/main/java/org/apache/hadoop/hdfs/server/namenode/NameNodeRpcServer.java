@@ -1281,7 +1281,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
   public DatanodeRegistration registerDatanode(DatanodeRegistration nodeReg)
       throws IOException {
     checkNNStartup();
-    verifySoftwareVersion(nodeReg);
+    verifySoftwareVersion(nodeReg); // 检查DN版本
     namesystem.registerDatanode(nodeReg);
     return nodeReg;
   }
@@ -1389,7 +1389,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
   public NamespaceInfo versionRequest() throws IOException {
     checkNNStartup();
     namesystem.checkSuperuserPrivilege();
-    return namesystem.getNamespaceInfo();
+    return namesystem.getNamespaceInfo(); // namespace信息
   }
 
   /** 
@@ -1505,22 +1505,22 @@ class NameNodeRpcServer implements NamenodeProtocols {
   }
   
   private void verifySoftwareVersion(DatanodeRegistration dnReg)
-      throws IncorrectVersionException {
+      throws IncorrectVersionException { // 检查DN版本
     String dnVersion = dnReg.getSoftwareVersion();
-    if (VersionUtil.compareVersions(dnVersion, minimumDataNodeVersion) < 0) {
+    if (VersionUtil.compareVersions(dnVersion, minimumDataNodeVersion) < 0) { // 检查DN版本是否满足要求
       IncorrectVersionException ive = new IncorrectVersionException(
           minimumDataNodeVersion, dnVersion, "DataNode", "NameNode");
       LOG.warn(ive.getMessage() + " DN: " + dnReg);
       throw ive;
     }
     String nnVersion = VersionInfo.getVersion();
-    if (!dnVersion.equals(nnVersion)) {
+    if (!dnVersion.equals(nnVersion)) { // 如果和NN版本不一致
       String messagePrefix = "Reported DataNode version '" + dnVersion +
           "' of DN " + dnReg + " does not match NameNode version '" +
           nnVersion + "'";
       long nnCTime = nn.getFSImage().getStorage().getCTime();
       long dnCTime = dnReg.getStorageInfo().getCTime();
-      if (nnCTime != dnCTime) {
+      if (nnCTime != dnCTime) { // 检查 create time是否一致，不一致则抛异常，一致则可能需要滚动升级DN
         IncorrectVersionException ive = new IncorrectVersionException(
             messagePrefix + " and CTime of DN ('" + dnCTime +
             "') does not match CTime of NN ('" + nnCTime + "')");

@@ -675,6 +675,9 @@ public class INodeFile extends INodeWithAdditionalFields
    *          if includesLastUcBlock == false.
    * @return file size
    */
+  // 计算文件大小：
+  // 1、前面的块大小累加
+  // 2、最后一个块，根据情况判断：使用实际大小、使用期望大小、不包含
   public final long computeFileSize(boolean includesLastUcBlock,
       boolean usePreferredBlockSize4LastUcBlock) {
     if (blocks == null || blocks.length == 0) {
@@ -682,11 +685,11 @@ public class INodeFile extends INodeWithAdditionalFields
     }
     final int last = blocks.length - 1;
     //check if the last block is BlockInfoUnderConstruction
-    long size = blocks[last].getNumBytes();
+    long size = blocks[last].getNumBytes(); // 最后一个block的实际大小
     if (blocks[last] instanceof BlockInfoContiguousUnderConstruction) {
-       if (!includesLastUcBlock) {
+       if (!includesLastUcBlock) { // 如果最后一个block正在构建中，是否包含
          size = 0;
-       } else if (usePreferredBlockSize4LastUcBlock) {
+       } else if (usePreferredBlockSize4LastUcBlock) { // 使用期望块大小
          size = getPreferredBlockSize();
        }
     }

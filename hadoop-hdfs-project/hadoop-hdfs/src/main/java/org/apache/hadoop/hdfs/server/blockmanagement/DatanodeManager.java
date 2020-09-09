@@ -84,14 +84,14 @@ public class DatanodeManager {
    * <p>
    * Mapping: StorageID -> DatanodeDescriptor
    */
-  private final NavigableMap<String, DatanodeDescriptor> datanodeMap
+  private final NavigableMap<String, DatanodeDescriptor> datanodeMap // DN storageId -> DatanodeDescriptor 的关系
       = new TreeMap<String, DatanodeDescriptor>();
 
   /** Cluster network topology */
-  private final NetworkTopology networktopology;
+  private final NetworkTopology networktopology; // 网络拓扑结构
 
   /** Host names to datanode descriptors mapping. */
-  private final Host2NodesMap host2DatanodeMap = new Host2NodesMap();
+  private final Host2NodesMap host2DatanodeMap = new Host2NodesMap(); // host -> DatanodeDescriptor 的关系
 
   private final DNSToSwitchMapping dnsToSwitchMapping;
   private final boolean rejectUnresolvedTopologyDN;
@@ -533,7 +533,7 @@ public class DatanodeManager {
   private void removeDatanode(DatanodeDescriptor nodeInfo) {
     assert namesystem.hasWriteLock();
     heartbeatManager.removeDatanode(nodeInfo);
-    blockManager.removeBlocksAssociatedTo(nodeInfo);
+    blockManager.removeBlocksAssociatedTo(nodeInfo); // 移除该DN相关的数据快
     networktopology.remove(nodeInfo);
     decrementVersionCount(nodeInfo.getSoftwareVersion());
 
@@ -609,10 +609,10 @@ public class DatanodeManager {
   private void wipeDatanode(final DatanodeID node) {
     final String key = node.getDatanodeUuid();
     synchronized (datanodeMap) {
-      host2DatanodeMap.remove(datanodeMap.remove(key));
+      host2DatanodeMap.remove(datanodeMap.remove(key)); // 从datanodeMap和host2DatanodeMap中，删除对应关系
     }
     // Also remove all block invalidation tasks under this node
-    blockManager.removeFromInvalidates(new DatanodeInfo(node));
+    blockManager.removeFromInvalidates(new DatanodeInfo(node)); // 从invalid队列中移除此DN的block信息
     if (LOG.isDebugEnabled()) {
       LOG.debug(getClass().getSimpleName() + ".wipeDatanode("
           + node + "): storage " + key 
@@ -846,6 +846,11 @@ public class DatanodeManager {
    *    denied because the datanode does not match includes/excludes
    * @throws UnresolvedTopologyException if the registration request is 
    *    denied because resolving datanode network location fails.
+   *
+   * DN注册有三种情况：
+   * 1、该DN没有注册过
+   * 2、该DN注册过，但这次使用了新storageId，说明该DN的数据被清空了
+   * 3、该DN注册过，这次是重复注册
    */
   public void registerDatanode(DatanodeRegistration nodeReg)
       throws DisallowedDatanodeException, UnresolvedTopologyException {
@@ -872,7 +877,7 @@ public class DatanodeManager {
   
       // Checks if the node is not on the hosts list.  If it is not, then
       // it will be disallowed from registering. 
-      if (!hostFileManager.isIncluded(nodeReg)) {
+      if (!hostFileManager.isIncluded(nodeReg)) { // 如果不在include文件中，不允许连接NN
         throw new DisallowedDatanodeException(nodeReg);
       }
         
@@ -883,18 +888,18 @@ public class DatanodeManager {
       DatanodeDescriptor nodeN = host2DatanodeMap.getDatanodeByXferAddr(
           nodeReg.getIpAddr(), nodeReg.getXferPort());
         
-      if (nodeN != null && nodeN != nodeS) {
+      if (nodeN != null && nodeN != nodeS) { // 对应情况2，NN这边也删除此DN相关的副本信息
         NameNode.LOG.info("BLOCK* registerDatanode: " + nodeN);
         // nodeN previously served a different data storage, 
         // which is not served by anybody anymore.
-        removeDatanode(nodeN);
+        removeDatanode(nodeN); // 删除DatanodeDescriptor对象
         // physically remove node from datanodeMap
-        wipeDatanode(nodeN);
+        wipeDatanode(nodeN); // 删除对应关系
         nodeN = null;
       }
   
-      if (nodeS != null) {
-        if (nodeN == nodeS) {
+      if (nodeS != null) { // 对应情况3
+        if (nodeN == nodeS) { // DN重复注册（重启等）
           // The same datanode has been just restarted to serve the same data 
           // storage. We do not need to remove old data blocks, the delta will
           // be calculated on the next block report from the datanode
@@ -902,7 +907,7 @@ public class DatanodeManager {
             NameNode.stateChangeLog.debug("BLOCK* registerDatanode: "
                 + "node restarted.");
           }
-        } else {
+        } else { // DN换IP，磁盘插到另一台DN?
           // nodeS is found
           /* The registering datanode is a replacement node for the existing 
             data storage, which from now on will be served by a new node.
@@ -918,7 +923,7 @@ public class DatanodeManager {
         }
         
         boolean success = false;
-        try {
+        try { // 更新网络拓扑、节点等信息
           // update cluster map
           getNetworkTopology().remove(nodeS);
           if(shouldCountVersion(nodeS)) {
@@ -956,6 +961,7 @@ public class DatanodeManager {
         return;
       }
 
+      // nodeN == null && nodeS == null，对应情况1
       DatanodeDescriptor nodeDescr 
         = new DatanodeDescriptor(nodeReg, NetworkTopology.DEFAULT_RACK);
       boolean success = false;

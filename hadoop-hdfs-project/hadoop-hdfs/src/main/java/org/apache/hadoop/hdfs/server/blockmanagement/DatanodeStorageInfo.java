@@ -137,8 +137,7 @@ public class DatanodeStorageInfo {
    * stale. If any block has at least one stale replica, then no invalidations
    * will be processed for this block. See HDFS-1972.
    */
-  private boolean blockContentsStale = true;
-
+  private boolean blockContentsStale = true; // 如果一个block中有一个replica为stale状态，那么这个block不允许执行删除操作，以防止误删除
   DatanodeStorageInfo(DatanodeDescriptor dn, DatanodeStorage s) {
     this.dn = dn;
     this.storageID = s.getStorageID();
@@ -158,7 +157,7 @@ public class DatanodeStorageInfo {
     return blockContentsStale;
   }
 
-  void markStaleAfterFailover() {
+  void markStaleAfterFailover() { // NN HA切换时调用
     heartbeatedSinceFailover = false;
     blockContentsStale = true;
   }
