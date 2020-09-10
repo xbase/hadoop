@@ -41,7 +41,7 @@ import static org.apache.hadoop.hdfs.server.namenode.snapshot.Snapshot.ID_INTEGE
 /**
  * Contains INodes information resolved from a given path.
  */
-public class INodesInPath {
+public class INodesInPath { // 一个路径各级目录组成的inode数组
   public static final Log LOG = LogFactory.getLog(INodesInPath.class);
 
   /**
@@ -252,7 +252,7 @@ public class INodesInPath {
    * appended to the end of the new INodesInPath.
    */
   public static INodesInPath append(INodesInPath iip, INode child,
-      byte[] childName) {
+      byte[] childName) { // 生成新的INodesInPath对象
     Preconditions.checkArgument(!iip.isSnapshot && iip.length() > 0);
     Preconditions.checkArgument(iip.getLastINode() != null && iip
         .getLastINode().isDirectory());
@@ -265,11 +265,11 @@ public class INodesInPath {
     return new INodesInPath(inodes, path, false, iip.snapshotId);
   }
 
-  private final byte[][] path;
+  private final byte[][] path; // 各级目录名
   /**
    * Array with the specified number of INodes resolved for a given path.
    */
-  private final INode[] inodes;
+  private final INode[] inodes; // 各级目录inode
   /**
    * true if this path corresponds to a snapshot
    */

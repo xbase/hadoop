@@ -59,7 +59,7 @@ public class FileUnderConstructionFeature implements INode.Feature {
    * @throws IOException
    */
   void updateLengthOfLastBlock(INodeFile f, long lastBlockLength)
-      throws IOException {
+      throws IOException { // 更新最后一个正在写的block的长度
     BlockInfoContiguous lastBlock = f.getLastBlock();
     assert (lastBlock != null) : "The last block for path "
         + f.getFullPathName() + " is null when updating its length";
@@ -75,7 +75,7 @@ public class FileUnderConstructionFeature implements INode.Feature {
    * and its size is 0.
    */
   void cleanZeroSizeBlock(final INodeFile f,
-      final BlocksMapUpdateInfo collectedBlocks) {
+      final BlocksMapUpdateInfo collectedBlocks) { // 删除最后一个长度为0的block（快照文件使用）
     final BlockInfoContiguous[] blocks = f.getBlocks();
     if (blocks != null && blocks.length > 0
         && blocks[blocks.length - 1] instanceof BlockInfoContiguousUnderConstruction) {

@@ -51,7 +51,7 @@ class FSDirStatAndListingOp {
     FSPermissionChecker pc = fsd.getPermissionChecker();
     byte[][] pathComponents = FSDirectory
         .getPathComponentsForReservedPath(srcArg);
-    final String startAfterString = new String(startAfter, Charsets.UTF_8);
+    final String startAfterString = new String(startAfter, Charsets.UTF_8); // 从此String开始获取child
     final String src = fsd.resolvePath(pc, srcArg, pathComponents);
     final INodesInPath iip = fsd.getINodesInPath(src, true);
 
@@ -71,7 +71,7 @@ class FSDirStatAndListingOp {
     }
 
     boolean isSuperUser = true;
-    if (fsd.isPermissionEnabled()) {
+    if (fsd.isPermissionEnabled()) { // 检查权限
       if (iip.getLastINode() != null && iip.getLastINode().isDirectory()) {
         fsd.checkPathAccess(pc, iip, FsAction.READ_EXECUTE);
       } else {
@@ -79,7 +79,7 @@ class FSDirStatAndListingOp {
       }
       isSuperUser = pc.isSuperUser();
     }
-    return getListing(fsd, iip, src, startAfter, needLocation, isSuperUser);
+    return getListing(fsd, iip, src, startAfter, needLocation, isSuperUser); // 获取目录下每一个child的属性对象
   }
 
   /**
@@ -101,10 +101,10 @@ class FSDirStatAndListingOp {
     }
     FSPermissionChecker pc = fsd.getPermissionChecker();
     byte[][] pathComponents = FSDirectory.getPathComponentsForReservedPath(src);
-    src = fsd.resolvePath(pc, src, pathComponents);
-    final INodesInPath iip = fsd.getINodesInPath(src, resolveLink);
+    src = fsd.resolvePath(pc, src, pathComponents); // 解析出真实path
+    final INodesInPath iip = fsd.getINodesInPath(src, resolveLink); // path解析为INodesInPath对象
     boolean isSuperUser = true;
-    if (fsd.isPermissionEnabled()) {
+    if (fsd.isPermissionEnabled()) { // 检查权限
       fsd.checkPermission(pc, iip, false, null, null, null, null, false);
       isSuperUser = pc.isSuperUser();
     }
@@ -162,7 +162,7 @@ class FSDirStatAndListingOp {
    */
   private static DirectoryListing getListing(FSDirectory fsd, INodesInPath iip,
       String src, byte[] startAfter, boolean needLocation, boolean isSuperUser)
-      throws IOException {
+      throws IOException { // 获取目录下每一个child的属性对象
     String srcs = FSDirectory.normalizePath(src);
     final boolean isRawPath = FSDirectory.isReservedRawName(src);
 
@@ -190,7 +190,7 @@ class FSDirStatAndListingOp {
       final ReadOnlyList<INode> contents = dirInode.getChildrenList(snapshot);
       int startChild = INodeDirectory.nextChild(contents, startAfter);
       int totalNumChildren = contents.size();
-      int numOfListing = Math.min(totalNumChildren - startChild,
+      int numOfListing = Math.min(totalNumChildren - startChild, // 一次ls可以获取到文件数
           fsd.getLsLimit());
       int locationBudget = fsd.getLsLimit();
       int listingCnt = 0;
@@ -202,7 +202,7 @@ class FSDirStatAndListingOp {
             BlockStoragePolicySuite.ID_UNSPECIFIED;
         listing[i] = createFileStatus(fsd, src, cur.getLocalNameBytes(), cur,
             needLocation, getStoragePolicyID(curPolicy,
-                parentStoragePolicy), snapshot, isRawPath, iip);
+                parentStoragePolicy), snapshot, isRawPath, iip); // 获取目录下每一个child的属性对象
         listingCnt++;
         if (needLocation) {
             // Once we  hit lsLimit locations, stop.
@@ -211,7 +211,7 @@ class FSDirStatAndListingOp {
             LocatedBlocks blks =
                 ((HdfsLocatedFileStatus)listing[i]).getBlockLocations();
             locationBudget -= (blks == null) ? 0 :
-               blks.locatedBlockCount() * listing[i].getReplication();
+               blks.locatedBlockCount() * listing[i].getReplication(); // 如果需要返回block位置信息，防止response过大
         }
       }
       // truncate return array if necessary
@@ -280,7 +280,7 @@ class FSDirStatAndListingOp {
           i.getStoragePolicyID() : BlockStoragePolicySuite.ID_UNSPECIFIED;
       return i == null ? null : createFileStatus(
           fsd, path, HdfsFileStatus.EMPTY_NAME, i, policyId,
-          src.getPathSnapshotId(), isRawPath, src);
+          src.getPathSnapshotId(), isRawPath, src); // 通过inode创建HdfsFileStatus对象
     } finally {
       fsd.readUnlock();
     }
@@ -291,7 +291,7 @@ class FSDirStatAndListingOp {
       boolean includeStoragePolicy)
     throws IOException {
     String srcs = FSDirectory.normalizePath(src);
-    if (srcs.endsWith(HdfsConstants.SEPARATOR_DOT_SNAPSHOT_DIR)) {
+    if (srcs.endsWith(HdfsConstants.SEPARATOR_DOT_SNAPSHOT_DIR)) { // snapshot相关
       if (fsd.getINode4DotSnapshot(srcs) != null) {
         return new HdfsFileStatus(0, true, 0, 0, 0, 0, null, null, null, null,
             HdfsFileStatus.EMPTY_NAME, -1L, 0, null,
@@ -302,7 +302,7 @@ class FSDirStatAndListingOp {
 
     fsd.readLock();
     try {
-      final INodesInPath iip = fsd.getINodesInPath(srcs, resolveLink);
+      final INodesInPath iip = fsd.getINodesInPath(srcs, resolveLink); // path解析为INodesInPath对象
       return getFileInfo(fsd, src, iip, isRawPath, includeStoragePolicy);
     } finally {
       fsd.readUnlock();
@@ -359,7 +359,7 @@ class FSDirStatAndListingOp {
   static HdfsFileStatus createFileStatus(
       FSDirectory fsd, String fullPath, byte[] path, INode node,
       byte storagePolicy, int snapshot, boolean isRawPath,
-      INodesInPath iip) throws IOException {
+      INodesInPath iip) throws IOException { // 通过inode创建HdfsFileStatus对象
      long size = 0;     // length is zero for directories
      short replication = 0;
      long blocksize = 0;
@@ -370,7 +370,7 @@ class FSDirStatAndListingOp {
 
      if (node.isFile()) {
        final INodeFile fileNode = node.asFile();
-       size = fileNode.computeFileSize(snapshot);
+       size = fileNode.computeFileSize(snapshot); // 计算文件大小
        replication = fileNode.getFileReplication(snapshot);
        blocksize = fileNode.getPreferredBlockSize();
        isEncrypted = (feInfo != null) ||

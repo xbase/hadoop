@@ -624,6 +624,7 @@ public interface ClientProtocol {
    * @throws UnresolvedLinkException If <code>src</code> contains a symlink
    * @throws IOException If an I/O error occurred
    */
+  // 获取目录下的文件信息（ls）
   @Idempotent
   public DirectoryListing getListing(String src,
                                      byte[] startAfter,

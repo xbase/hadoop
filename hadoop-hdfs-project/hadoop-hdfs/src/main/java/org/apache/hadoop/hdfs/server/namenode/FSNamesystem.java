@@ -1307,7 +1307,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   }
   
   @Override
-  public void checkOperation(OperationCategory op) throws StandbyException {
+  public void checkOperation(OperationCategory op) throws StandbyException { // 不同 NN 角色，允许的操作不同
     if (haContext != null) {
       // null in some unit tests
       haContext.checkOperation(op);
@@ -3862,7 +3862,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     readLock();
     try {
       checkOperation(OperationCategory.READ);
-      stat = FSDirStatAndListingOp.getFileInfo(dir, src, resolveLink);
+      stat = FSDirStatAndListingOp.getFileInfo(dir, src, resolveLink); // 获取文件属性对象
     } catch (AccessControlException e) {
       logAuditEvent(false, "getfileinfo", src);
       throw e;
@@ -4570,14 +4570,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     readLock();
     try {
       //get datanode commands
-      final int maxTransfer = blockManager.getMaxReplicationStreams()
+      final int maxTransfer = blockManager.getMaxReplicationStreams() // 当前允许最大transfer数量
           - xmitsInProgress;
       DatanodeCommand[] cmds = blockManager.getDatanodeManager().handleHeartbeat(
           nodeReg, reports, blockPoolId, cacheCapacity, cacheUsed,
           xceiverCount, maxTransfer, failedVolumes, volumeFailureSummary);
       
       //create ha status
-      final NNHAStatusHeartbeat haState = new NNHAStatusHeartbeat(
+      final NNHAStatusHeartbeat haState = new NNHAStatusHeartbeat( // HA状态
           haContext.getState().getServiceState(),
           getFSImage().getLastAppliedOrWrittenTxId());
 

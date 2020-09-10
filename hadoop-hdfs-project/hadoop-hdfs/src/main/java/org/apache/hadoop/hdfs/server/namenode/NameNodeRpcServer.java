@@ -1304,7 +1304,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
         String poolId, StorageBlockReport[] reports,
         BlockReportContext context) throws IOException {
     checkNNStartup();
-    verifyRequest(nodeReg);
+    verifyRequest(nodeReg); // 检查registrationID是否匹配
     if(blockStateChangeLog.isDebugEnabled()) {
       blockStateChangeLog.debug("*BLOCK* NameNode.blockReport: "
            + "from " + nodeReg + ", reports.length=" + reports.length);
@@ -1319,7 +1319,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
       // call of this loop is the final updated value for noStaleStorage.
       //
       noStaleStorages = bm.processReport(nodeReg, reports[r].getStorage(),
-          blocks, context, (r == reports.length - 1));
+          blocks, context, (r == reports.length - 1)); // 以目录为单位处理，每个目录获取一次写锁
       metrics.incrStorageBlockReportOps();
     }
 
@@ -1357,7 +1357,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
           +"from "+nodeReg+" "+receivedAndDeletedBlocks.length
           +" blocks.");
     }
-    for(StorageReceivedDeletedBlocks r : receivedAndDeletedBlocks) {
+    for(StorageReceivedDeletedBlocks r : receivedAndDeletedBlocks) { // 以目录为单位处理，每个目录获取一次写锁
       namesystem.processIncrementalBlockReport(nodeReg, r);
     }
   }
@@ -1398,7 +1398,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
    * @param nodeReg node registration
    * @throws UnregisteredNodeException if the registration is invalid
    */
-  private void verifyRequest(NodeRegistration nodeReg) throws IOException {
+  private void verifyRequest(NodeRegistration nodeReg) throws IOException { // 检查registrationID是否匹配
     // verify registration ID
     final String id = nodeReg.getRegistrationID();
     final String expectedID = namesystem.getRegistrationID();

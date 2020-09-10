@@ -222,7 +222,7 @@ class HeartbeatManager implements DatanodeStatistics {
       VolumeFailureSummary volumeFailureSummary) {
     stats.subtract(node);
     node.updateHeartbeat(reports, cacheCapacity, cacheUsed,
-      xceiverCount, failedVolumes, volumeFailureSummary);
+      xceiverCount, failedVolumes, volumeFailureSummary); // 更新此DN的负载信息
     stats.add(node);
   }
 
@@ -275,6 +275,7 @@ class HeartbeatManager implements DatanodeStatistics {
    * B. Remove all blocks in PendingDataNodeMessages for the failed storage
    *    when we remove all blocks from BlocksMap for that storage.
    */
+  // 发现故障DN或故障磁盘，并删除相关的数据块信息
   void heartbeatCheck() {
     final DatanodeManager dm = blockManager.getDatanodeManager();
     // It's OK to check safe mode w/o taking the lock here, we re-check
@@ -288,7 +289,7 @@ class HeartbeatManager implements DatanodeStatistics {
       DatanodeID dead = null; // 查找到的第一个故障DN
 
       // locate the first failed storage that isn't on a dead node.
-      DatanodeStorageInfo failedStorage = null; // 查找到的第一个故障Storage（这个Storage所在的DN不是第一个故障DN）
+      DatanodeStorageInfo failedStorage = null; // 查找到的第一个故障Storage（这个Storage所在的DN并没有故障）
 
       // check the number of stale nodes
       int numOfStaleNodes = 0;
@@ -365,7 +366,7 @@ class HeartbeatManager implements DatanodeStatistics {
       while(namesystem.isRunning()) {
         try {
           final long now = Time.monotonicNow();
-          if (lastHeartbeatCheck + heartbeatRecheckInterval < now) {
+          if (lastHeartbeatCheck + heartbeatRecheckInterval < now) { // 周期做心跳检查
             heartbeatCheck();
             lastHeartbeatCheck = now;
           }

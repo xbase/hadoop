@@ -84,7 +84,7 @@ public class DatanodeManager {
    * <p>
    * Mapping: StorageID -> DatanodeDescriptor
    */
-  private final NavigableMap<String, DatanodeDescriptor> datanodeMap // DN storageId -> DatanodeDescriptor 的关系
+  private final NavigableMap<String, DatanodeDescriptor> datanodeMap // storageId(datanodeUuid) -> DatanodeDescriptor 的关系
       = new TreeMap<String, DatanodeDescriptor>();
 
   /** Cluster network topology */
@@ -487,7 +487,7 @@ public class DatanodeManager {
    * @throws UnregisteredNodeException
    */
   public DatanodeDescriptor getDatanode(DatanodeID nodeID
-      ) throws UnregisteredNodeException {
+      ) throws UnregisteredNodeException { // 获取DatanodeDescriptor
     final DatanodeDescriptor node = getDatanode(nodeID.getDatanodeUuid());
     if (node == null) 
       return null;
@@ -907,7 +907,7 @@ public class DatanodeManager {
             NameNode.stateChangeLog.debug("BLOCK* registerDatanode: "
                 + "node restarted.");
           }
-        } else { // DN换IP，磁盘插到另一台DN?
+        } else { // DN换IP、磁盘插到另一台DN?
           // nodeS is found
           /* The registering datanode is a replacement node for the existing 
             data storage, which from now on will be served by a new node.
@@ -1345,6 +1345,9 @@ public class DatanodeManager {
   }
 
   /** Handle heartbeat from datanodes. */
+  // step 1: 判断此DN是否注册过，是否允许连接NN
+  // step 2: 更新负载信息
+  // step 3: 生成指令：恢复、复制、删除、缓存、带宽
   public DatanodeCommand[] handleHeartbeat(DatanodeRegistration nodeReg,
       StorageReport[] reports, final String blockPoolId,
       long cacheCapacity, long cacheUsed, int xceiverCount, 
@@ -1352,47 +1355,51 @@ public class DatanodeManager {
       VolumeFailureSummary volumeFailureSummary) throws IOException {
     synchronized (heartbeatManager) {
       synchronized (datanodeMap) {
+        // step 1: 判断此DN是否注册过，是否允许连接NN
         DatanodeDescriptor nodeinfo = null;
         try {
-          nodeinfo = getDatanode(nodeReg);
+          nodeinfo = getDatanode(nodeReg); /// 获取DatanodeDescriptor，判断是否注册过
         } catch(UnregisteredNodeException e) {
-          return new DatanodeCommand[]{RegisterCommand.REGISTER};
+          return new DatanodeCommand[]{RegisterCommand.REGISTER}; // 让DN重新注册
         }
         
         // Check if this datanode should actually be shutdown instead. 
-        if (nodeinfo != null && nodeinfo.isDisallowed()) {
+        if (nodeinfo != null && nodeinfo.isDisallowed()) { // 是否在include文件中
           setDatanodeDead(nodeinfo);
-          throw new DisallowedDatanodeException(nodeinfo);
+          throw new DisallowedDatanodeException(nodeinfo); // 不允许此DN连接到NN
         }
 
-        if (nodeinfo == null || !nodeinfo.isAlive) {
+        if (nodeinfo == null || !nodeinfo.isAlive) { // 说明此DN未注册过，需要重新注册
           return new DatanodeCommand[]{RegisterCommand.REGISTER};
         }
 
+        // step 2: 更新负载信息
         heartbeatManager.updateHeartbeat(nodeinfo, reports,
                                          cacheCapacity, cacheUsed,
                                          xceiverCount, failedVolumes,
                                          volumeFailureSummary);
 
+        // step 3: 生成指令
         // If we are in safemode, do not send back any recovery / replication
         // requests. Don't even drain the existing queue of work.
-        if(namesystem.isInSafeMode()) {
+        if(namesystem.isInSafeMode()) { // 安全模式，不返回任何指令
           return new DatanodeCommand[0];
         }
 
+        // step 3.1: 生成lease recovery指令
         //check lease recovery
         BlockInfoContiguousUnderConstruction[] blocks = nodeinfo
-            .getLeaseRecoveryCommand(Integer.MAX_VALUE);
+            .getLeaseRecoveryCommand(Integer.MAX_VALUE);// 获取全部lease recovery指令
         if (blocks != null) {
           BlockRecoveryCommand brCommand = new BlockRecoveryCommand(
               blocks.length);
           for (BlockInfoContiguousUnderConstruction b : blocks) {
-            final DatanodeStorageInfo[] storages = b.getExpectedStorageLocations();
+            final DatanodeStorageInfo[] storages = b.getExpectedStorageLocations(); // block的副本位置信息
             // Skip stale nodes during recovery - not heart beated for some time (30s by default).
             final List<DatanodeStorageInfo> recoveryLocations =
                 new ArrayList<DatanodeStorageInfo>(storages.length);
             for (int i = 0; i < storages.length; i++) {
-              if (!storages[i].getDatanodeDescriptor().isStale(staleInterval)) {
+              if (!storages[i].getDatanodeDescriptor().isStale(staleInterval)) { // 忽略掉stale状态的副本
                 recoveryLocations.add(storages[i]);
               }
             }
@@ -1407,14 +1414,14 @@ public class DatanodeManager {
             // If we only get 1 replica after eliminating stale nodes, then choose all
             // replicas for recovery and let the primary data node handle failures.
             DatanodeInfo[] recoveryInfos;
-            if (recoveryLocations.size() > 1) {
+            if (recoveryLocations.size() > 1) { // 只非stale状态的副本，参与recovery
               if (recoveryLocations.size() != storages.length) {
                 LOG.info("Skipped stale nodes for recovery : " +
                     (storages.length - recoveryLocations.size()));
               }
               recoveryInfos =
                   DatanodeStorageInfo.toDatanodeInfos(recoveryLocations);
-            } else {
+            } else { // 如果一个副本非stale或者所有副本都stale，那么所有的副本都参与recovery
               // If too many replicas are stale, then choose all replicas to participate
               // in block recovery.
               recoveryInfos = DatanodeStorageInfo.toDatanodeInfos(storages);
@@ -1432,6 +1439,7 @@ public class DatanodeManager {
           return new DatanodeCommand[] { brCommand };
         }
 
+        // step 3.2: 生成复制指令
         final List<DatanodeCommand> cmds = new ArrayList<DatanodeCommand>();
         //check pending replication
         List<BlockTargetPair> pendingList = nodeinfo.getReplicationCommand(
@@ -1440,17 +1448,22 @@ public class DatanodeManager {
           cmds.add(new BlockCommand(DatanodeProtocol.DNA_TRANSFER, blockPoolId,
               pendingList));
         }
+
+        // step 3.3: 生成删除指令
         //check block invalidation
         Block[] blks = nodeinfo.getInvalidateBlocks(blockInvalidateLimit);
         if (blks != null) {
           cmds.add(new BlockCommand(DatanodeProtocol.DNA_INVALIDATE,
               blockPoolId, blks));
         }
+
+        // step 3.4: 生成缓存指令
         boolean sendingCachingCommands = false;
         long nowMs = monotonicNow();
         if (shouldSendCachingCommands && 
             ((nowMs - nodeinfo.getLastCachingDirectiveSentTimeMs()) >=
                 timeBetweenResendingCachingDirectivesMs)) {
+          // 向缓存中添加数据块
           DatanodeCommand pendingCacheCommand =
               getCacheCommand(nodeinfo.getPendingCached(), nodeinfo,
                 DatanodeProtocol.DNA_CACHE, blockPoolId);
@@ -1458,6 +1471,7 @@ public class DatanodeManager {
             cmds.add(pendingCacheCommand);
             sendingCachingCommands = true;
           }
+          // 从缓存中删除数据块
           DatanodeCommand pendingUncacheCommand =
               getCacheCommand(nodeinfo.getPendingUncached(), nodeinfo,
                 DatanodeProtocol.DNA_UNCACHE, blockPoolId);
@@ -1472,6 +1486,7 @@ public class DatanodeManager {
 
         blockManager.addKeyUpdateCommand(cmds, nodeinfo);
 
+        // step 3.4: 生成balance带宽指令
         // check for balancer bandwidth update
         if (nodeinfo.getBalancerBandwidth() > 0) {
           cmds.add(new BalancerBandwidthCommand(nodeinfo.getBalancerBandwidth()));

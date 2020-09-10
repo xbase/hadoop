@@ -640,7 +640,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
     return replicateBlocks.poll(maxTransfers);
   }
 
-  public BlockInfoContiguousUnderConstruction[] getLeaseRecoveryCommand(int maxTransfers) {
+  public BlockInfoContiguousUnderConstruction[] getLeaseRecoveryCommand(int maxTransfers) { // 获取lease recovery命令
     List<BlockInfoContiguousUnderConstruction> blocks = recoverBlocks.poll(maxTransfers);
     if(blocks == null)
       return null;

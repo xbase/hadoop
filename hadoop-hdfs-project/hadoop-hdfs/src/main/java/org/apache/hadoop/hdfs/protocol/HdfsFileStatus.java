@@ -31,7 +31,7 @@ import org.apache.hadoop.hdfs.DFSUtil;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
-public class HdfsFileStatus {
+public class HdfsFileStatus { // 文件status对象
 
   private final byte[] path;  // local name of the inode that's encoded in java UTF8
   private final byte[] symlink; // symlink target encoded in java UTF8 or null

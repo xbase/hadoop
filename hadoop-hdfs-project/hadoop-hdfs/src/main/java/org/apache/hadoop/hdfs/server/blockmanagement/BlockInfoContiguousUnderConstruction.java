@@ -204,7 +204,7 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    * Create array of expected replica locations
    * (as has been assigned by chooseTargets()).
    */
-  public DatanodeStorageInfo[] getExpectedStorageLocations() {
+  public DatanodeStorageInfo[] getExpectedStorageLocations() { // 获取副本的位置信息
     int numLocations = replicas == null ? 0 : replicas.size();
     DatanodeStorageInfo[] storages = new DatanodeStorageInfo[numLocations];
     for(int i = 0; i < numLocations; i++)

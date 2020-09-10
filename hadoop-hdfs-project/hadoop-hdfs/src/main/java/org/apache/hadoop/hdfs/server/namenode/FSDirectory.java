@@ -98,7 +98,7 @@ import static org.apache.hadoop.util.Time.now;
  * @see org.apache.hadoop.hdfs.server.namenode.FSNamesystem
  **/
 @InterfaceAudience.Private
-public class FSDirectory implements Closeable {
+public class FSDirectory implements Closeable { // 对目录树的增删改查（内存里的，不记editlog）
   static final Logger LOG = LoggerFactory.getLogger(FSDirectory.class);
   private static INodeDirectory createRoot(FSNamesystem namesystem) {
     final INodeDirectory r = new INodeDirectory(
@@ -138,6 +138,7 @@ public class FSDirectory implements Closeable {
   private final int lsLimit;  // max list limit
   private final int contentCountLimit; // max content summary counts per run
   private final long contentSleepMicroSec;
+  // 维护 inodeID -> INode 的映射关系
   private final INodeMap inodeMap; // Synchronized by dirLock
   private long yieldCount = 0; // keep track of lock yield count.
 
@@ -262,7 +263,7 @@ public class FSDirectory implements Closeable {
     int configuredLimit = conf.getInt(
         DFSConfigKeys.DFS_LIST_LIMIT, DFSConfigKeys.DFS_LIST_LIMIT_DEFAULT);
     this.lsLimit = configuredLimit>0 ?
-        configuredLimit : DFSConfigKeys.DFS_LIST_LIMIT_DEFAULT;
+        configuredLimit : DFSConfigKeys.DFS_LIST_LIMIT_DEFAULT; // 一次ls可以获取到文件数
     this.contentCountLimit = conf.getInt(
         DFSConfigKeys.DFS_CONTENT_SUMMARY_LIMIT_KEY,
         DFSConfigKeys.DFS_CONTENT_SUMMARY_LIMIT_DEFAULT);
@@ -417,14 +418,14 @@ public class FSDirectory implements Closeable {
 
     long modTime = now();
     INodeFile newNode = newINodeFile(allocateNewInodeId(), permissions, modTime,
-        modTime, replication, preferredBlockSize);
+        modTime, replication, preferredBlockSize); // 创建inode
     newNode.setLocalName(localName.getBytes(Charsets.UTF_8));
     newNode.toUnderConstruction(clientName, clientMachine);
 
     INodesInPath newiip;
     writeLock();
     try {
-      newiip = addINode(existing, newNode);
+      newiip = addINode(existing, newNode); // 添加到父目录
     } finally {
       writeUnlock();
     }
@@ -482,7 +483,7 @@ public class FSDirectory implements Closeable {
    * Add a block to the file. Returns a reference to the added block.
    */
   BlockInfoContiguous addBlock(String path, INodesInPath inodesInPath,
-      Block block, DatanodeStorageInfo[] targets) throws IOException {
+      Block block, DatanodeStorageInfo[] targets) throws IOException { // 给指定的inode添加一个block
     writeLock();
     try {
       final INodeFile fileINode = inodesInPath.getLastINode().asFile();
@@ -490,7 +491,7 @@ public class FSDirectory implements Closeable {
 
       // check quota limits and updated space consumed
       updateCount(inodesInPath, 0, fileINode.getPreferredBlockSize(),
-          fileINode.getBlockReplication(), true);
+          fileINode.getBlockReplication(), true); // 检查并更新quota
 
       // associate new last block for the file
       BlockInfoContiguousUnderConstruction blockInfo =
@@ -499,8 +500,8 @@ public class FSDirectory implements Closeable {
             fileINode.getFileReplication(),
             BlockUCState.UNDER_CONSTRUCTION,
             targets);
-      getBlockManager().addBlockCollection(blockInfo, fileINode);
-      fileINode.addBlock(blockInfo);
+      getBlockManager().addBlockCollection(blockInfo, fileINode); // 添加到blocksMap
+      fileINode.addBlock(blockInfo); // 添加到文件的block列表
 
       if(NameNode.stateChangeLog.isDebugEnabled()) {
         NameNode.stateChangeLog.debug("DIR* FSDirectory.addBlock: "
@@ -659,11 +660,11 @@ public class FSDirectory implements Closeable {
    * Update usage count without replication factor change
    */
   void updateCount(INodesInPath iip, long nsDelta, long ssDelta, short replication,
-      boolean checkQuota) throws QuotaExceededException {
+      boolean checkQuota) throws QuotaExceededException { // 检查并更新quota
     final INodeFile fileINode = iip.getLastINode().asFile();
     EnumCounters<StorageType> typeSpaceDeltas =
       getStorageTypeDeltas(fileINode.getStoragePolicyID(), ssDelta,
-          replication, replication);;
+          replication, replication);
     updateCount(iip, iip.length() - 1,
       new QuotaCounts.Builder().nameSpace(nsDelta).storageSpace(ssDelta * replication).
           typeSpaces(typeSpaceDeltas).build(),
@@ -695,7 +696,7 @@ public class FSDirectory implements Closeable {
    */
   void updateCount(INodesInPath iip, int numOfINodes,
                     QuotaCounts counts, boolean checkQuota)
-                    throws QuotaExceededException {
+                    throws QuotaExceededException { // 检查并更新quota
     assert hasWriteLock();
     if (!namesystem.isImageLoaded()) {
       //still initializing. do not check or update quotas.
@@ -833,10 +834,10 @@ public class FSDirectory implements Closeable {
    */
   INodesInPath addINode(INodesInPath existing, INode child)
       throws QuotaExceededException, UnresolvedLinkException {
-    cacheName(child);
+    cacheName(child); // 缓存path name
     writeLock();
     try {
-      return addLastINode(existing, child, true);
+      return addLastINode(existing, child, true); // 添加到父目录
     } finally {
       writeUnlock();
     }
@@ -855,7 +856,7 @@ public class FSDirectory implements Closeable {
    * @throws QuotaExceededException if quota limit is exceeded.
    */
   static void verifyQuota(INodesInPath iip, int pos, QuotaCounts deltas,
-                          INode commonAncestor) throws QuotaExceededException {
+                          INode commonAncestor) throws QuotaExceededException { // 检查quota
     if (deltas.getNameSpace() <= 0 && deltas.getStorageSpace() <= 0
         && deltas.getTypeSpaces().allLessOrEqual(0L)) {
       // if quota is being freed or not being consumed
@@ -884,7 +885,7 @@ public class FSDirectory implements Closeable {
   }
 
   /** Verify if the inode name is legal. */
-  void verifyINodeName(byte[] childName) throws HadoopIllegalArgumentException {
+  void verifyINodeName(byte[] childName) throws HadoopIllegalArgumentException { // 检查name是否是保留字符
     if (Arrays.equals(HdfsConstants.DOT_SNAPSHOT_DIR_BYTES, childName)) {
       String s = "\"" + HdfsConstants.DOT_SNAPSHOT_DIR + "\" is a reserved name.";
       if (!namesystem.isImageLoaded()) {
@@ -902,7 +903,7 @@ public class FSDirectory implements Closeable {
    * @throws PathComponentTooLongException child's name is too long.
    */
   void verifyMaxComponentLength(byte[] childName, String parentPath)
-      throws PathComponentTooLongException {
+      throws PathComponentTooLongException { // 判断name是否超长
     if (maxComponentLength == 0) {
       return;
     }
@@ -927,7 +928,7 @@ public class FSDirectory implements Closeable {
    * @throws MaxDirectoryItemsExceededException too many children.
    */
   void verifyMaxDirItems(INodeDirectory parent, String parentPath)
-      throws MaxDirectoryItemsExceededException {
+      throws MaxDirectoryItemsExceededException { // 一个目录下的child数量是否超上限
     final int count = parent.getChildrenList(CURRENT_STATE_ID).size();
     if (count >= maxDirItems) {
       final MaxDirectoryItemsExceededException e
@@ -949,7 +950,7 @@ public class FSDirectory implements Closeable {
    */
   @VisibleForTesting
   public INodesInPath addLastINode(INodesInPath existing, INode inode,
-      boolean checkQuota) throws QuotaExceededException {
+      boolean checkQuota) throws QuotaExceededException { // 添加到父目录的child列表
     assert existing.getLastINode() != null &&
         existing.getLastINode().isDirectory();
 
@@ -974,18 +975,19 @@ public class FSDirectory implements Closeable {
     // to go "poof".  The fs limits must be bypassed for the same reason.
     if (checkQuota) {
       final String parentPath = existing.getPath();
-      verifyMaxComponentLength(inode.getLocalNameBytes(), parentPath);
-      verifyMaxDirItems(parent, parentPath);
+      verifyMaxComponentLength(inode.getLocalNameBytes(), parentPath); // 判断name是否超长
+      verifyMaxDirItems(parent, parentPath); // 一个目录下的child数量是否超上限
     }
     // always verify inode name
-    verifyINodeName(inode.getLocalNameBytes());
+    verifyINodeName(inode.getLocalNameBytes()); // 检查name是否是保留字符
 
     final QuotaCounts counts = inode.computeQuotaUsage(getBlockStoragePolicySuite());
-    updateCount(existing, pos, counts, checkQuota);
+    updateCount(existing, pos, counts, checkQuota); // 检查并更新quota
 
     boolean isRename = (inode.getParent() != null);
     boolean added;
     try {
+      // 添加到父节点
       added = parent.addChild(inode, true, existing.getLatestSnapshotId());
     } catch (QuotaExceededException e) {
       updateCountNoQuotaCheck(existing, pos, counts.negation());
@@ -998,7 +1000,7 @@ public class FSDirectory implements Closeable {
       if (!isRename) {
         AclStorage.copyINodeDefaultAcl(inode);
       }
-      addToInodeMap(inode);
+      addToInodeMap(inode); // 添加到inodeMap
     }
     return INodesInPath.append(existing, inode, inode.getLocalNameBytes());
   }
@@ -1160,7 +1162,7 @@ public class FSDirectory implements Closeable {
    * This method is always called with writeLock of FSDirectory held.
    */
   public final void addToInodeMap(INode inode) {
-    if (inode instanceof INodeWithAdditionalFields) {
+    if (inode instanceof INodeWithAdditionalFields) { // 添加到inodeMap
       inodeMap.put(inode);
       if (!inode.isSymlink()) {
         final XAttrFeature xaf = inode.getXAttrFeature();
@@ -1406,7 +1408,7 @@ public class FSDirectory implements Closeable {
    * Caches frequently used file names to reuse file name objects and
    * reduce heap size.
    */
-  void cacheName(INode inode) {
+  void cacheName(INode inode) { // 缓存path name
     // Name is cached only for files
     if (!inode.isFile()) {
       return;
@@ -1491,7 +1493,7 @@ public class FSDirectory implements Closeable {
    * @throws FileNotFoundException if inodeid is invalid
    */
   static String resolvePath(String src, byte[][] pathComponents,
-      FSDirectory fsd) throws FileNotFoundException { // 解析出真实path
+      FSDirectory fsd) throws FileNotFoundException { // 解析出真实path（主要是处理一些保留目录）
     final int nComponents = (pathComponents == null) ?
         0 : pathComponents.length;
     if (nComponents <= 2) {
@@ -1615,7 +1617,7 @@ public class FSDirectory implements Closeable {
 
   /** @return the {@link INodesInPath} containing all inodes in the path. */
   public INodesInPath getINodesInPath(String path, boolean resolveLink)
-      throws UnresolvedLinkException {
+      throws UnresolvedLinkException { // path解析为INodesInPath对象
     final byte[][] components = INode.getPathComponents(path);
     return INodesInPath.resolve(rootDir, components, resolveLink);
   }

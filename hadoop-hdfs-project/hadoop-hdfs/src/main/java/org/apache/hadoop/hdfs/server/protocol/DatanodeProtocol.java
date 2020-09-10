@@ -196,6 +196,7 @@ public interface DatanodeProtocol {
    * }
    */
   // 汇报checksum错误的块（从其他DN接到的）
+  // 当client接受到checksum错误的块时，也是通过此RPC汇报给NN
   @Idempotent
   public void reportBadBlocks(LocatedBlock[] blocks) throws IOException;
   

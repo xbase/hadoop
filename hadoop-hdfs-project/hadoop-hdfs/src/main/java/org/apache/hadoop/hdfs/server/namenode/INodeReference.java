@@ -61,7 +61,7 @@ import org.mortbay.log.Log;
  * Note 2: getParent() always returns the parent in the current state, e.g.
  *         inode(id=1000,name=bar).getParent() returns /xyz but not /abc.
  */
-public abstract class INodeReference extends INode {
+public abstract class INodeReference extends INode { // snapshot时使用
   /**
    * Try to remove the given reference and then return the reference count.
    * If the given inode is not a reference, return -1;

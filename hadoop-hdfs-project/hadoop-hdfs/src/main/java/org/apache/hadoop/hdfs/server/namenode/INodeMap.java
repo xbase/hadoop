@@ -32,7 +32,7 @@ import com.google.common.base.Preconditions;
  * Storing all the {@link INode}s and maintaining the mapping between INode ID
  * and INode.  
  */
-public class INodeMap {
+public class INodeMap { // 维护 inodeID -> INode 的映射关系
   
   static INodeMap newInstance(INodeDirectory rootDir) {
     // Compute the map capacity by allocating 1% of total memory

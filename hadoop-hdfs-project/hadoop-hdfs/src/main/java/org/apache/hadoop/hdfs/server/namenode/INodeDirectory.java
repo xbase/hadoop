@@ -501,12 +501,12 @@ public class INodeDirectory extends INodeWithAdditionalFields
    * @return true if the child is removed; false if the child is not found.
    */
   public boolean removeChild(final INode child) {
-    final int i = searchChildren(child.getLocalNameBytes());
+    final int i = searchChildren(child.getLocalNameBytes()); // 查找child位置
     if (i < 0) {
       return false;
     }
 
-    final INode removed = children.remove(i);
+    final INode removed = children.remove(i); // 删除child
     Preconditions.checkState(removed == child);
     return true;
   }
@@ -523,7 +523,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
    */
   public boolean addChild(INode node, final boolean setModTime,
       final int latestSnapshotId) throws QuotaExceededException {
-    final int low = searchChildren(node.getLocalNameBytes());
+    final int low = searchChildren(node.getLocalNameBytes()); // 查找child应该插入的位置
     if (low >= 0) {
       return false;
     }
@@ -536,7 +536,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
       }
       return sf.addChild(this, node, setModTime, latestSnapshotId);
     }
-    addChild(node, low);
+    addChild(node, low); // 插入child
     if (setModTime) {
       // update modification time of the parent directory
       updateModificationTime(node.getModificationTime(), latestSnapshotId);

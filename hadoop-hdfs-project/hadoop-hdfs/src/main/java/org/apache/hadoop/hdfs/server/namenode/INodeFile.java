@@ -190,12 +190,12 @@ public class INodeFile extends INodeWithAdditionalFields
     return getFileUnderConstructionFeature() != null;
   }
 
-  INodeFile toUnderConstruction(String clientName, String clientMachine) {
+  INodeFile toUnderConstruction(String clientName, String clientMachine) { // 把文件转为构建状态
     Preconditions.checkState(!isUnderConstruction(),
         "file is already under construction");
     FileUnderConstructionFeature uc = new FileUnderConstructionFeature(
         clientName, clientMachine);
-    addFeature(uc);
+    addFeature(uc); // 添加uc特性
     return this;
   }
 
@@ -203,13 +203,13 @@ public class INodeFile extends INodeWithAdditionalFields
    * Convert the file to a complete file, i.e., to remove the Under-Construction
    * feature.
    */
-  public INodeFile toCompleteFile(long mtime) {
+  public INodeFile toCompleteFile(long mtime) { // 把文件转为正常状态
     Preconditions.checkState(isUnderConstruction(),
         "file is no longer under construction");
     FileUnderConstructionFeature uc = getFileUnderConstructionFeature();
     if (uc != null) {
       assertAllBlocksComplete();
-      removeFeature(uc);
+      removeFeature(uc); // 移除uc特性
       this.setModificationTime(mtime);
     }
     return this;
@@ -478,14 +478,14 @@ public class INodeFile extends INodeWithAdditionalFields
   /**
    * add a block to the block list
    */
-  void addBlock(BlockInfoContiguous newblock) {
+  void addBlock(BlockInfoContiguous newblock) { // 添加到文件的block列表
     if (this.blocks == null) {
       this.setBlocks(new BlockInfoContiguous[]{newblock});
     } else {
       int size = this.blocks.length;
       BlockInfoContiguous[] newlist = new BlockInfoContiguous[size + 1];
       System.arraycopy(this.blocks, 0, newlist, 0, size);
-      newlist[size] = newblock;
+      newlist[size] = newblock; // 新block添加到列表的最后
       this.setBlocks(newlist);
     }
   }
@@ -644,7 +644,7 @@ public class INodeFile extends INodeWithAdditionalFields
    * Compute file size of the current file if the given snapshot is null;
    * otherwise, get the file size from the given snapshot.
    */
-  public final long computeFileSize(int snapshotId) {
+  public final long computeFileSize(int snapshotId) { // 计算文件大小
     FileWithSnapshotFeature sf = this.getFileWithSnapshotFeature();
     if (snapshotId != CURRENT_STATE_ID && sf != null) {
       final FileDiff d = sf.getDiffs().getDiffById(snapshotId);

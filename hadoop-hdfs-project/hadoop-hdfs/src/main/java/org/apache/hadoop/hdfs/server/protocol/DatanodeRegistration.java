@@ -32,7 +32,7 @@ import com.google.common.annotations.VisibleForTesting;
  * to identify and verify a data-node when it contacts the name-node.
  * This information is sent by data-node with each communication request.
  */
-// 描述一个DN
+// DN注册信息，用于验证DN是否合法
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
 public class DatanodeRegistration extends DatanodeID
