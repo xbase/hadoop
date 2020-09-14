@@ -4189,7 +4189,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     final long diff = fileINode.getPreferredBlockSize() - commitBlock.getNumBytes();    
     if (diff > 0) {
       try {
-        dir.updateSpaceConsumed(iip, 0, -diff, fileINode.getFileReplication());
+        dir.updateSpaceConsumed(iip, 0, -diff, fileINode.getFileReplication()); // commit block时，需要更新quota
       } catch (IOException e) {
         LOG.warn("Unexpected exception while updating disk space.", e);
       }
@@ -4281,7 +4281,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       checkNameNodeSafeMode(
           "Cannot commitBlockSynchronization while in safe mode");
       final BlockInfoContiguous storedBlock = getStoredBlock(
-          ExtendedBlock.getLocalBlock(oldBlock));
+          ExtendedBlock.getLocalBlock(oldBlock));// 通过blocksMap获取BlockInfoContiguous对象
       if (storedBlock == null) {
         if (deleteblock) {
           // This may be a retry attempt so ignore the failure
@@ -4315,7 +4315,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
             + " deleted and the block removal is delayed");
       }
       INodeFile iFile = ((INode)blockCollection).asFile();
-      if (isFileDeleted(iFile)) {
+      if (isFileDeleted(iFile)) { // 检查文件是否被删除
         throw new FileNotFoundException("File not found: "
             + iFile.getFullPathName() + ", likely due to delayed block"
             + " removal");
@@ -4341,7 +4341,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
                               + recoveryId + " for block " + oldBlock);
       }
 
-      if (deleteblock) {
+      if (deleteblock) { // 删除block
         Block blockToDel = ExtendedBlock.getLocalBlock(oldBlock);
         boolean remove = iFile.removeLastBlock(blockToDel);
         if (remove) {
@@ -4448,7 +4448,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     final String src = iip.getPath();
 
     // commit the last block and complete it if it has minimum replicas
-    commitOrCompleteLastBlock(pendingFile, iip, storedBlock);
+    commitOrCompleteLastBlock(pendingFile, iip, storedBlock); // 提交block
 
     //remove lease, close file
     finalizeINodeFileUnderConstruction(src, pendingFile,
@@ -6196,7 +6196,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     return blockId;
   }
 
-  private boolean isFileDeleted(INodeFile file) {
+  private boolean isFileDeleted(INodeFile file) { // 检查文件是否被删除
     // Not in the inodeMap or in the snapshot but marked deleted.
     if (dir.getInode(file.getId()) == null) {
       return true;
@@ -6206,7 +6206,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     // deletion
     INode tmpChild = file;
     INodeDirectory tmpParent = file.getParent();
-    while (true) {
+    while (true) { // 向上递归检查，父目录是否被删除
       if (tmpParent == null) {
         return true;
       }

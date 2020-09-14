@@ -359,7 +359,7 @@ class FSDirStatAndListingOp {
   static HdfsFileStatus createFileStatus(
       FSDirectory fsd, String fullPath, byte[] path, INode node,
       byte storagePolicy, int snapshot, boolean isRawPath,
-      INodesInPath iip) throws IOException { // 通过inode创建HdfsFileStatus对象
+      INodesInPath iip) throws IOException { // 通过inode创建HdfsFileStatus对象，inode可以是文件或目录
      long size = 0;     // length is zero for directories
      short replication = 0;
      long blocksize = 0;

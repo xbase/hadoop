@@ -216,7 +216,7 @@ public class INodeFile extends INodeWithAdditionalFields
   }
 
   /** Assert all blocks are complete. */
-  private void assertAllBlocksComplete() {
+  private void assertAllBlocksComplete() { // 检查blocks是否全complete
     if (blocks == null) {
       return;
     }
@@ -244,7 +244,7 @@ public class INodeFile extends INodeWithAdditionalFields
     }
     BlockInfoContiguousUnderConstruction ucBlock =
       lastBlock.convertToBlockUnderConstruction(
-          BlockUCState.UNDER_CONSTRUCTION, locations);
+          BlockUCState.UNDER_CONSTRUCTION, locations); // 转换lastBlock为UC状态
     setBlock(numBlocks() - 1, ucBlock);
     return ucBlock;
   }
@@ -253,7 +253,7 @@ public class INodeFile extends INodeWithAdditionalFields
    * Remove a block from the block list. This block should be
    * the last one on the list.
    */
-  boolean removeLastBlock(Block oldblock) {
+  boolean removeLastBlock(Block oldblock) { // 移除最后一个block
     Preconditions.checkState(isUnderConstruction(),
         "file is no longer under construction");
     if (blocks == null || blocks.length == 0) {
@@ -369,7 +369,7 @@ public class INodeFile extends INodeWithAdditionalFields
   }
 
   /** Set the replication factor of this file. */
-  public final void setFileReplication(short replication) {
+  public final void setFileReplication(short replication) { // 修改副本数
     header = HeaderFormat.REPLICATION.BITS.combine(replication, header);
   }
 
@@ -402,7 +402,7 @@ public class INodeFile extends INodeWithAdditionalFields
     return id;
   }
 
-  private void setStoragePolicyID(byte storagePolicyId) {
+  private void setStoragePolicyID(byte storagePolicyId) { // 修改存储策略
     header = HeaderFormat.STORAGE_POLICY_ID.BITS.combine(storagePolicyId,
         header);
   }
@@ -444,7 +444,7 @@ public class INodeFile extends INodeWithAdditionalFields
     return (snapshotBlocks == null) ? getBlocks() : snapshotBlocks;
   }
 
-  void updateBlockCollection() {
+  void updateBlockCollection() { // 修改block的inode引用，concat时使用
     if (blocks != null) {
       for(BlockInfoContiguous b : blocks) {
         b.setBlockCollection(this);
@@ -455,9 +455,9 @@ public class INodeFile extends INodeWithAdditionalFields
   /**
    * append array of blocks to this.blocks
    */
-  void concatBlocks(INodeFile[] inodes) {
+  void concatBlocks(INodeFile[] inodes) { // 把这些inode的block合并到此inode
     int size = this.blocks.length;
-    int totalAddedBlocks = 0;
+    int totalAddedBlocks = 0; // 待合并的block数量
     for(INodeFile f : inodes) {
       totalAddedBlocks += f.blocks.length;
     }
@@ -526,7 +526,7 @@ public class INodeFile extends INodeWithAdditionalFields
 
   @Override
   public void destroyAndCollectBlocks(BlockStoragePolicySuite bsps,
-      BlocksMapUpdateInfo collectedBlocks, final List<INode> removedINodes) {
+      BlocksMapUpdateInfo collectedBlocks, final List<INode> removedINodes) { // 删除文件
     if (blocks != null && collectedBlocks != null) {
       for (BlockInfoContiguous blk : blocks) {
         collectedBlocks.addDeleteBlock(blk);

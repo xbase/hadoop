@@ -173,7 +173,7 @@ public class BlockManager {
   final Daemon replicationThread = new Daemon(new ReplicationMonitor());
   
   /** Store blocks -> datanodedescriptor(s) map of corrupt replicas */
-  final CorruptReplicasMap corruptReplicas = new CorruptReplicasMap(); // 损坏的副本集合
+  final CorruptReplicasMap corruptReplicas = new CorruptReplicasMap(); // 损坏副本的集合
 
   /** Blocks to be invalidated. */
   private final InvalidateBlocks invalidateBlocks; // 等待删除副本集合
@@ -185,7 +185,9 @@ public class BlockManager {
    * notified of all block deletions that might have been pending
    * when the failover happened.
    */
-  private final Set<Block> postponedMisreplicatedBlocks = Sets.newHashSet(); // NN HA切换时，为避免误删除，把正在删除的block保存在这里
+  // 推迟操作的副本集合
+  // 由于副本数多余期望值，而需要删除的block，NN HA切换时，为避免误删除，先保持在这里
+  private final Set<Block> postponedMisreplicatedBlocks = Sets.newHashSet();
 
   /**
    * Maps a StorageID to the set of blocks that are "extra" for this
@@ -1132,7 +1134,7 @@ public class BlockManager {
   public void findAndMarkBlockAsCorrupt(final ExtendedBlock blk,
       final DatanodeInfo dn, String storageID, String reason) throws IOException {
     assert namesystem.hasWriteLock();
-    final BlockInfoContiguous storedBlock = getStoredBlock(blk.getLocalBlock());
+    final BlockInfoContiguous storedBlock = getStoredBlock(blk.getLocalBlock());// 通过blocksMap获取BlockInfoContiguous对象
     if (storedBlock == null) {
       // Check if the replica is in the blockMap, if not
       // ignore the request for now. This could happen when BlockScanner
@@ -1142,7 +1144,7 @@ public class BlockManager {
       return;
     }
 
-    DatanodeDescriptor node = getDatanodeManager().getDatanode(dn);
+    DatanodeDescriptor node = getDatanodeManager().getDatanode(dn);// 通过datanodeMap获取DatanodeDescriptor
     if (node == null) {
       throw new IOException("Cannot mark " + blk
           + " as corrupt because datanode " + dn + " (" + dn.getDatanodeUuid()
@@ -1797,7 +1799,7 @@ public class BlockManager {
   public boolean processReport(final DatanodeID nodeID,
       final DatanodeStorage storage,
       final BlockListAsLongs newReport, BlockReportContext context,
-      boolean lastStorageInRpc) throws IOException {
+      boolean lastStorageInRpc) throws IOException { // 全量块汇报
     namesystem.writeLock();
     final long startTime = Time.monotonicNow(); //after acquiring write lock
     final long endTime;
@@ -1830,7 +1832,7 @@ public class BlockManager {
       if (storageInfo.getBlockReportCount() == 0) {
         // The first block report can be processed a lot more efficiently than
         // ordinary block reports.  This shortens restart times.
-        processFirstBlockReport(storageInfo, newReport);
+        processFirstBlockReport(storageInfo, newReport); // 启动时的第一次全量块汇报
       } else {
         invalidatedBlocks = processReport(storageInfo, newReport);
       }
@@ -1985,7 +1987,7 @@ public class BlockManager {
   
   private Collection<Block> processReport(
       final DatanodeStorageInfo storageInfo,
-      final BlockListAsLongs report) throws IOException {
+      final BlockListAsLongs report) throws IOException { // 非第一次全量块汇报
     // Normal case:
     // Modify the (block-->datanode) map, according to the difference
     // between the old and new block report.
@@ -3257,7 +3259,7 @@ public class BlockManager {
 
     for (ReceivedDeletedBlockInfo rdbi : srdb.getBlocks()) {
       switch (rdbi.getStatus()) {
-      case DELETED_BLOCK: // DN已经删除的replica
+      case DELETED_BLOCK: // DN已经删除的replica（DN删除成功、发现坏盘、下一块磁盘）
         removeStoredBlock(storageInfo, rdbi.getBlock(), node);
         deleted++;
         break;
@@ -3438,7 +3440,7 @@ public class BlockManager {
     }
   }
 
-  public BlockInfoContiguous getStoredBlock(Block block) {
+  public BlockInfoContiguous getStoredBlock(Block block) {// 通过blocksMap获取BlockInfoContiguous对象
     return blocksMap.getStoredBlock(block);
   }
 

@@ -47,17 +47,17 @@ import org.slf4j.Logger;
 class PendingReplicationBlocks {
   private static final Logger LOG = BlockManager.LOG;
 
-  private final Map<Block, PendingBlockInfo> pendingReplications;
-  private final ArrayList<Block> timedOutItems;
-  Daemon timerThread = null;
+  private final Map<Block, PendingBlockInfo> pendingReplications; // 所有复制请求，block -> block的复制信息
+  private final ArrayList<Block> timedOutItems; // 超时的复制请求
+  Daemon timerThread = null; // 超时检查线程
   private volatile boolean fsRunning = true;
 
   //
   // It might take anywhere between 5 to 10 minutes before
   // a request is timed out.
   //
-  private long timeout = 5 * 60 * 1000;
-  private final static long DEFAULT_RECHECK_INTERVAL = 5 * 60 * 1000;
+  private long timeout = 5 * 60 * 1000; // 超时时间
+  private final static long DEFAULT_RECHECK_INTERVAL = 5 * 60 * 1000; // 扫描周期
 
   PendingReplicationBlocks(long timeoutPeriod) {
     if ( timeoutPeriod > 0 ) {
@@ -96,7 +96,7 @@ class PendingReplicationBlocks {
    * 
    * @param The DataNode that finishes the replication
    */
-  void decrement(Block block, DatanodeDescriptor dn) { // Block复制成功，维护复制请求
+  void decrement(Block block, DatanodeDescriptor dn) { // Block复制成功，维护复制请求（增量块汇报，会调用到这里）
     synchronized (pendingReplications) {
       PendingBlockInfo found = pendingReplications.get(block);
       if (found != null) {
@@ -174,8 +174,8 @@ class PendingReplicationBlocks {
    * replication requests are in progress.
    */
   static class PendingBlockInfo {
-    private long timeStamp;
-    private final List<DatanodeDescriptor> targets;
+    private long timeStamp; // 复制操作开始时间戳
+    private final List<DatanodeDescriptor> targets; // 复制到的目的DN
 
     PendingBlockInfo(DatanodeDescriptor[] targets) {
       this.timeStamp = monotonicNow();

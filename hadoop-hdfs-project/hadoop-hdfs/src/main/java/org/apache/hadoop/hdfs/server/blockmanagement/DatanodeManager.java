@@ -487,7 +487,7 @@ public class DatanodeManager {
    * @throws UnregisteredNodeException
    */
   public DatanodeDescriptor getDatanode(DatanodeID nodeID
-      ) throws UnregisteredNodeException { // 获取DatanodeDescriptor
+      ) throws UnregisteredNodeException { // 通过datanodeMap获取DatanodeDescriptor
     final DatanodeDescriptor node = getDatanode(nodeID.getDatanodeUuid());
     if (node == null) 
       return null;

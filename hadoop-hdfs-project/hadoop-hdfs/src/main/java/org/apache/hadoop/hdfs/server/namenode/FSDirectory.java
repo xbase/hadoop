@@ -706,9 +706,9 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
       numOfINodes = iip.length();
     }
     if (checkQuota && !skipQuotaCheck) {
-      verifyQuota(iip, numOfINodes, counts, null);
+      verifyQuota(iip, numOfINodes, counts, null);// 每级父目录都要检查
     }
-    unprotectedUpdateCount(iip, numOfINodes, counts);
+    unprotectedUpdateCount(iip, numOfINodes, counts); // 每级父目录都要更新
   }
   
   /** 
@@ -730,7 +730,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * callers responsibility is to make sure quota is not exceeded
    */
   static void unprotectedUpdateCount(INodesInPath inodesInPath,
-      int numOfINodes, QuotaCounts counts) {
+      int numOfINodes, QuotaCounts counts) { // 每级父目录都要更新
     for(int i=0; i < numOfINodes; i++) {
       if (inodesInPath.getINode(i).isQuotaSet()) { // a directory with quota
         inodesInPath.getINode(i).asDirectory().getDirectoryWithQuotaFeature()
@@ -864,7 +864,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
     }
 
     // check existing components in the path
-    for(int i = (pos > iip.length() ? iip.length(): pos) - 1; i >= 0; i--) {
+    for(int i = (pos > iip.length() ? iip.length(): pos) - 1; i >= 0; i--) { // 每级父目录都要检查quota
       if (commonAncestor == iip.getINode(i)) {
         // Stop checking for quota when common ancestor is reached
         return;

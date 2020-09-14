@@ -34,14 +34,14 @@ import java.util.*;
  */
 
 @InterfaceAudience.Private
-public class CorruptReplicasMap{
+public class CorruptReplicasMap{ // 保存损坏的数据块副本
 
   /** The corruption reason code */
-  public static enum Reason {
+  public static enum Reason { // 损坏的原因
     NONE,                // not specified.
     ANY,                 // wildcard reason
-    GENSTAMP_MISMATCH,   // mismatch in generation stamps
-    SIZE_MISMATCH,       // mismatch in sizes
+    GENSTAMP_MISMATCH,   // mismatch in generation stamps DN和NN记录的GS不一致
+    SIZE_MISMATCH,       // mismatch in sizes DN和NN记录的size不一致
     INVALID_STATE,       // invalid state
     CORRUPTION_REPORTED  // client or datanode reported the corruption
   }

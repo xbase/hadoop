@@ -44,10 +44,10 @@ import org.slf4j.Logger;
  * on the machine in question.
  */
 @InterfaceAudience.Private
-class InvalidateBlocks {
+class InvalidateBlocks { // 等待删除副本集合
   /** Mapping: DatanodeInfo -> Collection of Blocks */
   private final Map<DatanodeInfo, LightWeightHashSet<Block>> node2blocks =
-      new TreeMap<DatanodeInfo, LightWeightHashSet<Block>>();
+      new TreeMap<DatanodeInfo, LightWeightHashSet<Block>>(); // DN -> 该DN待删除的副本集合
   /** The total number of blocks in the map. */
   private long numBlocks = 0L;
 
@@ -103,7 +103,7 @@ class InvalidateBlocks {
    * which will be invalidated on the specified datanode.
    */
   synchronized void add(final Block block, final DatanodeInfo datanode,
-      final boolean log) {
+      final boolean log) { // 添加到待删除集合
     LightWeightHashSet<Block> set = node2blocks.get(datanode);
     if (set == null) {
       set = new LightWeightHashSet<Block>();
