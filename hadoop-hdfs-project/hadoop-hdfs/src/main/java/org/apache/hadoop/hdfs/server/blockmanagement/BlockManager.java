@@ -963,7 +963,7 @@ public class BlockManager {
    */
    public void verifyReplication(String src,
                           short replication,
-                          String clientName) throws IOException {
+                          String clientName) throws IOException { // 副本数是否在有效范围内
 
     if (replication >= minReplication && replication <= maxReplication) {
       //common case. avoid building 'text'

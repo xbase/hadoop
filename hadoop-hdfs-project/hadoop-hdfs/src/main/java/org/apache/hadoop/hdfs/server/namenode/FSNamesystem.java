@@ -564,7 +564,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   /**
    * Block until the object is imageLoaded to be used.
    */
-  void waitForLoadingFSImage() {
+  void waitForLoadingFSImage() { // 等待image加载完成
     if (!imageLoaded) {
       writeLock();
       try {
@@ -2367,15 +2367,15 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       }
       NameNode.stateChangeLog.debug(builder.toString());
     }
-    if (!DFSUtil.isValidName(src)) {
+    if (!DFSUtil.isValidName(src)) { // 检查path name是否有效
       throw new InvalidPathException(src);
     }
-    blockManager.verifyReplication(src, replication, clientMachine);
+    blockManager.verifyReplication(src, replication, clientMachine); // 副本数是否有效
 
     boolean skipSync = false;
     HdfsFileStatus stat = null;
     FSPermissionChecker pc = getPermissionChecker();
-    if (blockSize < minBlockSize) {
+    if (blockSize < minBlockSize) { // blockSize是否有效
       throw new IOException("Specified block size is less than configured" +
           " minimum value (" + DFSConfigKeys.DFS_NAMENODE_MIN_BLOCK_SIZE_KEY
           + "): " + blockSize + " < " + minBlockSize);
@@ -2404,7 +2404,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     String ezKeyName = null;
     EncryptedKeyVersion edek = null;
 
-    if (provider != null) {
+    if (provider != null) { // 加密相关
       readLock();
       try {
         src = dir.resolvePath(pc, src, pathComponents);
@@ -2452,9 +2452,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
             clientMachine, create, overwrite,
             createParent, replication, blockSize,
             isLazyPersist, suite, protocolVersion, edek,
-            logRetryCache);
+            logRetryCache); // 创建文件
         stat = FSDirStatAndListingOp.getFileInfo(
-            dir, src, false, FSDirectory.isReservedRawName(srcArg), true);
+            dir, src, false, FSDirectory.isReservedRawName(srcArg), true); // 获取文件信息
       } finally {
         dir.writeUnlock();
       }
@@ -2467,7 +2467,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       // They need to be sync'ed even when an exception was thrown.
       if (!skipSync) {
         getEditLog().logSync();
-        if (toRemoveBlocks != null) {
+        if (toRemoveBlocks != null) { // 由于覆盖写，需要先删除原来的文件，再删除关联的block
           removeBlocks(toRemoveBlocks);
           toRemoveBlocks.clear();
         }
@@ -2487,6 +2487,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * For description of parameters and exceptions thrown see
    * {@link ClientProtocol#create}
    */
+  // step 1: 前置条件检查：权限、是否已存在、父目录是否存在
+  // step 2: 创建操作：创建父目录、创建文件、添加租约、添加租约
   private BlocksMapUpdateInfo startFileInternal(FSPermissionChecker pc, 
       INodesInPath iip, PermissionStatus permissions, String holder,
       String clientMachine, boolean create, boolean overwrite, 
@@ -2495,33 +2497,34 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       EncryptedKeyVersion edek, boolean logRetryEntry)
       throws IOException {
     assert hasWriteLock();
+    // step 1: 前置条件检查：权限、是否已存在、父目录是否存在
     // Verify that the destination does not exist as a directory already.
     final INode inode = iip.getLastINode();
     final String src = iip.getPath();
-    if (inode != null && inode.isDirectory()) {
+    if (inode != null && inode.isDirectory()) { // 待创建文件已经存在，而且是一个目录，抛异常
       throw new FileAlreadyExistsException(src +
           " already exists as a directory");
     }
 
     final INodeFile myFile = INodeFile.valueOf(inode, src, true);
-    if (isPermissionEnabled) {
-      if (overwrite && myFile != null) {
+    if (isPermissionEnabled) { // 检查权限
+      if (overwrite && myFile != null) { // 覆盖操作时，必须拥有此文件的写权限
         dir.checkPathAccess(pc, iip, FsAction.WRITE);
       }
       /*
        * To overwrite existing file, need to check 'w' permission 
        * of parent (equals to ancestor in this case)
        */
-      dir.checkAncestorAccess(pc, iip, FsAction.WRITE);
+      dir.checkAncestorAccess(pc, iip, FsAction.WRITE); // 必须有父目录的写权限
     }
-    if (!createParent) {
+    if (!createParent) { // 如果不自动创建目录，则父目录必须要存在
       dir.verifyParentDir(iip, src);
     }
 
     FileEncryptionInfo feInfo = null;
 
     final EncryptionZone zone = dir.getEZForPath(iip);
-    if (zone != null) {
+    if (zone != null) { // 加密相关
       // The path is now within an EZ, but we're missing encryption parameters
       if (suite == null || edek == null) {
         throw new RetryStartFileException();
@@ -2540,23 +2543,23 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
     try {
       BlocksMapUpdateInfo toRemoveBlocks = null;
-      if (myFile == null) {
+      if (myFile == null) { // 此文件不存在
         if (!create) {
           throw new FileNotFoundException("Can't overwrite non-existent " +
               src + " for client " + clientMachine);
         }
       } else {
-        if (overwrite) {
+        if (overwrite) { // 此文件已经存在，并且设置了覆盖，则先删除此文件
           toRemoveBlocks = new BlocksMapUpdateInfo();
           List<INode> toRemoveINodes = new ChunkedArrayList<INode>();
           long ret = FSDirDeleteOp.delete(dir, iip, toRemoveBlocks,
-                                          toRemoveINodes, now());
+                                          toRemoveINodes, now()); // 删除此文件
           if (ret >= 0) {
             iip = INodesInPath.replace(iip, iip.length() - 1, null);
             FSDirDeleteOp.incrDeletedFileCount(ret);
-            removeLeasesAndINodes(src, toRemoveINodes, true);
+            removeLeasesAndINodes(src, toRemoveINodes, true); // 移除租约
           }
-        } else {
+        } else { // 此文件已经存在，并且没设置覆盖，则抛异常
           // If lease soft limit time is expired, recover the lease
           recoverLeaseInternal(RecoverLeaseOp.CREATE_FILE,
               iip, src, holder, clientMachine, false);
@@ -2565,15 +2568,16 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         }
       }
 
-      checkFsObjectLimit();
+      checkFsObjectLimit(); // 检查元数据数量是否已达上限，默认无上限
       INodeFile newNode = null;
 
+      // step 2: 创建操作：创建父目录、创建文件、添加租约、添加租约
       // Always do an implicit mkdirs for parent directory tree.
       Map.Entry<INodesInPath, String> parent = FSDirMkdirOp
-          .createAncestorDirectories(dir, iip, permissions);
+          .createAncestorDirectories(dir, iip, permissions); // 创建父目录
       if (parent != null) {
         iip = dir.addFile(parent.getKey(), parent.getValue(), permissions,
-            replication, blockSize, holder, clientMachine);
+            replication, blockSize, holder, clientMachine); // 创建文件
         newNode = iip != null ? iip.getLastINode().asFile() : null;
       }
 
@@ -2581,15 +2585,15 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         throw new IOException("Unable to add " + src +  " to namespace");
       }
       leaseManager.addLease(newNode.getFileUnderConstructionFeature()
-          .getClientName(), src);
+          .getClientName(), src); // 添加租约
 
       // Set encryption attributes if necessary
-      if (feInfo != null) {
+      if (feInfo != null) { // 加密相关
         dir.setFileEncryptionInfo(src, feInfo);
         newNode = dir.getInode(newNode.getId()).asFile();
       }
 
-      setNewINodeStoragePolicy(newNode, iip, isLazyPersist);
+      setNewINodeStoragePolicy(newNode, iip, isLazyPersist); // 设置存储策略
 
       // record file record in log, record new generation stamp
       getEditLog().logOpenFile(src, newNode, overwrite, logRetryEntry);
@@ -3750,7 +3754,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    *          An instance of {@link BlocksMapUpdateInfo} which contains a list
    *          of blocks that need to be removed from blocksMap
    */
-  void removeBlocks(BlocksMapUpdateInfo blocks) {
+  void removeBlocks(BlocksMapUpdateInfo blocks) { // 删除block
     List<Block> toDeleteList = blocks.getToDeleteList();
     Iterator<Block> iter = toDeleteList.iterator();
     while (iter.hasNext()) {
@@ -5920,7 +5924,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * Check to see if we have exceeded the limit on the number
    * of inodes.
    */
-  void checkFsObjectLimit() throws IOException {
+  void checkFsObjectLimit() throws IOException { // 检查元数据数量是否已达上限
     if (maxFsObjects != 0 &&
         maxFsObjects <= dir.totalInodes() + getBlocksTotal()) {
       throw new IOException("Exceeded the configured number of objects " +

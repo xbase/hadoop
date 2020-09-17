@@ -414,7 +414,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
       permissions, short replication, long preferredBlockSize,
       String clientName, String clientMachine)
     throws FileAlreadyExistsException, QuotaExceededException,
-      UnresolvedLinkException, SnapshotAccessControlException, AclException {
+      UnresolvedLinkException, SnapshotAccessControlException, AclException { // 创建文件
 
     long modTime = now();
     INodeFile newNode = newINodeFile(allocateNewInodeId(), permissions, modTime,
@@ -1740,14 +1740,14 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * Verify that parent directory of src exists.
    */
   void verifyParentDir(INodesInPath iip, String src)
-      throws FileNotFoundException, ParentNotDirectoryException {
+      throws FileNotFoundException, ParentNotDirectoryException { // 检查父节点是否存在
     Path parent = new Path(src).getParent();
     if (parent != null) {
       final INode parentNode = iip.getINode(-2);
-      if (parentNode == null) {
+      if (parentNode == null) { // 父节点不存在
         throw new FileNotFoundException("Parent directory doesn't exist: "
             + parent);
-      } else if (!parentNode.isDirectory() && !parentNode.isSymlink()) {
+      } else if (!parentNode.isDirectory() && !parentNode.isSymlink()) { // 父节点既不是目录，也不是软链
         throw new ParentNotDirectoryException("Parent path is not a directory: "
             + parent);
       }

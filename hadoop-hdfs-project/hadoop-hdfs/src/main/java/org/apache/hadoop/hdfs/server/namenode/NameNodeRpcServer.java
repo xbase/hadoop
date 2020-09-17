@@ -601,17 +601,17 @@ class NameNodeRpcServer implements NamenodeProtocols {
       CryptoProtocolVersion[] supportedVersions)
       throws IOException {
     checkNNStartup();
-    String clientMachine = getClientMachine();
+    String clientMachine = getClientMachine(); // 客户端hostname
     if (stateChangeLog.isDebugEnabled()) {
       stateChangeLog.debug("*DIR* NameNode.create: file "
           +src+" for "+clientName+" at "+clientMachine);
     }
-    if (!checkPathLength(src)) {
+    if (!checkPathLength(src)) { // path的长度和深度是否超长
       throw new IOException("create: Pathname too long.  Limit "
           + MAX_PATH_LENGTH + " characters, " + MAX_PATH_DEPTH + " levels.");
     }
     namesystem.checkOperation(OperationCategory.WRITE);
-    CacheEntryWithPayload cacheEntry = RetryCache.waitForCompletion(retryCache, null);
+    CacheEntryWithPayload cacheEntry = RetryCache.waitForCompletion(retryCache, null); // 是否是重试请求
     if (cacheEntry != null && cacheEntry.isSuccess()) {
       return (HdfsFileStatus) cacheEntry.getPayload();
     }
@@ -622,7 +622,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
           .getShortUserName(), null, masked);
       status = namesystem.startFile(src, perm, clientName, clientMachine,
           flag.get(), createParent, replication, blockSize, supportedVersions,
-          cacheEntry != null);
+          cacheEntry != null); // 创建文件
     } finally {
       RetryCache.setState(cacheEntry, status != null, status);
     }
@@ -963,7 +963,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
    * length and depth are okay.  Returns false if length is too long 
    * or depth is too great.
    */
-  private boolean checkPathLength(String src) {
+  private boolean checkPathLength(String src) { // path的长度和深度是否超长
     Path srcPath = new Path(src);
     return (src.length() <= MAX_PATH_LENGTH &&
             srcPath.depth() <= MAX_PATH_DEPTH);

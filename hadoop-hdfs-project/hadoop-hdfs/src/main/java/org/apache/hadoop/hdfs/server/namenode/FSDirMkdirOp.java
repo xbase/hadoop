@@ -120,7 +120,7 @@ class FSDirMkdirOp {
    */
   static Map.Entry<INodesInPath, String> createAncestorDirectories(
       FSDirectory fsd, INodesInPath iip, PermissionStatus permission)
-      throws IOException {
+      throws IOException { // 创建所有不存在的上层目录
     final String last = new String(iip.getLastLocalName(), Charsets.UTF_8);
     INodesInPath existing = iip.getExistingINodes();
     List<String> children = iip.getPath(existing.length(),

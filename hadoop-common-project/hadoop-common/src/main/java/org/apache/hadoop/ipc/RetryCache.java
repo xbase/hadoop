@@ -43,7 +43,7 @@ import com.google.common.base.Preconditions;
  * To look an implementation using this cache, see HDFS FSNamesystem class.
  */
 @InterfaceAudience.Private
-public class RetryCache {
+public class RetryCache { // 如果发现非幂等RPC的重试请求，将把之前的响应直接返回
   public static final Log LOG = LogFactory.getLog(RetryCache.class);
   private final RetryCacheMetrics retryCacheMetrics;
 
@@ -65,7 +65,7 @@ public class RetryCache {
     private final long clientIdLsb; // Least significant bytes
     
     private final int callId;
-    private final long expirationTime;
+    private final long expirationTime; // 过期时间
     private LightWeightGSet.LinkedElement next;
 
     CacheEntry(byte[] clientId, int callId, long expirationTime) {
@@ -74,7 +74,7 @@ public class RetryCache {
           "Invalid clientId - length is " + clientId.length
               + " expected length " + ClientId.BYTE_LENGTH);
       // Convert UUID bytes to two longs
-      clientIdMsb = ClientId.getMsb(clientId);
+      clientIdMsb = ClientId.getMsb(clientId); // 把clientId转换为一个long型
       clientIdLsb = ClientId.getLsb(clientId);
       this.callId = callId;
       this.expirationTime = expirationTime;
@@ -149,7 +149,7 @@ public class RetryCache {
    * previous response to be used for generating response for retried requests.
    */
   public static class CacheEntryWithPayload extends CacheEntry {
-    private Object payload;
+    private Object payload; // 前一个响应
 
     CacheEntryWithPayload(byte[] clientId, int callId, Object payload,
         long expirationTime) {
@@ -202,7 +202,7 @@ public class RetryCache {
     this.retryCacheMetrics =  RetryCacheMetrics.create(this);
   }
 
-  private static boolean skipRetryCache() {
+  private static boolean skipRetryCache() { // 是否需要cache
     // Do not track non RPC invocation or RPC requests with
     // invalid callId or clientId in retry cache
     return !Server.isRpcInvocation() || Server.getCallId() < 0
@@ -255,13 +255,13 @@ public class RetryCache {
    * 
    * @return {@link CacheEntry}.
    */
-  private CacheEntry waitForCompletion(CacheEntry newEntry) {
+  private CacheEntry waitForCompletion(CacheEntry newEntry) { // 等待完成
     CacheEntry mapEntry = null;
     lock.lock();
     try {
       mapEntry = set.get(newEntry);
       // If an entry in the cache does not exist, add a new one
-      if (mapEntry == null) {
+      if (mapEntry == null) { // 一个新的CacheEntry
         if (LOG.isTraceEnabled()) {
           LOG.trace("Adding Rpc request clientId "
               + newEntry.clientIdMsb + newEntry.clientIdLsb + " callId "
@@ -281,7 +281,7 @@ public class RetryCache {
         "Entry from the cache should not be null");
     // Wait for in progress request to complete
     synchronized (mapEntry) {
-      while (mapEntry.state == CacheEntry.INPROGRESS) {
+      while (mapEntry.state == CacheEntry.INPROGRESS) { // 等待完成
         try {
           mapEntry.wait();
         } catch (InterruptedException ie) {
@@ -302,7 +302,7 @@ public class RetryCache {
    * Add a new cache entry into the retry cache. The cache entry consists of 
    * clientId and callId extracted from editlog.
    */
-  public void addCacheEntry(byte[] clientId, int callId) {
+  public void addCacheEntry(byte[] clientId, int callId) { // 添加一个CacheEntry
     CacheEntry newEntry = new CacheEntry(clientId, callId, System.nanoTime()
         + expirationTime, true);
     lock.lock();
@@ -314,7 +314,7 @@ public class RetryCache {
     retryCacheMetrics.incrCacheUpdated();
   }
   
-  public void addCacheEntryWithPayload(byte[] clientId, int callId,
+  public void addCacheEntryWithPayload(byte[] clientId, int callId, // 添加一个有payload的CacheEntry
       Object payload) {
     // since the entry is loaded from editlog, we can assume it succeeded.    
     CacheEntry newEntry = new CacheEntryWithPayload(clientId, callId, payload,
@@ -374,7 +374,7 @@ public class RetryCache {
     e.completed(success);
   }
 
-  public static void clear(RetryCache cache) {
+  public static void clear(RetryCache cache) { // 清空cache
     if (cache != null) {
       cache.set.clear();
       cache.incrCacheClearedCounter();

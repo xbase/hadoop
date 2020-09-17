@@ -234,7 +234,7 @@ public class DFSUtil {
    * Whether the pathname is valid.  Currently prohibits relative paths, 
    * names which contain a ":" or "//", or other non-canonical paths.
    */
-  public static boolean isValidName(String src) {
+  public static boolean isValidName(String src) { // path name是否有效
     // Path must be absolute.
     if (!src.startsWith(Path.SEPARATOR)) {
       return false;
