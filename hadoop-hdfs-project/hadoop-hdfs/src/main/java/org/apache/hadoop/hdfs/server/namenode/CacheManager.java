@@ -121,7 +121,7 @@ public final class CacheManager {
    * listCacheDirectives relies on the ordering of elements in this map
    * to track what has already been listed by the client.
    */
-  private final TreeMap<Long, CacheDirective> directivesById =
+  private final TreeMap<Long, CacheDirective> directivesById = // 以id为key，保存缓存指令
       new TreeMap<Long, CacheDirective>();
 
   /**
@@ -133,13 +133,13 @@ public final class CacheManager {
   /**
    * Cache directives, sorted by path
    */
-  private final TreeMap<String, List<CacheDirective>> directivesByPath =
+  private final TreeMap<String, List<CacheDirective>> directivesByPath = // 以path为key，保存缓存指令
       new TreeMap<String, List<CacheDirective>>();
 
   /**
    * Cache pools, sorted by name.
    */
-  private final TreeMap<String, CachePool> cachePools =
+  private final TreeMap<String, CachePool> cachePools = // 以cache pool name为key，保存cache pool
       new TreeMap<String, CachePool>();
 
   /**
@@ -489,12 +489,13 @@ public final class CacheManager {
     }
     directives.add(directive);
     // Fix up pool stats
+    // 更新cache pool统计信息
     CacheDirectiveStats stats =
         computeNeeded(directive.getPath(), directive.getReplication());
     directive.addBytesNeeded(stats.getBytesNeeded());
     directive.addFilesNeeded(directive.getFilesNeeded());
 
-    setNeedsRescan();
+    setNeedsRescan(); // 触发CacheReplicationMonitor执行rescan()操作
   }
 
   /**
@@ -515,10 +516,11 @@ public final class CacheManager {
 
   public CacheDirectiveInfo addDirective(
       CacheDirectiveInfo info, FSPermissionChecker pc, EnumSet<CacheFlag> flags)
-      throws IOException {
+      throws IOException { // 添加缓存指令
     assert namesystem.hasWriteLock();
     CacheDirective directive;
     try {
+      // 各种检查
       CachePool pool = getCachePool(validatePoolName(info));
       checkWritePermission(pc, pool);
       String path = validatePath(info);
@@ -530,9 +532,9 @@ public final class CacheManager {
       }
       // All validation passed
       // Add a new entry with the next available ID.
-      long id = getNextDirectiveId();
+      long id = getNextDirectiveId(); // 生成id
       directive = new CacheDirective(id, path, replication, expiryTime);
-      addInternal(directive, pool);
+      addInternal(directive, pool); // 添加缓存
     } catch (IOException e) {
       LOG.warn("addDirective of " + info + " failed: ", e);
       throw e;
@@ -758,19 +760,19 @@ public final class CacheManager {
    * @param info    The info for the cache pool to create.
    * @return        Information about the cache pool we created.
    */
-  public CachePoolInfo addCachePool(CachePoolInfo info)
+  public CachePoolInfo addCachePool(CachePoolInfo info) // 创建一个cache pool
       throws IOException {
     assert namesystem.hasWriteLock();
     CachePool pool;
     try {
-      CachePoolInfo.validate(info);
+      CachePoolInfo.validate(info); // 检查是否合法
       String poolName = info.getPoolName();
       pool = cachePools.get(poolName);
       if (pool != null) {
         throw new InvalidRequestException("Cache pool " + poolName
             + " already exists.");
       }
-      pool = CachePool.createFromInfoAndDefaults(info);
+      pool = CachePool.createFromInfoAndDefaults(info); // 创建CachePool对象
       cachePools.put(pool.getPoolName(), pool);
     } catch (IOException e) {
       LOG.info("addCachePool of " + info + " failed: ", e);
@@ -1082,7 +1084,7 @@ public final class CacheManager {
   }
 
   private void addCacheDirective(final String poolName,
-      final CacheDirective directive) throws IOException {
+      final CacheDirective directive) throws IOException { // 把缓存指令，添加到相应的集合里
     CachePool pool = cachePools.get(poolName);
     if (pool == null) {
       throw new IOException("Directive refers to pool " + poolName

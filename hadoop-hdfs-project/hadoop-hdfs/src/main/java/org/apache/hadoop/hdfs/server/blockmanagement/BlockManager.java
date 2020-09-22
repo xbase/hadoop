@@ -186,7 +186,7 @@ public class BlockManager {
    * when the failover happened.
    */
   // 推迟操作的副本集合
-  // 由于副本数多余期望值，而需要删除的block，NN HA切换时，为避免误删除，先保持在这里
+  // 由于副本数多余期望值，而需要删除的block，NN HA切换时，为避免误删除，先保存在这里
   private final Set<Block> postponedMisreplicatedBlocks = Sets.newHashSet();
 
   /**

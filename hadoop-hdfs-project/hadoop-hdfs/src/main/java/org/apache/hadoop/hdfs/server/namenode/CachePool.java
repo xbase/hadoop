@@ -105,7 +105,7 @@ public final class CachePool {
    * defaults.
    */
   static CachePool createFromInfoAndDefaults(CachePoolInfo info)
-      throws IOException {
+      throws IOException { // 创建CachePool对象，没有设置的参数，使用默认参数
     UserGroupInformation ugi = null;
     String ownerName = info.getOwnerName();
     if (ownerName == null) {

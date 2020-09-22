@@ -7699,7 +7699,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
             "Cannot add cache directive", safeMode);
       }
       effectiveDirective = FSNDNCacheOp.addCacheDirective(this, cacheManager,
-          directive, flags, logRetryCache);
+          directive, flags, logRetryCache); // 添加缓存指令
     } finally {
       writeUnlock();
       boolean success = effectiveDirective != null;

@@ -71,23 +71,23 @@ class UnderReplicatedBlocks implements Iterable<Block> {
   /** The total number of queues : {@value} */
   static final int LEVEL = 5;
   /** The queue with the highest priority: {@value} */
-  static final int QUEUE_HIGHEST_PRIORITY = 0;
+  static final int QUEUE_HIGHEST_PRIORITY = 0; // block只剩一个副本，或者此block副本所在的节点都在decommission中
   /** The queue for blocks that are way below their expected value : {@value} */
-  static final int QUEUE_VERY_UNDER_REPLICATED = 1;
+  static final int QUEUE_VERY_UNDER_REPLICATED = 1; // 副本数 < 期望副本数的三分之一
   /** The queue for "normally" under-replicated blocks: {@value} */
-  static final int QUEUE_UNDER_REPLICATED = 2;
+  static final int QUEUE_UNDER_REPLICATED = 2; // 副本数 < 期望副本数
   /** The queue for blocks that have the right number of replicas,
    * but which the block manager felt were badly distributed: {@value}
    */
-  static final int QUEUE_REPLICAS_BADLY_DISTRIBUTED = 3;
+  static final int QUEUE_REPLICAS_BADLY_DISTRIBUTED = 3; // 副本数 = 期望副本数，但不符合机架放置策略
   /** The queue for corrupt blocks: {@value} */
-  static final int QUEUE_WITH_CORRUPT_BLOCKS = 4;
+  static final int QUEUE_WITH_CORRUPT_BLOCKS = 4; // 副本全部损坏
   /** the queues themselves */
   private final List<LightWeightLinkedSet<Block>> priorityQueues
       = new ArrayList<LightWeightLinkedSet<Block>>();
 
   /** Stores the replication index for each priority */
-  private Map<Integer, Integer> priorityToReplIdx = new HashMap<Integer, Integer>(LEVEL);
+  private Map<Integer, Integer> priorityToReplIdx = new HashMap<Integer, Integer>(LEVEL); // <LEVEL,offset> 每个优先级队列的读取偏移量
   /** The number of corrupt blocks with replication factor 1 */
   private int corruptReplOneBlocks = 0;
 
@@ -110,7 +110,7 @@ class UnderReplicatedBlocks implements Iterable<Block> {
   }
 
   /** Return the total number of under replication blocks */
-  synchronized int size() {
+  synchronized int size() { // 所有待复制block的数量
     int size = 0;
     for (int i = 0; i < LEVEL; i++) {
       size += priorityQueues.get(i).size();
@@ -252,7 +252,7 @@ class UnderReplicatedBlocks implements Iterable<Block> {
    */
   boolean remove(Block block, int priLevel) {
     if(priLevel >= 0 && priLevel < LEVEL 
-        && priorityQueues.get(priLevel).remove(block)) {
+        && priorityQueues.get(priLevel).remove(block)) { // 从指定LEVEL队列删除此block
       NameNode.blockStateChangeLog.debug(
         "BLOCK* NameSystem.UnderReplicationBlock.remove: Removing block {}" +
             " from priority queue {}", block, priLevel);
@@ -260,7 +260,7 @@ class UnderReplicatedBlocks implements Iterable<Block> {
     } else {
       // Try to remove the block from all queues if the block was
       // not found in the queue for the given priority level.
-      for (int i = 0; i < LEVEL; i++) {
+      for (int i = 0; i < LEVEL; i++) { // 遍历所有队列，删除此block
         if (priorityQueues.get(i).remove(block)) {
           NameNode.blockStateChangeLog.debug(
               "BLOCK* NameSystem.UnderReplicationBlock.remove: Removing block" +
@@ -344,31 +344,32 @@ class UnderReplicatedBlocks implements Iterable<Block> {
    *         represents its replication priority.
    */
   public synchronized List<List<Block>> chooseUnderReplicatedBlocks(
-      int blocksToProcess) {
+      int blocksToProcess) { // 根据优先级，获取待复制block
     // initialize data structure for the return value
     List<List<Block>> blocksToReplicate = new ArrayList<List<Block>>(LEVEL);
     for (int i = 0; i < LEVEL; i++) {
       blocksToReplicate.add(new ArrayList<Block>());
     }
 
-    if (size() == 0) { // There are no blocks to collect.
+    // There are no blocks to collect.
+    if (size() == 0) { // 没有待复制block
       return blocksToReplicate;
     }
     
     int blockCount = 0;
     for (int priority = 0; priority < LEVEL; priority++) { 
       // Go through all blocks that need replications with current priority.
-      BlockIterator neededReplicationsIterator = iterator(priority);
-      Integer replIndex = priorityToReplIdx.get(priority);
+      BlockIterator neededReplicationsIterator = iterator(priority); // 指定LEVEL队列的迭代器
+      Integer replIndex = priorityToReplIdx.get(priority); // 指定LEVEL队列的偏移量
       
       // skip to the first unprocessed block, which is at replIndex
-      for (int i = 0; i < replIndex && neededReplicationsIterator.hasNext(); i++) {
+      for (int i = 0; i < replIndex && neededReplicationsIterator.hasNext(); i++) { // 跳过offset之前的元素
         neededReplicationsIterator.next();
       }
 
-      blocksToProcess = Math.min(blocksToProcess, size());
+      blocksToProcess = Math.min(blocksToProcess, size()); // 本次要获取的block总数
       
-      if (blockCount == blocksToProcess) {
+      if (blockCount == blocksToProcess) { // 已经获取到足够的block
         break;  // break if already expected blocks are obtained
       }
       
@@ -376,21 +377,21 @@ class UnderReplicatedBlocks implements Iterable<Block> {
       while (blockCount < blocksToProcess
           && neededReplicationsIterator.hasNext()) {
         Block block = neededReplicationsIterator.next();
-        blocksToReplicate.get(priority).add(block);
+        blocksToReplicate.get(priority).add(block); // 添加到result list中
         replIndex++;
         blockCount++;
       }
       
       if (!neededReplicationsIterator.hasNext()
-          && neededReplicationsIterator.getPriority() == LEVEL - 1) {
+          && neededReplicationsIterator.getPriority() == LEVEL - 1) { // 所有待复制副本都已经被获取，将所有offset重置为0，并跳出循环
         // reset all priorities replication index to 0 because there is no
         // recently added blocks in any list.
         for (int i = 0; i < LEVEL; i++) {
           priorityToReplIdx.put(i, 0);
         }
-        break;
+        break; // 跳出循环
       }
-      priorityToReplIdx.put(priority, replIndex); 
+      priorityToReplIdx.put(priority, replIndex); // 更新offset
     }
     return blocksToReplicate;
   }
@@ -480,8 +481,8 @@ class UnderReplicatedBlocks implements Iterable<Block> {
    * 
    * @param priority  - int priority level
    */
-  public void decrementReplicationIndex(int priority) {
+  public void decrementReplicationIndex(int priority) { // 更新指定队列读取offset
     Integer replIdx = priorityToReplIdx.get(priority);
-    priorityToReplIdx.put(priority, --replIdx); 
+    priorityToReplIdx.put(priority, --replIdx); // offset减1
   }
 }

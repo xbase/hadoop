@@ -64,7 +64,7 @@ import com.google.common.base.Preconditions;
  * starts up, and at configurable intervals afterwards.
  */
 @InterfaceAudience.LimitedPrivate({"HDFS"})
-public class CacheReplicationMonitor extends Thread implements Closeable {
+public class CacheReplicationMonitor extends Thread implements Closeable { // 扫描缓存指令，并下发
 
   private static final Logger LOG =
       LoggerFactory.getLogger(CacheReplicationMonitor.class);
@@ -186,7 +186,7 @@ public class CacheReplicationMonitor extends Thread implements Closeable {
         }
         startTimeMs = curTimeMs;
         mark = !mark;
-        rescan();
+        rescan(); // 周期扫描
         curTimeMs = Time.monotonicNow();
         // Update synchronization-related variables.
         lock.lock();

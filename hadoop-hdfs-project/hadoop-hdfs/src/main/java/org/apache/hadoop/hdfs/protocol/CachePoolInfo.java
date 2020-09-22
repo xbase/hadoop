@@ -199,7 +199,7 @@ public class CachePoolInfo {
         hashCode();
   }
 
-  public static void validate(CachePoolInfo info) throws IOException {
+  public static void validate(CachePoolInfo info) throws IOException { // 检查是否合法
     if (info == null) {
       throw new InvalidRequestException("CachePoolInfo is null");
     }
