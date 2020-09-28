@@ -203,7 +203,7 @@ public class INodeFile extends INodeWithAdditionalFields
    * Convert the file to a complete file, i.e., to remove the Under-Construction
    * feature.
    */
-  public INodeFile toCompleteFile(long mtime) { // 把文件转为正常状态
+  public INodeFile toCompleteFile(long mtime) { // 把inode转为正常状态
     Preconditions.checkState(isUnderConstruction(),
         "file is no longer under construction");
     FileUnderConstructionFeature uc = getFileUnderConstructionFeature();
@@ -216,7 +216,7 @@ public class INodeFile extends INodeWithAdditionalFields
   }
 
   /** Assert all blocks are complete. */
-  private void assertAllBlocksComplete() { // 检查blocks是否全complete
+  private void assertAllBlocksComplete() { // 检查所有的block是否complete
     if (blocks == null) {
       return;
     }

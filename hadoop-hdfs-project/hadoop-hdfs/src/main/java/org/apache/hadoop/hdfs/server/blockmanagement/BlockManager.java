@@ -591,19 +591,21 @@ public class BlockManager {
    * @throws IOException if the block does not have at least a minimal number
    * of replicas reported from data-nodes.
    */
+  // block：分配时（addBlock、recovery等），记录的block信息
+  // commitBlock：本次commit的block信息
   private static boolean commitBlock(
       final BlockInfoContiguousUnderConstruction block, final Block commitBlock)
       throws IOException {
     if (block.getBlockUCState() == BlockUCState.COMMITTED)
       return false;
-    assert block.getNumBytes() <= commitBlock.getNumBytes() :
+    assert block.getNumBytes() <= commitBlock.getNumBytes() : // 检查block的size
       "commitBlock length is less than the stored one "
       + commitBlock.getNumBytes() + " vs. " + block.getNumBytes();
-    if(block.getGenerationStamp() != commitBlock.getGenerationStamp()) {
+    if(block.getGenerationStamp() != commitBlock.getGenerationStamp()) { // 检查block的GS
       throw new IOException("Commit block with mismatching GS. NN has " +
         block + ", client submits " + commitBlock);
     }
-    block.commitBlock(commitBlock);
+    block.commitBlock(commitBlock); // commit一个Block
     return true;
   }
   
@@ -618,7 +620,7 @@ public class BlockManager {
    * of replicas reported from data-nodes.
    */
   public boolean commitOrCompleteLastBlock(BlockCollection bc,
-      Block commitBlock) throws IOException {
+      Block commitBlock) throws IOException { // commit一个Block，如果达到最小副本数，则complete这个block
     if(commitBlock == null)
       return false; // not committing, this is a block allocation retry
     BlockInfoContiguous lastBlock = bc.getLastBlock();
@@ -628,9 +630,9 @@ public class BlockManager {
       return false; // already completed (e.g. by syncBlock)
     
     final boolean b = commitBlock(
-        (BlockInfoContiguousUnderConstruction) lastBlock, commitBlock);
-    if(countNodes(lastBlock).liveReplicas() >= minReplication)
-      completeBlock(bc, bc.numBlocks()-1, false);
+        (BlockInfoContiguousUnderConstruction) lastBlock, commitBlock); // commit一个Block
+    if(countNodes(lastBlock).liveReplicas() >= minReplication) // 是否达到最小副本数
+      completeBlock(bc, bc.numBlocks()-1, false); // complete一个Block
     return b;
   }
 
@@ -3476,14 +3478,14 @@ public class BlockManager {
    * Otherwise, if the block is more than the expected replication factor,
    * process it as an over replicated block.
    */
-  public void checkReplication(BlockCollection bc) {
+  public void checkReplication(BlockCollection bc) { // 检查此文件的所有block副本数是否符合期望
     final short expected = bc.getBlockReplication();
     for (Block block : bc.getBlocks()) {
       final NumberReplicas n = countNodes(block);
-      if (isNeededReplication(block, expected, n.liveReplicas())) { 
+      if (isNeededReplication(block, expected, n.liveReplicas())) { // 副本数是否低于期望
         neededReplications.add(block, n.liveReplicas(),
             n.decommissionedReplicas(), expected);
-      } else if (n.liveReplicas() > expected) {
+      } else if (n.liveReplicas() > expected) { // 副本数是否高于期望
         processOverReplicatedBlock(block, expected, null, null);
       }
     }

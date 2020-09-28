@@ -3485,7 +3485,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     String src = srcArg;
     NameNode.stateChangeLog.debug("DIR* NameSystem.completeFile: {} for {}",
         src, holder);
-    checkBlock(last);
+    checkBlock(last); // 检查block是否合法
     boolean success = false;
     checkOperation(OperationCategory.WRITE);
     byte[][] pathComponents = FSDirectory.getPathComponentsForReservedPath(src);
@@ -3497,7 +3497,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       checkNameNodeSafeMode("Cannot complete file " + src);
       src = dir.resolvePath(pc, src, pathComponents);
       success = completeFileInternal(src, holder,
-        ExtendedBlock.getLocalBlock(last), fileId);
+        ExtendedBlock.getLocalBlock(last), fileId); // 关闭文件
     } finally {
       writeUnlock();
     }
@@ -3520,7 +3520,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         // Older clients may not have given us an inode ID to work with.
         // In this case, we have to try to resolve the path and hope it
         // hasn't changed or been deleted since the file was opened for write.
-        iip = dir.getINodesInPath(src, true);
+        iip = dir.getINodesInPath(src, true); // 没有fileId时，通过src解析出iip获取inode引用
         inode = iip.getLastINode();
       } else {
         inode = dir.getInode(fileId);
@@ -3529,10 +3529,10 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
           src = iip.getPath();
         }
       }
-      pendingFile = checkLease(src, holder, inode, fileId);
+      pendingFile = checkLease(src, holder, inode, fileId); // 检查租约
     } catch (LeaseExpiredException lee) {
       if (inode != null && inode.isFile() &&
-          !inode.asFile().isUnderConstruction()) {
+          !inode.asFile().isUnderConstruction()) { // 租约过期，但complete已经完成
         // This could be a retry RPC - i.e the client tried to close
         // the file, but missed the RPC response. Thus, it is trying
         // again to close the file. If the file still exists and
@@ -3552,18 +3552,18 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     }
     // Check the state of the penultimate block. It should be completed
     // before attempting to complete the last one.
-    if (!checkFileProgress(src, pendingFile, false)) {
+    if (!checkFileProgress(src, pendingFile, false)) { // 检查倒数第二个block是否complete
       return false;
     }
 
     // commit the last block and complete it if it has minimum replicas
-    commitOrCompleteLastBlock(pendingFile, iip, last);
+    commitOrCompleteLastBlock(pendingFile, iip, last); // commit最后一个block，如果达到最小副本数，则complete最后一个block
 
-    if (!checkFileProgress(src, pendingFile, true)) {
+    if (!checkFileProgress(src, pendingFile, true)) { // 检查所有的block是否complete
       return false;
     }
 
-    finalizeINodeFileUnderConstruction(src, pendingFile,
+    finalizeINodeFileUnderConstruction(src, pendingFile, // 检查所有的block是否complete，并把inode转为正常状态
         Snapshot.CURRENT_STATE_ID);
     return true;
   }
@@ -3605,14 +3605,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * all blocks, otherwise check only penultimate block.
    */
   boolean checkFileProgress(String src, INodeFile v, boolean checkall) {
-    if (checkall) {
+    if (checkall) { // 检查所有的block是否complete
       // check all blocks of the file.
       for (BlockInfoContiguous block: v.getBlocks()) {
         if (!isCompleteBlock(src, block, blockManager.minReplication)) {
           return false;
         }
       }
-    } else {
+    } else { // 检查倒数第二个block是否complete
       // check the penultimate block of this file
       BlockInfoContiguous b = v.getPenultimateBlock();
       if (b != null
@@ -4185,7 +4185,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       final INodesInPath iip, final Block commitBlock) throws IOException {
     assert hasWriteLock();
     Preconditions.checkArgument(fileINode.isUnderConstruction());
-    if (!blockManager.commitOrCompleteLastBlock(fileINode, commitBlock)) {
+    if (!blockManager.commitOrCompleteLastBlock(fileINode, commitBlock)) { // commit一个Block，如果达到最小副本数，则complete这个block
       return;
     }
 
@@ -4201,7 +4201,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   }
 
   private void finalizeINodeFileUnderConstruction(String src,
-      INodeFile pendingFile, int latestSnapshot) throws IOException {
+      INodeFile pendingFile, int latestSnapshot) throws IOException { // 检查所有的block是否complete，并把inode转为正常状态
     assert hasWriteLock();
 
     FileUnderConstructionFeature uc = pendingFile.getFileUnderConstructionFeature();
@@ -4209,20 +4209,20 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       throw new IOException("Cannot finalize file " + src
           + " because it is not under construction");
     }
-    leaseManager.removeLease(uc.getClientName(), src);
+    leaseManager.removeLease(uc.getClientName(), src); // 删除租约
     
-    pendingFile.recordModification(latestSnapshot);
+    pendingFile.recordModification(latestSnapshot); // snapshot相关
 
     // The file is no longer pending.
     // Create permanent INode, update blocks. No need to replace the inode here
     // since we just remove the uc feature from pendingFile
-    pendingFile.toCompleteFile(now());
+    pendingFile.toCompleteFile(now()); // 检查所有的block是否complete，并把inode转为正常状态
 
     waitForLoadingFSImage();
     // close file and persist block allocations for this file
-    closeFile(src, pendingFile);
+    closeFile(src, pendingFile); // 记录到edit log
 
-    blockManager.checkReplication(pendingFile);
+    blockManager.checkReplication(pendingFile); // 检查此文件的所有block副本数是否符合期望，并做相应操作
   }
 
   @VisibleForTesting
@@ -4630,7 +4630,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * @param path
    * @param file
    */
-  private void closeFile(String path, INodeFile file) {
+  private void closeFile(String path, INodeFile file) { // 记录到edit log
     assert hasWriteLock();
     waitForLoadingFSImage();
     // file is closed
@@ -4804,7 +4804,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     return getFSImage().getEditLog();
   }    
 
-  private void checkBlock(ExtendedBlock block) throws IOException {
+  private void checkBlock(ExtendedBlock block) throws IOException { // 检查block是否合法
     if (block != null && !this.blockPoolId.equals(block.getBlockPoolId())) {
       throw new IOException("Unexpected BlockPoolId " + block.getBlockPoolId()
           + " - expected " + blockPoolId);

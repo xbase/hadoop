@@ -438,6 +438,7 @@ public interface ClientProtocol {
    * @throws UnresolvedLinkException If <code>src</code> contains a symlink 
    * @throws IOException If an I/O error occurred
    */
+  // 关闭文件
   @Idempotent
   public boolean complete(String src, String clientName,
                           ExtendedBlock last, long fileId)

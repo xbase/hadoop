@@ -568,7 +568,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * @throws AccessControlException
    */
   String resolvePath(FSPermissionChecker pc, String path, byte[][] pathComponents)
-      throws FileNotFoundException, AccessControlException {
+      throws FileNotFoundException, AccessControlException { // 解析出真实path（主要是处理一些保留目录）
     if (isReservedRawName(path) && isPermissionEnabled) {
       pc.checkSuperuserPrivilege(); // /.reserved/raw 目录需要超级用户权限
     }

@@ -170,7 +170,13 @@ public interface DatanodeProtocol {
    * writes a new Block here, or another DataNode copies a Block to
    * this DataNode, it will call blockReceived().
    */
-  // 增量块汇报
+  // DN heartBeatInterval：3ms
+  // 增量块汇报间隔：100 * heartBeatInterval
+  //
+  // receiving block：下次心跳汇报给NN（最多3ms）
+  // received block：立即汇报给NN
+  //  receive block包括：client写新块、recovery、balance
+  // delete block，下次增量块汇报间隔，到的时候再汇报（最多300ms）
   @Idempotent
   public void blockReceivedAndDeleted(DatanodeRegistration registration,
                             String poolId,

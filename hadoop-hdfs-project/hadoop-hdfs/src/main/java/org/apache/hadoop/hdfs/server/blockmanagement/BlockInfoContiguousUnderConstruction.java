@@ -273,15 +273,14 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    * @param block - contains client reported block length and generation 
    * @throws IOException if block ids are inconsistent.
    */
-  // 客户端commit一个Block
-  void commitBlock(Block block) throws IOException {
+  void commitBlock(Block block) throws IOException { // commit一个Block
     if(getBlockId() != block.getBlockId())
       throw new IOException("Trying to commit inconsistent block: id = "
           + block.getBlockId() + ", expected id = " + getBlockId());
-    blockUCState = BlockUCState.COMMITTED;
-    this.setNumBytes(block.getNumBytes());
+    blockUCState = BlockUCState.COMMITTED; // 修改block状态
+    this.setNumBytes(block.getNumBytes()); // 设置size
     // Sort out invalid replicas.
-    setGenerationStampAndVerifyReplicas(block.getGenerationStamp());
+    setGenerationStampAndVerifyReplicas(block.getGenerationStamp()); // 设置GS
   }
 
   /**

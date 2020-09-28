@@ -337,7 +337,7 @@ class BPServiceActor implements Runnable {
     synchronized (pendingIncrementalBRperStorage) {
       addPendingReplicationBlockInfo(
           bInfo, dn.getFSDataset().getStorage(storageUuid));
-      sendImmediateIBR = true;
+      sendImmediateIBR = true; // receive block，需要下次心跳立即汇报给NN
       // If now is true, the report is sent right away.
       // Otherwise, it will be sent out in the next heartbeat.
       if (now) {

@@ -184,7 +184,7 @@ public class FSEditLog implements LogsPurgeable {
   
   private final List<URI> editsDirs;
 
-  private final ThreadLocal<OpInstanceCache> cache =
+  protected final ThreadLocal<OpInstanceCache> cache =
       new ThreadLocal<OpInstanceCache>() {
     @Override
     protected OpInstanceCache initialValue() {
@@ -613,7 +613,7 @@ public class FSEditLog implements LogsPurgeable {
               // Metrics is non-null only when used inside name node
               metrics.incrTransactionsBatchedInSync();
             }
-            return;
+            return; // 就算return，finally也能被执行
           }
      
           // now, this thread will do the sync
