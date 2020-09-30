@@ -712,7 +712,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
       stateChangeLog.debug("*BLOCK* NameNode.addBlock: file " + src
           + " fileId=" + fileId + " for " + clientName);
     }
-    Set<Node> excludedNodesSet = null;
+    Set<Node> excludedNodesSet = null; // client想排除的DN列表
     if (excludedNodes != null) {
       excludedNodesSet = new HashSet<Node>(excludedNodes.length);
       for (Node node : excludedNodes) {
@@ -720,7 +720,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
       }
     }
     List<String> favoredNodesList = (favoredNodes == null) ? null
-        : Arrays.asList(favoredNodes);
+        : Arrays.asList(favoredNodes); // client想优先使用的DN列表
     LocatedBlock locatedBlock = namesystem.getAdditionalBlock(src, fileId,
         clientName, previous, excludedNodesSet, favoredNodesList);
     if (locatedBlock != null)

@@ -2488,7 +2488,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * {@link ClientProtocol#create}
    */
   // step 1: 前置条件检查：权限、是否已存在、父目录是否存在
-  // step 2: 创建操作：创建父目录、创建文件、添加租约、添加租约
+  // step 2: 创建操作：创建父目录、创建文件、添加租约、设置存储策略
   private BlocksMapUpdateInfo startFileInternal(FSPermissionChecker pc, 
       INodesInPath iip, PermissionStatus permissions, String holder,
       String clientMachine, boolean create, boolean overwrite, 
@@ -2571,7 +2571,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       checkFsObjectLimit(); // 检查元数据数量是否已达上限，默认无上限
       INodeFile newNode = null;
 
-      // step 2: 创建操作：创建父目录、创建文件、添加租约、添加租约
+      // step 2: 创建操作：创建父目录、创建文件、添加租约、设置存储策略
       // Always do an implicit mkdirs for parent directory tree.
       Map.Entry<INodesInPath, String> parent = FSDirMkdirOp
           .createAncestorDirectories(dir, iip, permissions); // 创建父目录
@@ -3043,13 +3043,13 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       List<String> favoredNodes) throws IOException {
     LocatedBlock[] onRetryBlock = new LocatedBlock[1];
     DatanodeStorageInfo targets[] = getNewBlockTargets(src, fileId,
-        clientName, previous, excludedNodes, favoredNodes, onRetryBlock);
+        clientName, previous, excludedNodes, favoredNodes, onRetryBlock); // 选择副本存储位置
     if (targets == null) {
       assert onRetryBlock[0] != null : "Retry block is null";
       // This is a retry. Just return the last block.
       return onRetryBlock[0];
     }
-    LocatedBlock newBlock = storeAllocatedBlock(
+    LocatedBlock newBlock = storeAllocatedBlock( // 将新分配的block添加到INode和BlocksMap
         src, fileId, clientName, previous, targets);
     return newBlock;
   }
@@ -3083,27 +3083,27 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       checkOperation(OperationCategory.READ);
       src = dir.resolvePath(pc, src, pathComponents);
       FileState fileState = analyzeFileState(
-          src, fileId, clientName, previous, onRetryBlock);
+          src, fileId, clientName, previous, onRetryBlock);  // 分析client上报和NN记录的block信息(id和GS)是否相同
       final INodeFile pendingFile = fileState.inode;
       // Check if the penultimate block is minimally replicated
-      if (!checkFileProgress(src, pendingFile, false)) {
+      if (!checkFileProgress(src, pendingFile, false)) { // 检查倒数第二个block是否complete
         throw new NotReplicatedYetException("Not replicated yet: " + src);
       }
       src = fileState.path;
 
-      if (onRetryBlock[0] != null && onRetryBlock[0].getLocations().length > 0) {
+      if (onRetryBlock[0] != null && onRetryBlock[0].getLocations().length > 0) { // 是否是重试请求，重试请求直接返回上一次分配好的block
         // This is a retry. No need to generate new locations.
         // Use the last block if it has locations.
         return null;
       }
-      if (pendingFile.getBlocks().length >= maxBlocksPerFile) {
+      if (pendingFile.getBlocks().length >= maxBlocksPerFile) { // 是否超过一个文件所允许的block数量上限
         throw new IOException("File has reached the limit on maximum number of"
             + " blocks (" + DFSConfigKeys.DFS_NAMENODE_MAX_BLOCKS_PER_FILE_KEY
             + "): " + pendingFile.getBlocks().length + " >= "
             + maxBlocksPerFile);
       }
       blockSize = pendingFile.getPreferredBlockSize();
-      clientMachine = pendingFile.getFileUnderConstructionFeature()
+      clientMachine = pendingFile.getFileUnderConstructionFeature() // client主机名
           .getClientMachine();
       clientNode = blockManager.getDatanodeManager().getDatanodeByHost(
           clientMachine);
@@ -3120,7 +3120,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     // choose targets for the new block to be allocated.
     return getBlockManager().chooseTarget4NewBlock( 
         src, replication, clientNode, excludedNodes, blockSize, favoredNodes,
-        storagePolicyID);
+        storagePolicyID); // 选择副本存储位置
   }
 
   /**
@@ -3143,11 +3143,11 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       // while chooseTarget() was executing.
       LocatedBlock[] onRetryBlock = new LocatedBlock[1];
       FileState fileState = 
-          analyzeFileState(src, fileId, clientName, previous, onRetryBlock);
+          analyzeFileState(src, fileId, clientName, previous, onRetryBlock); // 分析client上报和NN记录的block信息(id和GS)是否相同
       final INodeFile pendingFile = fileState.inode;
       src = fileState.path;
 
-      if (onRetryBlock[0] != null) {
+      if (onRetryBlock[0] != null) { // 重试请求，则直接返回上一次分配好的block
         if (onRetryBlock[0].getLocations().length > 0) {
           // This is a retry. Just return the last block if having locations.
           return onRetryBlock[0];
@@ -3163,22 +3163,22 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
       // commit the last block and complete it if it has minimum replicas
       commitOrCompleteLastBlock(pendingFile, fileState.iip,
-                                ExtendedBlock.getLocalBlock(previous));
+                                ExtendedBlock.getLocalBlock(previous));  // commit最后一个Block，如果达到最小副本数，则complete这个block
 
       // allocate new block, record block locations in INode.
-      newBlock = createNewBlock();
+      newBlock = createNewBlock(); // 创建block对象
       INodesInPath inodesInPath = INodesInPath.fromINode(pendingFile);
-      saveAllocatedBlock(src, inodesInPath, newBlock, targets);
+      saveAllocatedBlock(src, inodesInPath, newBlock, targets); // 把block添加到inode和blocksMap
 
-      persistNewBlock(src, pendingFile);
-      offset = pendingFile.computeFileSize();
+      persistNewBlock(src, pendingFile); // 记录edit log
+      offset = pendingFile.computeFileSize(); // 计算文件大小
     } finally {
       writeUnlock();
     }
     getEditLog().logSync();
 
     // Return located block
-    return makeLocatedBlock(newBlock, targets, offset);
+    return makeLocatedBlock(newBlock, targets, offset); // 封装为LocatedBlock对象
   }
 
   /*
@@ -3211,6 +3211,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     }
   }
 
+  // 分析client上报和NN记录的block信息(id和GS)是否相同
   FileState analyzeFileState(String src,
                                 long fileId,
                                 String clientName,
@@ -3219,21 +3220,21 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
           throws IOException  {
     assert hasReadLock();
 
-    checkBlock(previous);
+    checkBlock(previous); // 检查block是否合法
     onRetryBlock[0] = null;
     checkNameNodeSafeMode("Cannot add block to " + src);
 
     // have we exceeded the configured limit of fs objects.
-    checkFsObjectLimit();
+    checkFsObjectLimit(); // 检查元数据数量是否已达上限
 
-    Block previousBlock = ExtendedBlock.getLocalBlock(previous);
+    Block previousBlock = ExtendedBlock.getLocalBlock(previous); // client汇报的上一个block信息
     final INode inode;
     final INodesInPath iip;
     if (fileId == INodeId.GRANDFATHER_INODE_ID) {
       // Older clients may not have given us an inode ID to work with.
       // In this case, we have to try to resolve the path and hope it
       // hasn't changed or been deleted since the file was opened for write.
-      iip = dir.getINodesInPath4Write(src);
+      iip = dir.getINodesInPath4Write(src); // 没有fileId时，通过src解析出iip获取inode，主要是为了兼容老版client
       inode = iip.getLastINode();
     } else {
       // Newer clients pass the inode ID, so we can just get the inode
@@ -3244,9 +3245,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         src = iip.getPath();
       }
     }
-    final INodeFile pendingFile = checkLease(src, clientName, inode, fileId);
-    BlockInfoContiguous lastBlockInFile = pendingFile.getLastBlock();
-    if (!Block.matchingIdAndGenStamp(previousBlock, lastBlockInFile)) {
+    final INodeFile pendingFile = checkLease(src, clientName, inode, fileId); // 检查租约
+    BlockInfoContiguous lastBlockInFile = pendingFile.getLastBlock(); // NN中记录的上一个block信息
+    if (!Block.matchingIdAndGenStamp(previousBlock, lastBlockInFile)) { // client上报和NN记录的block信息(id和GS)是否相同
       // The block that the client claims is the current last block
       // doesn't match up with what we think is the last block. There are
       // four possibilities:
@@ -3277,14 +3278,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       if (previous == null &&
           lastBlockInFile != null &&
           lastBlockInFile.getNumBytes() >= pendingFile.getPreferredBlockSize() &&
-          lastBlockInFile.isComplete()) {
+          lastBlockInFile.isComplete()) { // client调用append()方法，而文件的最后一个block已经写满，所以需要申请一个新块
         // Case 1
         NameNode.stateChangeLog.debug(
             "BLOCK* NameSystem.allocateBlock: handling block allocation" +
             " writing to a file with a complete previous block: src={}" +
             " lastBlock={}", src, lastBlockInFile);
-      } else if (Block.matchingIdAndGenStamp(penultimateBlock, previousBlock)) {
-        if (lastBlockInFile.getNumBytes() != 0) {
+      } else if (Block.matchingIdAndGenStamp(penultimateBlock, previousBlock)) { // NN记录的倒数第二个block和client上一个block信息
+        if (lastBlockInFile.getNumBytes() != 0) {                                // 说明这个请求，是client发送的重试请求
           throw new IOException(
               "Request looked like a retry to allocate block " +
               lastBlockInFile + " but it already contains " +
@@ -3297,11 +3298,11 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
             "caught retry for allocation of a new block in " +
             src + ". Returning previously allocated block " + lastBlockInFile);
         long offset = pendingFile.computeFileSize();
-        onRetryBlock[0] = makeLocatedBlock(lastBlockInFile,
+        onRetryBlock[0] = makeLocatedBlock(lastBlockInFile, // 将上一个block保存到onRetryBlock中，返回给client
             ((BlockInfoContiguousUnderConstruction)lastBlockInFile).getExpectedStorageLocations(),
             offset);
         return new FileState(pendingFile, src, iip);
-      } else {
+      } else { // NN和client汇报的block信息不匹配，抛异常
         // Case 3
         throw new IOException("Cannot allocate block in " + src + ": " +
             "passed 'previous' block " + previous + " does not match actual " +
@@ -3314,9 +3315,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   LocatedBlock makeLocatedBlock(Block blk, DatanodeStorageInfo[] locs,
                                         long offset) throws IOException {
     LocatedBlock lBlk = new LocatedBlock(
-        getExtendedBlock(blk), locs, offset, false);
+        getExtendedBlock(blk), locs, offset, false); // 封装为LocatedBlock对象
     getBlockManager().setBlockToken(
-        lBlk, BlockTokenSecretManager.AccessMode.WRITE);
+        lBlk, BlockTokenSecretManager.AccessMode.WRITE); // 设置block token
     return lBlk;
   }
 
@@ -3434,17 +3435,17 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   }
 
   private INodeFile checkLease(String src, String holder, INode inode,
-      long fileId) throws LeaseExpiredException, FileNotFoundException {
+      long fileId) throws LeaseExpiredException, FileNotFoundException { // 检查租约
     assert hasReadLock();
     final String ident = src + " (inode " + fileId + ")";
-    if (inode == null) {
+    if (inode == null) { // inode为空，抛异常
       Lease lease = leaseManager.getLease(holder);
       throw new LeaseExpiredException(
           "No lease on " + ident + ": File does not exist. "
           + (lease != null ? lease.toString()
               : "Holder " + holder + " does not have any open files."));
     }
-    if (!inode.isFile()) {
+    if (!inode.isFile()) { // 不是文件，抛异常
       Lease lease = leaseManager.getLease(holder);
       throw new LeaseExpiredException(
           "No lease on " + ident + ": INode is not a regular file. "
@@ -3452,7 +3453,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
               : "Holder " + holder + " does not have any open files."));
     }
     final INodeFile file = inode.asFile();
-    if (!file.isUnderConstruction()) {
+    if (!file.isUnderConstruction()) { // 不是UC状态，抛异常
       Lease lease = leaseManager.getLease(holder);
       throw new LeaseExpiredException(
           "No lease on " + ident + ": File is not open for writing. "
@@ -3462,11 +3463,11 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     // No further modification is allowed on a deleted file.
     // A file is considered deleted, if it is not in the inodeMap or is marked
     // as deleted in the snapshot feature.
-    if (isFileDeleted(file)) {
+    if (isFileDeleted(file)) { // 文件被删除，抛异常
       throw new FileNotFoundException(src);
     }
     String clientName = file.getFileUnderConstructionFeature().getClientName();
-    if (holder != null && !clientName.equals(holder)) {
+    if (holder != null && !clientName.equals(holder)) { // clientName和lease holder不匹配，抛异常
       throw new LeaseExpiredException("Lease mismatch on " + ident +
           " owned by " + clientName + " but is accessed by " + holder);
     }
@@ -3520,7 +3521,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         // Older clients may not have given us an inode ID to work with.
         // In this case, we have to try to resolve the path and hope it
         // hasn't changed or been deleted since the file was opened for write.
-        iip = dir.getINodesInPath(src, true); // 没有fileId时，通过src解析出iip获取inode引用
+        iip = dir.getINodesInPath(src, true); // 没有fileId时，通过src解析出iip获取inode，主要是为了兼容老版client
         inode = iip.getLastINode();
       } else {
         inode = dir.getInode(fileId);
@@ -3582,7 +3583,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       Block newBlock, DatanodeStorageInfo[] targets)
           throws IOException {
     assert hasWriteLock();
-    BlockInfoContiguous b = dir.addBlock(src, inodesInPath, newBlock, targets);
+    BlockInfoContiguous b = dir.addBlock(src, inodesInPath, newBlock, targets); // 把block添加到inode和blocksMap
     NameNode.stateChangeLog.info("BLOCK* allocate " + b + " for " + src);
     DatanodeStorageInfo.incrementBlocksScheduled(targets);
     return b;
@@ -3591,7 +3592,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   /**
    * Create new block with a unique block id and a new generation stamp.
    */
-  Block createNewBlock() throws IOException {
+  Block createNewBlock() throws IOException { // 创建block对象
     assert hasWriteLock();
     Block b = new Block(nextBlockId(), 0, 0);
     // Increment the generation stamp for every new block.
@@ -4185,7 +4186,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       final INodesInPath iip, final Block commitBlock) throws IOException {
     assert hasWriteLock();
     Preconditions.checkArgument(fileINode.isUnderConstruction());
-    if (!blockManager.commitOrCompleteLastBlock(fileINode, commitBlock)) { // commit一个Block，如果达到最小副本数，则complete这个block
+    if (!blockManager.commitOrCompleteLastBlock(fileINode, commitBlock)) { // commit最后一个Block，如果达到最小副本数，则complete这个block
       return;
     }
 

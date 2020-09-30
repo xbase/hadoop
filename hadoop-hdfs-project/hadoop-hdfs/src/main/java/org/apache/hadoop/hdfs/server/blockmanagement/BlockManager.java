@@ -1559,12 +1559,12 @@ public class BlockManager {
       final List<String> favoredNodes,
       final byte storagePolicyID) throws IOException {
     List<DatanodeDescriptor> favoredDatanodeDescriptors = 
-        getDatanodeDescriptors(favoredNodes);
+        getDatanodeDescriptors(favoredNodes); // hostname转为DN描述符
     final BlockStoragePolicy storagePolicy = storagePolicySuite.getPolicy(storagePolicyID);
-    final DatanodeStorageInfo[] targets = blockplacement.chooseTarget(src,
+    final DatanodeStorageInfo[] targets = blockplacement.chooseTarget(src, // 选择副本存储位置
         numOfReplicas, client, excludedNodes, blocksize, 
         favoredDatanodeDescriptors, storagePolicy);
-    if (targets.length < minReplication) {
+    if (targets.length < minReplication) { // 选不出足够的DN，抛异常
       throw new IOException("File " + src + " could only be replicated to "
           + targets.length + " nodes instead of minReplication (="
           + minReplication + ").  There are "
@@ -1580,7 +1580,7 @@ public class BlockManager {
    * Get list of datanode descriptors for given list of nodes. Nodes are
    * hostaddress:port or just hostaddress.
    */
-  List<DatanodeDescriptor> getDatanodeDescriptors(List<String> nodes) {
+  List<DatanodeDescriptor> getDatanodeDescriptors(List<String> nodes) { // hostname转为DN描述符
     List<DatanodeDescriptor> datanodeDescriptors = null;
     if (nodes != null) {
       datanodeDescriptors = new ArrayList<DatanodeDescriptor>(nodes.size());
