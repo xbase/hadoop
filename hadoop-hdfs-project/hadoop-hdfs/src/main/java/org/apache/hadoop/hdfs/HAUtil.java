@@ -73,7 +73,7 @@ public class HAUtil {
    * @param nsId nameservice, or null if no federated NS is configured
    * @return true if HA is configured in the configuration; else false.
    */
-  public static boolean isHAEnabled(Configuration conf, String nsId) {
+  public static boolean isHAEnabled(Configuration conf, String nsId) { // 指定nsId，是否配置了HA
     Map<String, Map<String, InetSocketAddress>> addresses =
       DFSUtil.getHaNnRpcAddresses(conf);
     if (addresses == null) return false;

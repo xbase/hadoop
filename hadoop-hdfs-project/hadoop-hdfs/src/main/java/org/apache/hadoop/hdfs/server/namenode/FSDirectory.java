@@ -494,7 +494,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
           fileINode.getBlockReplication(), true); // 检查并更新quota
 
       // associate new last block for the file
-      BlockInfoContiguousUnderConstruction blockInfo =
+      BlockInfoContiguousUnderConstruction blockInfo = // UC状态的block
         new BlockInfoContiguousUnderConstruction(
             block,
             fileINode.getFileReplication(),

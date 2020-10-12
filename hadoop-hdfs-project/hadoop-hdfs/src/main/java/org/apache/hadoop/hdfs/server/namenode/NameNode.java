@@ -661,7 +661,7 @@ public class NameNode implements NameNodeStatusMXBean {
     pauseMonitor.start();
     metrics.getJvmMetrics().setPauseMonitor(pauseMonitor);
     
-    startCommonServices(conf);
+    startCommonServices(conf); // 加载完image和edit，再启动各种服务
   }
   
   /**

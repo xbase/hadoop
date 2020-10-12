@@ -5132,16 +5132,16 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     private final double replQueueThreshold;
     // internal fields
     /** Time when threshold was reached.
-     * <br> -1 safe mode is off
-     * <br> 0 safe mode is on, and threshold is not reached yet
-     * <br> >0 safe mode is on, but we are in extension period 
+     * <br> -1 safe mode is off 已经退出安全模式
+     * <br> 0 safe mode is on, and threshold is not reached yet 还没达到退出阈值
+     * <br> >0 safe mode is on, but we are in extension period 达到退出阈值，但还没达到extension时间
      */
-    private long reached = -1;  
+    private long reached = -1; // 记录安全模式状态
     private long reachedTimestamp = -1;
     /** Total number of blocks. */
-    int blockTotal; 
+    int blockTotal; // block总量
     /** Number of safe blocks. */
-    int blockSafe;
+    int blockSafe; // 已经满足最小副本数的block数量
     /** Number of blocks needed to satisfy safe mode threshold condition */
     private int blockThreshold;
     /** Number of blocks needed before populating replication queues */
@@ -5211,6 +5211,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
      * 
      * @see SafeModeInfo
      */
+    // 通过命令行或者DN空间不足，而进入安全模式
     private SafeModeInfo(boolean resourcesLow) {
       this.threshold = 1.5f;  // this threshold can never be reached
       this.datanodeThreshold = Integer.MAX_VALUE;
@@ -5236,7 +5237,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     /**
      * Enter safe mode.
      */
-    private void enter() {
+    private void enter() { // 进入安全模式
       this.reached = 0;
       this.reachedTimestamp = 0;
     }
@@ -5246,7 +5247,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
      * <p>
      * Check for invalid, under- & over-replicated blocks in the end of startup.
      */
-    private synchronized void leave() {
+    private synchronized void leave() { // 退出安全模式
       // if not done yet, initialize replication queues.
       // In the standby, do not populate repl queues
       if (!isPopulatingReplQueues() && shouldPopulateReplQueues()) {
@@ -5261,9 +5262,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       if (reached >= 0) {
         NameNode.stateChangeLog.info("STATE* Safe mode is OFF"); 
       }
-      reached = -1;
+      reached = -1; // 离开安全模式
       reachedTimestamp = -1;
-      safeMode = null;
+      safeMode = null; // 设置SafeModeInfo对象为null
       final NetworkTopology nt = blockManager.getDatanodeManager().getNetworkTopology();
       NameNode.stateChangeLog.info("STATE* Network topology has "
           + nt.getNumOfRacks() + " racks and "
@@ -5301,7 +5302,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         return false;
       }
 
-      if (monotonicNow() - reached < extension) {
+      if (monotonicNow() - reached < extension) { //extension时间没到
         reportStatus("STATE* Safe mode ON, in safe mode extension.", false);
         return false;
       }
@@ -5318,7 +5319,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
      * There is no need to enter safe mode 
      * if DFS is empty or {@link #threshold} == 0
      */
-    private boolean needEnter() {
+    private boolean needEnter() { // 检查block和DN数量是否达到阈值
       return (threshold != 0 && blockSafe < blockThreshold) ||
         (datanodeThreshold != 0 && getNumLiveDataNodes() < datanodeThreshold) ||
         (!nameNodeHasResourcesAvailable());
@@ -5327,7 +5328,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     /**
      * Check and trigger safe mode if needed. 
      */
-    private void checkMode() {
+    private void checkMode() { // 检查阈值和extension时间，是否满足退出条件
       // Have to have write-lock since leaving safemode initializes
       // repl queues, which requires write lock
       assert hasWriteLock();
@@ -5336,28 +5337,28 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       }
       // if smmthread is already running, the block threshold must have been 
       // reached before, there is no need to enter the safe mode again
-      if (smmthread == null && needEnter()) {
+      if (smmthread == null && needEnter()) { // 检查block和DN数量是否达到阈值
         enter();
         // check if we are ready to initialize replication queues
         if (canInitializeReplQueues() && !isPopulatingReplQueues()
-            && !haEnabled) {
-          initializeReplQueues();
+            && !haEnabled) { // active相关
+          initializeReplQueues(); // 初始化复制和删除队列
         }
         reportStatus("STATE* Safe mode ON.", false);
         return;
       }
       // the threshold is reached or was reached before
-      if (!isOn() ||                           // safe mode is off
+      if (!isOn() ||                           // safe mode is off 已经关闭了安全模式
           extension <= 0 || threshold <= 0) {  // don't need to wait
         this.leave(); // leave safe mode
         return;
       }
-      if (reached > 0) {  // threshold has already been reached before
+      if (reached > 0) {  // threshold has already been reached before 说明已经进入extension阶段
         reportStatus("STATE* Safe mode ON.", false);
         return;
       }
       // start monitor
-      reached = monotonicNow();
+      reached = monotonicNow(); // 说明已经达到了阈值，进入extension阶段
       reachedTimestamp = now();
       if (smmthread == null) {
         smmthread = new Daemon(new SafeModeMonitor());
@@ -5374,12 +5375,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     /**
      * Set total number of blocks.
      */
+    // 第一种情况：当加载完image和edit，通过 blocksMap.size()-ucBlocks 设置blockTotal字段
+    // 第二中情况：
     private synchronized void setBlockTotal(int total) {
       this.blockTotal = total;
       this.blockThreshold = (int) (blockTotal * threshold);
       this.blockReplQueueThreshold = 
         (int) (blockTotal * replQueueThreshold);
-      if (haEnabled) {
+      if (haEnabled) { // HA模式，当通过image和edit初始过blockTotal后，还应该继续维护blockTotal字段
         // After we initialize the block count, any further namespace
         // modifications done while in safe mode need to keep track
         // of the number of total blocks in the system.
@@ -5395,8 +5398,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
      * reached minimal replication.
      * @param replication current replication 
      */
+    // 安全模式，块汇报(全量和增量)时维护blockSafe字段
     private synchronized void incrementSafeBlockCount(short replication) {
-      if (replication == safeReplication) {
+      if (replication == safeReplication) { // 达到了最低副本数，则增加blockSafe字段
         this.blockSafe++;
 
         // Report startup progress only if we haven't completed startup yet.
@@ -5418,8 +5422,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
      * fallen below minimal replication.
      * @param replication current replication 
      */
+    // 安全模式，块汇报(全量和增量)时维护blockSafe字段
     private synchronized void decrementSafeBlockCount(short replication) {
-      if (replication == safeReplication-1) {
+      if (replication == safeReplication-1) { // 低于最低副本数，则减小blockSafe字段
         this.blockSafe--;
         //blockSafe is set to -1 in manual / low resources safemode
         assert blockSafe >= 0 || isManual() || areResourcesLow();
@@ -5543,14 +5548,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     private void doConsistencyCheck() {
       boolean assertsOn = false;
       assert assertsOn = true; // set to true if asserts are on
-      if (!assertsOn) return;
+      if (!assertsOn) return; // 断言没开，直接返回
       
-      if (blockTotal == -1 && blockSafe == -1) {
+      if (blockTotal == -1 && blockSafe == -1) { // 手动进入安全模式
         return; // manual safe mode
       }
-      int activeBlocks = blockManager.getActiveBlockCount();
+      int activeBlocks = blockManager.getActiveBlockCount(); // 当前实际拥有的block数量
       if ((blockTotal != activeBlocks) &&
-          !(blockSafe >= 0 && blockSafe <= blockTotal)) {
+          !(blockSafe >= 0 && blockSafe <= blockTotal)) { // blockSafe > blockTotal 正常情况，不应该出现
         throw new AssertionError(
             " SafeMode: Inconsistent filesystem state: "
         + "SafeMode data: blockTotal=" + blockTotal
@@ -5575,8 +5580,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       assert blockTotal + deltaTotal >= 0 : "Can't reduce blockTotal " +
         blockTotal + " by " + deltaTotal + ": would be negative";
       
-      blockSafe += deltaSafe;
-      setBlockTotal(blockTotal + deltaTotal);
+      blockSafe += deltaSafe; // 维护blockSafe
+      setBlockTotal(blockTotal + deltaTotal); // 维护blockTotal
     }
   }
     
@@ -5716,7 +5721,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * @param deltaTotal the change i nnumber of total blocks expected
    */
   @Override
-  public void adjustSafeModeBlockTotals(int deltaSafe, int deltaTotal) {
+  public void adjustSafeModeBlockTotals(int deltaSafe, int deltaTotal) { // 增量维护blockSafe和blockTotal
     // safeMode is volatile, and may be set to null at any time
     SafeModeInfo safeMode = this.safeMode;
     if (safeMode == null)
@@ -5727,7 +5732,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   /**
    * Set the total number of blocks in the system. 
    */
-  public void setBlockTotal() {
+  public void setBlockTotal() { // 当加载完image和edit，通过 blocksMap.size()-ucBlocks 设置blockTotal字段
     // safeMode is volatile, and may be set to null at any time
     SafeModeInfo safeMode = this.safeMode;
     if (safeMode == null)

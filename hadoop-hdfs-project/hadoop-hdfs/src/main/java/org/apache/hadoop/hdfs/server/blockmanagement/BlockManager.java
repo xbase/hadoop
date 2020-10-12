@@ -673,7 +673,7 @@ public class BlockManager {
     // count. (We may not have the minimum replica count yet if this is
     // a "forced" completion when a file is getting closed by an
     // OP_CLOSE edit on the standby).
-    namesystem.adjustSafeModeBlockTotals(0, 1); // TODOWXY: 安全模式相关
+    namesystem.adjustSafeModeBlockTotals(0, 1); // 安全模式相关
     namesystem.incrementSafeBlockCount(
         Math.min(numNodes, minReplication));
     
@@ -745,7 +745,7 @@ public class BlockManager {
     
     // Adjust safe-mode totals, since under-construction blocks don't
     // count in safe-mode.
-    namesystem.adjustSafeModeBlockTotals(
+    namesystem.adjustSafeModeBlockTotals( // UC状态的block，不计入blockSafe和blockTotal
         // decrement safe if we had enough
         targets.length >= minReplication ? -1 : 0,
         // always decrement total blocks
@@ -2605,7 +2605,7 @@ public class BlockManager {
       // Is no-op if not in safe mode.
       // In the case that the block just became complete above, completeBlock()
       // handles the safe block count maintenance.
-      namesystem.incrementSafeBlockCount(numCurrentReplica); // TODOWXY: 安全模式相关
+      namesystem.incrementSafeBlockCount(numCurrentReplica); // 安全模式相关：维护blockSafe字段
     }
     
     // if file is under construction, then done for now
@@ -3099,7 +3099,7 @@ public class BlockManager {
       //
       BlockCollection bc = blocksMap.getBlockCollection(block);
       if (bc != null) {
-        namesystem.decrementSafeBlockCount(block); // 维护安全模式
+        namesystem.decrementSafeBlockCount(block); // 安全模式：维护blockSafe字段
         updateNeededReplications(block, -1, 0); // 更新少副本集合
       }
 
