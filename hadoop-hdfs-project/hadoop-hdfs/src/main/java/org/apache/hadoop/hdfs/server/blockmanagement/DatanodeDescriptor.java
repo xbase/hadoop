@@ -340,7 +340,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
    * data-node from the block.
    */
   boolean removeBlock(BlockInfoContiguous b) {
-    final DatanodeStorageInfo s = b.findStorageInfo(this);
+    final DatanodeStorageInfo s = b.findStorageInfo(this); // block所在DN目录
     // if block exists on this datanode
     if (s != null) {
       return s.removeBlock(b);

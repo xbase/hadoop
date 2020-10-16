@@ -121,12 +121,12 @@ class BlocksMap {
    * and remove all data-node locations associated with the block.
    */
   void removeBlock(Block block) {
-    BlockInfoContiguous blockInfo = blocks.remove(block);
+    BlockInfoContiguous blockInfo = blocks.remove(block); // 从blocksMap中删除
     if (blockInfo == null)
       return;
 
     blockInfo.setBlockCollection(null);
-    for(int idx = blockInfo.numNodes()-1; idx >= 0; idx--) {
+    for(int idx = blockInfo.numNodes()-1; idx >= 0; idx--) { // 删除所有副本
       DatanodeDescriptor dn = blockInfo.getDatanode(idx);
       dn.removeBlock(blockInfo); // remove from the list and wipe the location
     }

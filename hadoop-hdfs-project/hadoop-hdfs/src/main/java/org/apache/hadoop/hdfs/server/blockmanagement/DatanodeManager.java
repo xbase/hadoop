@@ -1209,7 +1209,7 @@ public class DatanodeManager {
         LOG.debug(message);
       }
       hasClusterEverBeenMultiRack = true;
-      if (namesystem.isPopulatingReplQueues()) {
+      if (namesystem.isPopulatingReplQueues()) { // 如果Active初始化过replication queue，则再次初始化
         blockManager.processMisReplicatedBlocks();
       }
     }
@@ -1353,7 +1353,7 @@ public class DatanodeManager {
       long cacheCapacity, long cacheUsed, int xceiverCount, 
       int maxTransfers, int failedVolumes,
       VolumeFailureSummary volumeFailureSummary) throws IOException {
-    synchronized (heartbeatManager) {
+    synchronized (heartbeatManager) { // 这两个锁的意义？已经移除，参照：https://issues.apache.org/jira/browse/HDFS-9371
       synchronized (datanodeMap) {
         // step 1: 判断此DN是否注册过，是否允许连接NN
         DatanodeDescriptor nodeinfo = null;

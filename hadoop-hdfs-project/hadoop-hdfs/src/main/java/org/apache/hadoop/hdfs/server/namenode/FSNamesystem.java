@@ -678,7 +678,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
     long loadStart = monotonicNow();
     try {
-      namesystem.loadFSImage(startOpt);
+      namesystem.loadFSImage(startOpt); // 加载image和edit（加载到，当前JN最新的edit）
     } catch (IOException ioe) {
       LOG.warn("Encountered exception loading fsimage", ioe);
       fsImage.close();
@@ -750,7 +750,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       // block allocation has to be persisted in HA using a shared edits directory
       // so that the standby has up-to-date namespace information
       nameserviceId = DFSUtil.getNamenodeNameServiceId(conf);
-      this.haEnabled = HAUtil.isHAEnabled(conf, nameserviceId);  
+      this.haEnabled = HAUtil.isHAEnabled(conf, nameserviceId); // 此NN是否配置了HA
       
       // Sanity check the HA-related config.
       if (nameserviceId != null) {
@@ -1056,14 +1056,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     this.haContext = haContext;
     try {
       nnResourceChecker = new NameNodeResourceChecker(conf);
-      checkAvailableResources();
-      assert safeMode != null && !isPopulatingReplQueues();
+      checkAvailableResources(); // 检查NN磁盘空间是否充足
+      assert safeMode != null && !isPopulatingReplQueues(); // 当前还没开始块汇报
       StartupProgress prog = NameNode.getStartupProgress();
       prog.beginPhase(Phase.SAFEMODE);
       prog.setTotal(Phase.SAFEMODE, STEP_AWAITING_REPORTED_BLOCKS,
         getCompleteBlocksTotal());
-      setBlockTotal();
-      blockManager.activate(conf);
+      setBlockTotal(); // 加载完image和edit，设置blockTotal字段
+      blockManager.activate(conf); // 启动BlockManager相关线程
     } finally {
       writeUnlock();
     }
@@ -1121,6 +1121,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         blockManager.processAllPendingDNMessages();
 
         // Only need to re-process the queue, If not in SafeMode.
+        // 退出安全模式时，已经初始化了一次，这里再初始化一次，为什么？
+        // 因为Standby转为Active时，可能退出安全模式已经很长时间了
         if (!isInSafeMode()) {
           LOG.info("Reprocessing replication and invalidation queues");
           initializeReplQueues();
@@ -1262,10 +1264,10 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     // Disable quota checks while in standby.
     dir.disableQuotaChecks();
     editLogTailer = new EditLogTailer(this, conf);
-    editLogTailer.start();
+    editLogTailer.start(); // 启动消费edit线程
     if (standbyShouldCheckpoint) {
       standbyCheckpointer = new StandbyCheckpointer(conf, this);
-      standbyCheckpointer.start();
+      standbyCheckpointer.start(); // 启动check point线程
     }
   }
 
@@ -1802,11 +1804,11 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     if (checkSafeMode && isInSafeMode()) {
       for (LocatedBlock b : ret.blocks.getLocatedBlocks()) {
         // if safemode & no block locations yet then throw safemodeException
-        if ((b.getLocations() == null) || (b.getLocations().length == 0)) {
+        if ((b.getLocations() == null) || (b.getLocations().length == 0)) { // 安全模式内，还没获取到block location
           SafeModeException se = new SafeModeException(
               "Zero blocklocations for " + src, safeMode);
           if (haEnabled && haContext != null &&
-              haContext.getState().getServiceState() == HAServiceState.ACTIVE) {
+              haContext.getState().getServiceState() == HAServiceState.ACTIVE) { // active抛RetriableException
             throw new RetriableException(se);
           } else {
             throw se;
@@ -3120,7 +3122,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     // choose targets for the new block to be allocated.
     return getBlockManager().chooseTarget4NewBlock( 
         src, replication, clientNode, excludedNodes, blockSize, favoredNodes,
-        storagePolicyID); // 选择副本存储位置
+        storagePolicyID); // 选择副本存储位置，并没有获取fsLock？
   }
 
   /**
@@ -3491,7 +3493,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     checkOperation(OperationCategory.WRITE);
     byte[][] pathComponents = FSDirectory.getPathComponentsForReservedPath(src);
     FSPermissionChecker pc = getPermissionChecker();
-    waitForLoadingFSImage();
+    waitForLoadingFSImage(); // checkNNStartup()已经代表image加载完成了，再判断的意义是什么？
     writeLock();
     try {
       checkOperation(OperationCategory.WRITE);
@@ -3725,7 +3727,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       checkOperation(OperationCategory.WRITE);
       checkNameNodeSafeMode("Cannot delete " + src);
       toRemovedBlocks = FSDirDeleteOp.delete(
-          this, src, recursive, logRetryCache);
+          this, src, recursive, logRetryCache); // Step 1: 删除inode
       ret = toRemovedBlocks != null;
     } catch (AccessControlException e) {
       logAuditEvent(false, "delete", src);
@@ -3734,7 +3736,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       writeUnlock();
     }
     getEditLog().logSync();
-    if (toRemovedBlocks != null) {
+    if (toRemovedBlocks != null) { // Step 2: 删除block
       removeBlocks(toRemovedBlocks); // Incremental deletion of blocks
     }
     logAuditEvent(true, "delete", src);
@@ -3759,10 +3761,10 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     List<Block> toDeleteList = blocks.getToDeleteList();
     Iterator<Block> iter = toDeleteList.iterator();
     while (iter.hasNext()) {
-      writeLock();
+      writeLock(); // 这个写锁粒度，是不是太细了
       try {
         for (int i = 0; i < BLOCK_DELETION_INCREMENT && iter.hasNext(); i++) {
-          blockManager.removeBlock(iter.next());
+          blockManager.removeBlock(iter.next()); // block一个一个删除
         }
       } finally {
         writeUnlock();
@@ -3780,14 +3782,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   void removeLeasesAndINodes(String src, List<INode> removedINodes,
       final boolean acquireINodeMapLock) {
     assert hasWriteLock();
-    leaseManager.removeLeaseWithPrefixPath(src);
+    leaseManager.removeLeaseWithPrefixPath(src); // 删除租约
     // remove inodes from inodesMap
     if (removedINodes != null) {
       if (acquireINodeMapLock) {
         dir.writeLock();
       }
       try {
-        dir.removeFromInodeMap(removedINodes);
+        dir.removeFromInodeMap(removedINodes); // 删除inode
       } finally {
         if (acquireINodeMapLock) {
           dir.writeUnlock();
@@ -5183,7 +5185,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       LOG.info(DFS_NAMENODE_SAFEMODE_EXTENSION_KEY + "     = " + extension);
 
       // default to safe mode threshold (i.e., don't populate queues before leaving safe mode)
-      this.replQueueThreshold = 
+      this.replQueueThreshold =  // 默认和block threshold一样
         conf.getFloat(DFS_NAMENODE_REPL_QUEUE_THRESHOLD_PCT_KEY,
                       (float) threshold);
       this.blockTotal = 0; 
@@ -5250,7 +5252,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     private synchronized void leave() { // 退出安全模式
       // if not done yet, initialize replication queues.
       // In the standby, do not populate repl queues
-      if (!isPopulatingReplQueues() && shouldPopulateReplQueues()) {
+      if (!isPopulatingReplQueues() && shouldPopulateReplQueues()) { // 如果active还没有初始化replication queues，则初始化
         initializeReplQueues();
       }
       long timeInSafemode = now() - startTime;
@@ -5288,7 +5290,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
      */
     private synchronized boolean canInitializeReplQueues() {
       return shouldPopulateReplQueues()
-          && blockSafe >= blockReplQueueThreshold;
+          && blockSafe >= blockReplQueueThreshold; // 是否达到block threshold
     }
       
     /** 
@@ -5341,7 +5343,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         enter();
         // check if we are ready to initialize replication queues
         if (canInitializeReplQueues() && !isPopulatingReplQueues()
-            && !haEnabled) { // active相关
+            && !haEnabled) { // 判断active是否满足初始化复制和删除队列条件，并且没有配置HA
           initializeReplQueues(); // 初始化复制和删除队列
         }
         reportStatus("STATE* Safe mode ON.", false);
@@ -5376,12 +5378,12 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
      * Set total number of blocks.
      */
     // 第一种情况：当加载完image和edit，通过 blocksMap.size()-ucBlocks 设置blockTotal字段
-    // 第二中情况：
+    // 第二种情况：安全模式内，回放edit和块汇报
     private synchronized void setBlockTotal(int total) {
       this.blockTotal = total;
-      this.blockThreshold = (int) (blockTotal * threshold);
+      this.blockThreshold = (int) (blockTotal * threshold); // block threshold 数量
       this.blockReplQueueThreshold = 
-        (int) (blockTotal * replQueueThreshold);
+        (int) (blockTotal * replQueueThreshold); // 默认和block threshold一样
       if (haEnabled) { // HA模式，当通过image和edit初始过blockTotal后，还应该继续维护blockTotal字段
         // After we initialize the block count, any further namespace
         // modifications done while in safe mode need to keep track
@@ -5678,16 +5680,20 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   /**
    * Check if replication queues are to be populated
    * @return true when node is HAState.Active and not in the very first safemode
+   *
+   * 返回true有两种情况：
+   * 1、离开安全模式后
+   * 2、切换为Active后
    */
   @Override
   public boolean isPopulatingReplQueues() {
     if (!shouldPopulateReplQueues()) {
       return false;
     }
-    return initializedReplQueues;
+    return initializedReplQueues; // 是否已经初始化过了
   }
 
-  private boolean shouldPopulateReplQueues() {
+  private boolean shouldPopulateReplQueues() { // active NN 才返回 true
     if(haContext == null || haContext.getState() == null)
       return false;
     return haContext.getState().shouldPopulateReplQueues();

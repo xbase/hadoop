@@ -41,20 +41,12 @@ import org.apache.hadoop.HadoopIllegalArgumentException;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.StorageType;
-import org.apache.hadoop.hdfs.protocol.BlockStoragePolicy;
+import org.apache.hadoop.hdfs.protocol.*;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DFSUtil;
 import org.apache.hadoop.hdfs.HAUtil;
-import org.apache.hadoop.hdfs.protocol.Block;
-import org.apache.hadoop.hdfs.protocol.BlockListAsLongs;
 import org.apache.hadoop.hdfs.protocol.BlockListAsLongs.BlockReportReplica;
-import org.apache.hadoop.hdfs.protocol.DatanodeID;
-import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
-import org.apache.hadoop.hdfs.protocol.ExtendedBlock;
 import org.apache.hadoop.fs.FileEncryptionInfo;
-import org.apache.hadoop.hdfs.protocol.LocatedBlock;
-import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
-import org.apache.hadoop.hdfs.protocol.UnregisteredNodeException;
 import org.apache.hadoop.hdfs.security.token.block.BlockTokenSecretManager;
 import org.apache.hadoop.hdfs.security.token.block.BlockTokenSecretManager.AccessMode;
 import org.apache.hadoop.hdfs.security.token.block.DataEncryptionKey;
@@ -1098,7 +1090,7 @@ public class BlockManager {
    * Adds block to list of blocks which will be invalidated on all its
    * datanodes.
    */
-  private void addToInvalidates(Block b) {
+  private void addToInvalidates(Block b) { // 添加到invalidate队列
     if (!namesystem.isPopulatingReplQueues()) {
       return;
     }
@@ -2706,10 +2698,21 @@ public class BlockManager {
   /**
    * For each block in the name-node verify whether it belongs to any file,
    * over or under replicated. Place it into the respective queue.
+   *
+   * 三种情况，会调用此方法：
+   * 1、离开安全模式
+   * 2、切换为Active
+   * 3、第一次有多机架的时候
+   *
+   * 异步扫描所有的block，扫描一遍线程就退出
+   *
+   * 无效block，加入invalidateBlocks队列
+   * 低于预期副本数的block，加入neededReplications队列
+   * 超过预期副本数的block，调用processOverReplicatedBlock()处理
    */
   public void processMisReplicatedBlocks() {
     assert namesystem.hasWriteLock();
-    stopReplicationInitializer();
+    stopReplicationInitializer(); // 先停止
     neededReplications.clear();
     replicationQueuesInitializer = new Daemon() {
 
@@ -2725,7 +2728,7 @@ public class BlockManager {
       }
     };
     replicationQueuesInitializer.setName("Replication Queue Initializer");
-    replicationQueuesInitializer.start();
+    replicationQueuesInitializer.start(); // 再启动
   }
 
   /*
@@ -2758,39 +2761,40 @@ public class BlockManager {
     long startTimeMisReplicatedScan = Time.monotonicNow();
     Iterator<BlockInfoContiguous> blocksItr = blocksMap.getBlocks().iterator();
     long totalBlocks = blocksMap.size();
-    replicationQueuesInitProgress = 0;
+    replicationQueuesInitProgress = 0; // 整体进度
     long totalProcessed = 0;
     long sleepDuration =
-        Math.max(1, Math.min(numBlocksPerIteration/1000, 10000));
+        Math.max(1, Math.min(numBlocksPerIteration/1000, 10000)); // 10ms
 
+    // 扫描所有的block
     while (namesystem.isRunning() && !Thread.currentThread().isInterrupted()) {
       int processed = 0;
       namesystem.writeLockInterruptibly();
       try {
-        while (processed < numBlocksPerIteration && blocksItr.hasNext()) {
+        while (processed < numBlocksPerIteration && blocksItr.hasNext()) { // 每次持锁，最多处理10000个block
           BlockInfoContiguous block = blocksItr.next();
           MisReplicationResult res = processMisReplicatedBlock(block);
           if (LOG.isTraceEnabled()) {
             LOG.trace("block " + block + ": " + res);
           }
           switch (res) {
-          case UNDER_REPLICATED:
+          case UNDER_REPLICATED: // 低于预期副本数
             nrUnderReplicated++;
             break;
-          case OVER_REPLICATED:
+          case OVER_REPLICATED: // 高于预期副本数
             nrOverReplicated++;
             break;
-          case INVALID:
+          case INVALID: // 无效
             nrInvalid++;
             break;
-          case POSTPONE:
+          case POSTPONE: // 推迟
             nrPostponed++;
             postponeBlock(block);
             break;
-          case UNDER_CONSTRUCTION:
+          case UNDER_CONSTRUCTION: // 正在构建
             nrUnderConstruction++;
             break;
-          case OK:
+          case OK: // 正常
             break;
           default:
             throw new AssertionError("Invalid enum value: " + res);
@@ -2801,9 +2805,9 @@ public class BlockManager {
         // there is a possibility that if any of the blocks deleted/added during
         // initialisation, then progress might be different.
         replicationQueuesInitProgress = Math.min((double) totalProcessed
-            / totalBlocks, 1.0);
+            / totalBlocks, 1.0); // 整体进度
 
-        if (!blocksItr.hasNext()) {
+        if (!blocksItr.hasNext()) { // blocksMap中所有的block都处理完了
           LOG.info("Total number of blocks            = " + blocksMap.size());
           LOG.info("Number of invalid blocks          = " + nrInvalid);
           LOG.info("Number of under-replicated blocks = " + nrUnderReplicated);
@@ -2821,7 +2825,7 @@ public class BlockManager {
       } finally {
         namesystem.writeUnlock();
         // Make sure it is out of the write lock for sufficiently long time.
-        Thread.sleep(sleepDuration);
+        Thread.sleep(sleepDuration); // sleep 10ms
       }
     }
     if (Thread.currentThread().isInterrupted()) {
@@ -2842,33 +2846,37 @@ public class BlockManager {
    * Process a single possibly misreplicated block. This adds it to the
    * appropriate queues if necessary, and returns a result code indicating
    * what happened with it.
+   *
+   * 无效block，加入invalidateBlocks队列
+   * 低于预期副本数的block，加入neededReplications队列
+   * 超过预期副本数的block，调用processOverReplicatedBlock()处理
    */
   private MisReplicationResult processMisReplicatedBlock(BlockInfoContiguous block) {
     BlockCollection bc = block.getBlockCollection();
     if (bc == null) {
       // block does not belong to any file
-      addToInvalidates(block);
+      addToInvalidates(block); // 不属于任何inode，无效block
       return MisReplicationResult.INVALID;
     }
     if (!block.isComplete()) {
       // Incomplete blocks are never considered mis-replicated --
       // they'll be reached when they are completed or recovered.
-      return MisReplicationResult.UNDER_CONSTRUCTION;
+      return MisReplicationResult.UNDER_CONSTRUCTION; // 正在构建
     }
     // calculate current replication
     short expectedReplication = bc.getBlockReplication();
     NumberReplicas num = countNodes(block);
     int numCurrentReplica = num.liveReplicas();
     // add to under-replicated queue if need to be
-    if (isNeededReplication(block, expectedReplication, numCurrentReplica)) {
+    if (isNeededReplication(block, expectedReplication, numCurrentReplica)) { // 低于预期副本数
       if (neededReplications.add(block, numCurrentReplica, num
           .decommissionedReplicas(), expectedReplication)) {
         return MisReplicationResult.UNDER_REPLICATED;
       }
     }
 
-    if (numCurrentReplica > expectedReplication) {
-      if (num.replicasOnStaleNodes() > 0) {
+    if (numCurrentReplica > expectedReplication) { // 多余预期副本数
+      if (num.replicasOnStaleNodes() > 0) { // stale DN节点上的副本
         // If any of the replicas of this block are on nodes that are
         // considered "stale", then these replicas may in fact have
         // already been deleted. So, we cannot safely act on the
@@ -3426,16 +3434,16 @@ public class BlockManager {
     return blocksMap.size();
   }
 
-  public void removeBlock(Block block) {
+  public void removeBlock(Block block) { // 内存中删除block
     assert namesystem.hasWriteLock();
     // No need to ACK blocks that are being removed entirely
     // from the namespace, since the removal of the associated
     // file already removes them from the block map below.
     block.setNumBytes(BlockCommand.NO_ACK);
-    addToInvalidates(block);
-    removeBlockFromMap(block);
+    addToInvalidates(block); // 添加到invalidate队列
+    removeBlockFromMap(block); // 内存中删除block
     // Remove the block from pendingReplications and neededReplications
-    pendingReplications.remove(block);
+    pendingReplications.remove(block); // 从复制队列中删除
     neededReplications.remove(block, UnderReplicatedBlocks.LEVEL);
     if (postponedMisreplicatedBlocks.remove(block)) {
       postponedMisreplicatedBlocksCount.decrementAndGet();
@@ -3610,9 +3618,9 @@ public class BlockManager {
 
   public void removeBlockFromMap(Block block) {
     removeFromExcessReplicateMap(block);
-    blocksMap.removeBlock(block);
+    blocksMap.removeBlock(block); // 内存中删除block
     // If block is removed from blocksMap remove it from corruptReplicasMap
-    corruptReplicas.removeFromCorruptReplicasMap(block);
+    corruptReplicas.removeFromCorruptReplicasMap(block); // 从corrupt队列中删除
   }
 
   /**
@@ -3720,12 +3728,105 @@ public class BlockManager {
     }
   }
 
+  /** How often to check and the limit for the storageinfo efficiency. */
+  private final long storageInfoDefragmentInterval = 0;
+  private final long storageInfoDefragmentTimeout = 0;
+  private final double storageInfoDefragmentRatio = 0;
+
+  /**
+   * Runnable that monitors the fragmentation of the StorageInfo TreeSet and
+   * compacts it when it falls under a certain threshold.
+   *
+   * https://issues.apache.org/jira/browse/HDFS-9260
+   * 全量块汇报相关优化
+   */
+  private class StorageInfoDefragmenter implements Runnable {
+
+    @Override
+    public void run() {
+      while (namesystem.isRunning()) {
+        try {
+          // Check storage efficiency only when active NN is out of safe mode.
+          if (namesystem.isPopulatingReplQueues()) {
+            scanAndCompactStorages();
+          }
+          Thread.sleep(storageInfoDefragmentInterval);
+        } catch (Throwable t) {
+          if (!namesystem.isRunning()) {
+            LOG.info("Stopping thread.");
+            if (!(t instanceof InterruptedException)) {
+              LOG.info("Received an exception while shutting down.", t);
+            }
+            break;
+          } else if (!checkNSRunning && t instanceof InterruptedException) {
+            LOG.info("Stopping for testing.");
+            break;
+          }
+          LOG.error("Thread received Runtime exception.", t);
+          terminate(1, t);
+        }
+      }
+    }
+
+    private void scanAndCompactStorages() throws InterruptedException {
+      ArrayList<String> datanodesAndStorages = new ArrayList<>();
+      for (DatanodeDescriptor node
+              : datanodeManager.getDatanodeListForReport(HdfsConstants.DatanodeReportType.ALL)) {
+        for (DatanodeStorageInfo storage : node.getStorageInfos()) {
+          try {
+            namesystem.readLock();
+            double ratio = storage.treeSetFillRatio();
+            if (ratio < storageInfoDefragmentRatio) {
+              datanodesAndStorages.add(node.getDatanodeUuid());
+              datanodesAndStorages.add(storage.getStorageID());
+            }
+            LOG.info("StorageInfo TreeSet fill ratio {} : {}{}",
+                    storage.getStorageID(), ratio,
+                    (ratio < storageInfoDefragmentRatio)
+                            ? " (queued for defragmentation)" : "");
+          } finally {
+            namesystem.readUnlock();
+          }
+        }
+      }
+      if (!datanodesAndStorages.isEmpty()) {
+        for (int i = 0; i < datanodesAndStorages.size(); i += 2) {
+          namesystem.writeLock();
+          try {
+            final DatanodeDescriptor dn = datanodeManager.
+                    getDatanode(datanodesAndStorages.get(i));
+            if (dn == null) {
+              continue;
+            }
+            final DatanodeStorageInfo storage = dn.
+                    getStorageInfo(datanodesAndStorages.get(i + 1));
+            if (storage != null) {
+              boolean aborted =
+                      !storage.treeSetCompact(storageInfoDefragmentTimeout);
+              if (aborted) {
+                // Compaction timed out, reset iterator to continue with
+                // the same storage next iteration.
+                i -= 2;
+              }
+              LOG.info("StorageInfo TreeSet defragmented {} : {}{}",
+                      storage.getStorageID(), storage.treeSetFillRatio(),
+                      aborted ? " (aborted)" : "");
+            }
+          } finally {
+            namesystem.writeUnlock();
+          }
+          // Wait between each iteration
+          Thread.sleep(1000);
+        }
+      }
+    }
+  }
 
   /**
    * Compute block replication and block invalidation work that can be scheduled
    * on data-nodes. The datanode will be informed of this work at the next
    * heartbeat.
-   * 
+   *
    * @return number of blocks scheduled for replication or removal.
    */
   int computeDatanodeWork() {

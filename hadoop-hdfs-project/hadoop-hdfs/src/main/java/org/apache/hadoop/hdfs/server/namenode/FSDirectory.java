@@ -578,7 +578,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
   /**
    * @return true if the path is a non-empty directory; otherwise, return false.
    */
-  boolean isNonEmptyDirectory(INodesInPath inodesInPath) {
+  boolean isNonEmptyDirectory(INodesInPath inodesInPath) { // 检查目录下，是否有元素
     readLock();
     try {
       final INode inode = inodesInPath.getLastINode();
@@ -1028,7 +1028,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
     final int latestSnapshot = iip.getLatestSnapshotId();
     final INode last = iip.getLastINode();
     final INodeDirectory parent = iip.getINode(-2).asDirectory();
-    if (!parent.removeChild(last, latestSnapshot)) {
+    if (!parent.removeChild(last, latestSnapshot)) { // 删除child
       return -1;
     }
 
@@ -1207,7 +1207,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
   /**
    * This method is always called with writeLock of FSDirectory held.
    */
-  public final void removeFromInodeMap(List<? extends INode> inodes) {
+  public final void removeFromInodeMap(List<? extends INode> inodes) { // 从inodeMap中删除
     if (inodes != null) {
       for (INode inode : inodes) {
         if (inode != null && inode instanceof INodeWithAdditionalFields) {

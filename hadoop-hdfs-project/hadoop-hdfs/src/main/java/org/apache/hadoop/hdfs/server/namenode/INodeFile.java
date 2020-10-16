@@ -526,7 +526,7 @@ public class INodeFile extends INodeWithAdditionalFields
 
   @Override
   public void destroyAndCollectBlocks(BlockStoragePolicySuite bsps,
-      BlocksMapUpdateInfo collectedBlocks, final List<INode> removedINodes) { // 删除文件
+      BlocksMapUpdateInfo collectedBlocks, final List<INode> removedINodes) { // 删除文件：删除并收集blocks
     if (blocks != null && collectedBlocks != null) {
       for (BlockInfoContiguous blk : blocks) {
         collectedBlocks.addDeleteBlock(blk);

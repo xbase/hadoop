@@ -43,7 +43,7 @@ public class BlockInfoContiguous extends Block
   private BlockCollection bc;
 
   /** For implementing {@link LightWeightGSet.LinkedElement} interface */
-  private LightWeightGSet.LinkedElement nextLinkedElement;
+  private LightWeightGSet.LinkedElement nextLinkedElement; // GSet类似于HashMap，当下标冲突时，使用链表解决冲突
 
   /**
    * This array contains triplets of references. For each i-th storage, the
@@ -172,7 +172,10 @@ public class BlockInfoContiguous extends Block
     return info;
   }
 
-  public int getCapacity() { // 期望的副本数
+  // 当前block的副本总数，并不等于期望副本数
+  // 当修改文件的副本数时，只修改INodeFile对象中的副本数字段
+  // 当块汇报时，会检查block的capacity是否充足，如果不足，会调用ensureCapacity()方法扩容
+  public int getCapacity() {
     assert this.triplets != null : "BlockInfo is not initialized";
     assert triplets.length % 3 == 0 : "Malformed BlockInfo";
     return triplets.length / 3;

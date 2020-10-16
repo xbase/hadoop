@@ -75,7 +75,7 @@ public class HAUtil {
    */
   public static boolean isHAEnabled(Configuration conf, String nsId) { // 指定nsId，是否配置了HA
     Map<String, Map<String, InetSocketAddress>> addresses =
-      DFSUtil.getHaNnRpcAddresses(conf);
+      DFSUtil.getHaNnRpcAddresses(conf); // 所有HA NN地址
     if (addresses == null) return false;
     Map<String, InetSocketAddress> nnMap = addresses.get(nsId);
     return nnMap != null && nnMap.size() > 1;

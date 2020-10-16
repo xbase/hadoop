@@ -53,7 +53,7 @@ class FSDirDeleteOp {
         List<INodeDirectory> snapshottableDirs = new ArrayList<>();
         FSDirSnapshotOp.checkSnapshot(iip.getLastINode(), snapshottableDirs);
         filesRemoved = unprotectedDelete(fsd, iip, collectedBlocks,
-                                         removedINodes, mtime);
+                                         removedINodes, mtime); // 删除inode，并收集被删除的block
         fsd.getFSNamesystem().removeSnapshottableDirs(snapshottableDirs);
       }
     } finally {
@@ -81,7 +81,7 @@ class FSDirDeleteOp {
 
     src = fsd.resolvePath(pc, src, pathComponents);
     final INodesInPath iip = fsd.getINodesInPath4Write(src, false);
-    if (!recursive && fsd.isNonEmptyDirectory(iip)) {
+    if (!recursive && fsd.isNonEmptyDirectory(iip)) { // 目录不为空
       throw new PathIsNotEmptyDirectoryException(src + " is non empty");
     }
     if (fsd.isPermissionEnabled()) {
@@ -89,7 +89,7 @@ class FSDirDeleteOp {
                           FsAction.ALL, true);
     }
 
-    return deleteInternal(fsn, src, iip, logRetryCache);
+    return deleteInternal(fsn, src, iip, logRetryCache); // 删除inode，并收集被删除的block
   }
 
   /**
@@ -150,14 +150,14 @@ class FSDirDeleteOp {
     long mtime = now();
     // Unlink the target directory from directory tree
     long filesRemoved = delete(
-        fsd, iip, collectedBlocks, removedINodes, mtime);
+        fsd, iip, collectedBlocks, removedINodes, mtime); // 删除inode，并收集被删除的block
     if (filesRemoved < 0) {
       return null;
     }
     fsd.getEditLog().logDelete(src, mtime, logRetryCache);
-    incrDeletedFileCount(filesRemoved);
+    incrDeletedFileCount(filesRemoved); // 记录metric
 
-    fsn.removeLeasesAndINodes(src, removedINodes, true);
+    fsn.removeLeasesAndINodes(src, removedINodes, true); // 删除租约和inode
 
     if (NameNode.stateChangeLog.isDebugEnabled()) {
       NameNode.stateChangeLog.debug("DIR* Namesystem.delete: "
@@ -199,7 +199,7 @@ class FSDirDeleteOp {
    */
   private static long unprotectedDelete(
       FSDirectory fsd, INodesInPath iip, BlocksMapUpdateInfo collectedBlocks,
-      List<INode> removedINodes, long mtime) {
+      List<INode> removedINodes, long mtime) { // 删除inode，并收集被删除的block
     assert fsd.hasWriteLock();
 
     // check if target node exists
@@ -210,19 +210,19 @@ class FSDirDeleteOp {
 
     // record modification
     final int latestSnapshot = iip.getLatestSnapshotId();
-    targetNode.recordModification(latestSnapshot);
+    targetNode.recordModification(latestSnapshot); // 快照相关
 
     // Remove the node from the namespace
-    long removed = fsd.removeLastINode(iip);
+    long removed = fsd.removeLastINode(iip); // 删除inode
     if (removed == -1) {
       return -1;
     }
 
     // set the parent's modification time
     final INodeDirectory parent = targetNode.getParent();
-    parent.updateModificationTime(mtime, latestSnapshot);
+    parent.updateModificationTime(mtime, latestSnapshot); // 更新父目录的mtime
 
-    fsd.updateCountForDelete(targetNode, iip);
+    fsd.updateCountForDelete(targetNode, iip); // 更新quota
     if (removed == 0) {
       return 0;
     }
@@ -230,7 +230,7 @@ class FSDirDeleteOp {
     // collect block and update quota
     if (!targetNode.isInLatestSnapshot(latestSnapshot)) {
       targetNode.destroyAndCollectBlocks(fsd.getBlockStoragePolicySuite(),
-        collectedBlocks, removedINodes);
+        collectedBlocks, removedINodes); // 删除并收集blocks
     } else {
       QuotaCounts counts = targetNode.cleanSubtree(
         fsd.getBlockStoragePolicySuite(), CURRENT_STATE_ID,

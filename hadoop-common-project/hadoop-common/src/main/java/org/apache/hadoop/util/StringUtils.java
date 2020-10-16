@@ -664,7 +664,7 @@ public class StringUtils {
 
     if (SystemUtils.IS_OS_UNIX) {
       try {
-        SignalLogger.INSTANCE.register(LOG);
+        SignalLogger.INSTANCE.register(LOG); // 记录进程退出时，接收到了什么系统信号
       } catch (Throwable t) {
         LOG.warn("failed to register any UNIX signal loggers: ", t);
       }

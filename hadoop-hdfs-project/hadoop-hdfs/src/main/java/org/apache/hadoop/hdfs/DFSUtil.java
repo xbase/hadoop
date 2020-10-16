@@ -632,7 +632,7 @@ public class DFSUtil {
    * @return a map(nameserviceId to map(namenodeId to InetSocketAddress))
    */
   private static Map<String, Map<String, InetSocketAddress>>
-    getAddresses(Configuration conf, String defaultAddress, String... keys) {
+    getAddresses(Configuration conf, String defaultAddress, String... keys) { // 获取所有HA NN的地址: <nameserviceId, <namenodeId, InetSocketAddress>>
     Collection<String> nameserviceIds = getNameServiceIds(conf);
     return getAddressesForNsIds(conf, nameserviceIds, defaultAddress, keys);
   }
@@ -646,7 +646,7 @@ public class DFSUtil {
    */
   private static Map<String, Map<String, InetSocketAddress>>
     getAddressesForNsIds(Configuration conf, Collection<String> nsIds,
-                         String defaultAddress, String... keys) { // 获取所有NN的地址: <nameserviceId, <namenodeId, InetSocketAddress>>
+                         String defaultAddress, String... keys) { // 获取所有HA NN的地址: <nameserviceId, <namenodeId, InetSocketAddress>>
     // Look for configurations of the form <key>[.<nameserviceId>][.<namenodeId>]
     // across all of the configured nameservices and namenodes.
     Map<String, Map<String, InetSocketAddress>> ret = Maps.newLinkedHashMap();
@@ -1517,7 +1517,7 @@ public class DFSUtil {
    * @return true when the argument matches help option, false if not
    */
   public static boolean parseHelpArgument(String[] args,
-      String helpDescription, PrintStream out, boolean printGenericCommandUsage) {
+      String helpDescription, PrintStream out, boolean printGenericCommandUsage) { // 输出帮助信息
     if (args.length == 1) {
       try {
         CommandLineParser parser = new PosixParser();

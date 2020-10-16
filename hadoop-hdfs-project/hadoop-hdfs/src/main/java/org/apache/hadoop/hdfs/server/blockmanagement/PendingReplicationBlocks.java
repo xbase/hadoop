@@ -212,7 +212,7 @@ class PendingReplicationBlocks {
    * A periodic thread that scans for blocks that never finished
    * their replication request.
    */
-  class PendingReplicationMonitor implements Runnable {
+  class PendingReplicationMonitor implements Runnable { // 检查复制块是否完成
     @Override
     public void run() {
       while (fsRunning) {
