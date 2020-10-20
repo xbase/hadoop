@@ -27,7 +27,7 @@ import org.apache.hadoop.classification.InterfaceAudience;
  * This class is thread safe.
  */
 @InterfaceAudience.Private
-public abstract class SequentialNumber {
+public abstract class SequentialNumber { // 线程安全的序列号生成器
   private final AtomicLong currentValue;
 
   /** Create a new instance with the given initial value. */
@@ -41,18 +41,18 @@ public abstract class SequentialNumber {
   }
 
   /** Set current value. */
-  public void setCurrentValue(long value) {
+  public void setCurrentValue(long value) { // 多线程的时候，可能互相覆盖
     currentValue.set(value);
   }
 
   /** Increment and then return the next value. */
-  public long nextValue() {
+  public long nextValue() { // 累加
     return currentValue.incrementAndGet();
   }
 
   /** Skip to the new value. */
   public void skipTo(long newValue) throws IllegalStateException {
-    for(;;) {
+    for(;;) { // 不断重试，直到设置成功
       final long c = getCurrentValue();
       if (newValue < c) {
         throw new IllegalStateException(
@@ -60,7 +60,7 @@ public abstract class SequentialNumber {
             + c + "), where newValue=" + newValue);
       }
 
-      if (currentValue.compareAndSet(c, newValue)) {
+      if (currentValue.compareAndSet(c, newValue)) { // 设置为newValue
         return;
       }
     }

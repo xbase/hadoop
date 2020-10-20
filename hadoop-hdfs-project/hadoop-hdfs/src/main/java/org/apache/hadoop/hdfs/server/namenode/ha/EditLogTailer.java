@@ -211,6 +211,7 @@ public class EditLogTailer {
       }
       Collection<EditLogInputStream> streams;
       try {
+        // 每次都获取到最新的edit
         streams = editLog.selectInputStreams(lastTxnId + 1, 0, null, false);
       } catch (IOException ioe) {
         // This is acceptable. If we try to tail edits in the middle of an edits
@@ -329,7 +330,7 @@ public class EditLogTailer {
           // state updates.
           namesystem.cpLockInterruptibly();
           try {
-            doTailEdits();
+            doTailEdits(); // 消费edit
           } finally {
             namesystem.cpUnlock();
           }

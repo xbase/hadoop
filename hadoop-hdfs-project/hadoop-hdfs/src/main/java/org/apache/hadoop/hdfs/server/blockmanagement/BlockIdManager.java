@@ -35,11 +35,11 @@ public class BlockIdManager {
    * The global generation stamp for legacy blocks with randomly
    * generated block IDs.
    */
-  private final GenerationStamp generationStampV1 = new GenerationStamp();
+  private final GenerationStamp generationStampV1 = new GenerationStamp(); // 老版本GS id生成器
   /**
    * The global generation stamp for this file system.
    */
-  private final GenerationStamp generationStampV2 = new GenerationStamp();
+  private final GenerationStamp generationStampV2 = new GenerationStamp(); // 新版本GS id生成器
   /**
    * The value of the generation stamp when the first switch to sequential
    * block IDs was made. Blocks with generation stamps below this value
@@ -48,11 +48,11 @@ public class BlockIdManager {
    * (or initialized as an offset from the V1 (legacy) generation stamp on
    * upgrade).
    */
-  private long generationStampV1Limit;
+  private long generationStampV1Limit; // 老版本最大的GS id
   /**
    * The global block ID space for this file system.
    */
-  private final SequentialBlockIdGenerator blockIdGenerator;
+  private final SequentialBlockIdGenerator blockIdGenerator; // 新版本block id生成器
 
   public BlockIdManager(BlockManager blockManager) {
     this.generationStampV1Limit = GenerationStamp.GRANDFATHER_GENERATION_STAMP;
@@ -65,7 +65,7 @@ public class BlockIdManager {
    * Should be invoked only during the first upgrade to
    * sequential block IDs.
    */
-  public long upgradeGenerationStampToV2() {
+  public long upgradeGenerationStampToV2() { // 切换GS为新版生成规则
     Preconditions.checkState(generationStampV2.getCurrentValue() ==
       GenerationStamp.LAST_RESERVED_STAMP);
     generationStampV2.skipTo(generationStampV1.getCurrentValue() +
@@ -104,7 +104,7 @@ public class BlockIdManager {
    * Sets the maximum allocated block ID for this filesystem. This is
    * the basis for allocating new block IDs.
    */
-  public void setLastAllocatedBlockId(long blockId) {
+  public void setLastAllocatedBlockId(long blockId) { // 从此id开始递增block id
     blockIdGenerator.skipTo(blockId);
   }
 
@@ -149,7 +149,7 @@ public class BlockIdManager {
   }
 
   @VisibleForTesting
-  long getNextGenerationStampV1() throws IOException {
+  long getNextGenerationStampV1() throws IOException { // 老版本GS
     long genStampV1 = generationStampV1.nextValue();
 
     if (genStampV1 >= generationStampV1Limit) {
@@ -164,7 +164,7 @@ public class BlockIdManager {
   }
 
   @VisibleForTesting
-  long getNextGenerationStampV2() {
+  long getNextGenerationStampV2() { // 新版本GS
     return generationStampV2.nextValue();
   }
 
@@ -186,11 +186,11 @@ public class BlockIdManager {
   /**
    * Increments, logs and then returns the block ID
    */
-  public long nextBlockId() {
+  public long nextBlockId() { // block id是递增的
     return blockIdGenerator.nextValue();
   }
 
-  public boolean isGenStampInFuture(Block block) {
+  public boolean isGenStampInFuture(Block block) { //   此block的GS是否大于NN内存中的GS
     if (isLegacyBlock(block)) {
       return block.getGenerationStamp() > getGenerationStampV1();
     } else {
@@ -198,7 +198,7 @@ public class BlockIdManager {
     }
   }
 
-  public void clear() {
+  public void clear() { // 重置为初始值
     generationStampV1.setCurrentValue(GenerationStamp.LAST_RESERVED_STAMP);
     generationStampV2.setCurrentValue(GenerationStamp.LAST_RESERVED_STAMP);
     getBlockIdGenerator().setCurrentValue(SequentialBlockIdGenerator

@@ -51,7 +51,7 @@ public class SequentialBlockIdGenerator extends SequentialNumber {
 
     // There may be an occasional conflict with randomly generated
     // block IDs. Skip over the conflicts.
-    while(isValidBlock(b)) {
+    while(isValidBlock(b)) { // 确保新生成的block id并没有使用过
       b.setBlockId(super.nextValue());
     }
     return b.getBlockId();
@@ -60,7 +60,7 @@ public class SequentialBlockIdGenerator extends SequentialNumber {
   /**
    * Returns whether the given block is one pointed-to by a file.
    */
-  private boolean isValidBlock(Block b) {
+  private boolean isValidBlock(Block b) { // 说明此block关联有inode
     return (blockManager.getBlockCollection(b) != null);
   }
 }
