@@ -27,9 +27,9 @@ import org.apache.hadoop.hdfs.util.EnumCounters;
 public class QuotaCounts {
   // Name space and storage space counts (HDFS-7775 refactors the original disk
   // space count to storage space counts)
-  private EnumCounters<Quota> nsSsCounts;
+  private EnumCounters<Quota> nsSsCounts; // 命名空间和存储空间counter
   // Storage type space counts
-  private EnumCounters<StorageType> tsCounts;
+  private EnumCounters<StorageType> tsCounts; // 区分存储类型counter
 
   public static class Builder {
     private EnumCounters<Quota> nsSsCounts;

@@ -108,11 +108,11 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
         0L);
     r.addDirectoryWithQuotaFeature(
         new DirectoryWithQuotaFeature.Builder().
-            nameSpaceQuota(DirectoryWithQuotaFeature.DEFAULT_NAMESPACE_QUOTA).
-            storageSpaceQuota(DirectoryWithQuotaFeature.DEFAULT_STORAGE_SPACE_QUOTA).
-            build());
-    r.addSnapshottableFeature();
-    r.setSnapshotQuota(0);
+            nameSpaceQuota(DirectoryWithQuotaFeature.DEFAULT_NAMESPACE_QUOTA). // 设置命名空间quota，默认无限
+            storageSpaceQuota(DirectoryWithQuotaFeature.DEFAULT_STORAGE_SPACE_QUOTA). // 设置存储空间quota，默认无限
+            build()); // 给根目录添加quota特性
+    r.addSnapshottableFeature(); // 给根目录添加snapshot特性
+    r.setSnapshotQuota(0); // 但不允许使用
     return r;
   }
 
@@ -499,7 +499,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
             block,
             fileINode.getFileReplication(),
             BlockUCState.UNDER_CONSTRUCTION,
-            targets);
+            targets); // 申请block的时候，就有期望的副本位置信息
       getBlockManager().addBlockCollection(blockInfo, fileINode); // 添加到blocksMap
       fileINode.addBlock(blockInfo); // 添加到文件的block列表
 
@@ -1237,7 +1237,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
     return inodeMap.size();
   }
 
-  long totalInodes() {
+  long totalInodes() { // 50070页面上的files来源
     readLock();
     try {
       return rootDir.getDirectoryWithQuotaFeature().getSpaceConsumed()

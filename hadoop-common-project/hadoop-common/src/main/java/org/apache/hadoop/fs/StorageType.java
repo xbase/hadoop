@@ -32,7 +32,7 @@ import org.apache.hadoop.util.StringUtils;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Unstable
-public enum StorageType {
+public enum StorageType { // 存储类型
   // sorted by the speed of the storage types, from fast to slow
   RAM_DISK(true),
   SSD(false),

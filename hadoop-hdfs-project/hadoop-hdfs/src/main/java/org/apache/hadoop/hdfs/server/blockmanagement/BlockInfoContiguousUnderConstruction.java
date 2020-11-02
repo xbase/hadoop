@@ -249,7 +249,7 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    * pipeline recovery sort out bad replicas.
    * @param genStamp  The final generation stamp for the block.
    */
-  // 设置GS，并移除GS不匹配的Replica
+  // 更新GS，并移除GS不匹配的Replica
   public void setGenerationStampAndVerifyReplicas(long genStamp) {
     // Set the generation stamp for the block.
     setGenerationStamp(genStamp);

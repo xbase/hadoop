@@ -251,6 +251,7 @@ public class LeaseManager {
   class Lease implements Comparable<Lease> {
     private final String holder;
     private long lastUpdate;
+    // 为什么不通过file inodeId来判断lease？path可能rename
     private final Collection<String> paths = new TreeSet<String>();
   
     /** Only LeaseManager object can create a lease */

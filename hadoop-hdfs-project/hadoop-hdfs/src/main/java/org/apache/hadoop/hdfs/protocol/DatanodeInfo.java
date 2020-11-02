@@ -82,7 +82,7 @@ public class DatanodeInfo extends DatanodeID implements Node {
     }
   }
 
-  protected AdminStates adminState;
+  protected AdminStates adminState; // decommission状态
 
   public DatanodeInfo(DatanodeInfo from) {
     super(from);

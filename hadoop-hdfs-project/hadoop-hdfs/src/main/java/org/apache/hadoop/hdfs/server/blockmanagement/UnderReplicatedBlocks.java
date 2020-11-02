@@ -89,7 +89,7 @@ class UnderReplicatedBlocks implements Iterable<Block> {
   /** Stores the replication index for each priority */
   private Map<Integer, Integer> priorityToReplIdx = new HashMap<Integer, Integer>(LEVEL); // <LEVEL,offset> 每个优先级队列的读取偏移量
   /** The number of corrupt blocks with replication factor 1 */
-  private int corruptReplOneBlocks = 0;
+  private int corruptReplOneBlocks = 0; // 期望副本为1，并且丢失的block数量
 
   /** Create an object. */
   UnderReplicatedBlocks() {
@@ -158,7 +158,7 @@ class UnderReplicatedBlocks implements Iterable<Block> {
   private int getPriority(Block block,
                           int curReplicas, 
                           int decommissionedReplicas,
-                          int expectedReplicas) {
+                          int expectedReplicas) { // 根据副本数判断优先级
     assert curReplicas >= 0 : "Negative replicas!";
     if (curReplicas >= expectedReplicas) {
       // Block has enough copies, but not enough racks
@@ -198,8 +198,8 @@ class UnderReplicatedBlocks implements Iterable<Block> {
                            int expectedReplicas) {
     assert curReplicas >= 0 : "Negative replicas!";
     int priLevel = getPriority(block, curReplicas, decomissionedReplicas,
-                               expectedReplicas);
-    if(priorityQueues.get(priLevel).add(block)) {
+                               expectedReplicas); // 获取优先级
+    if(priorityQueues.get(priLevel).add(block)) { // 添加到相应的队列
       if (priLevel == QUEUE_WITH_CORRUPT_BLOCKS &&
           expectedReplicas == 1) {
         corruptReplOneBlocks++;
@@ -222,8 +222,8 @@ class UnderReplicatedBlocks implements Iterable<Block> {
                               int oldExpectedReplicas) {
     int priLevel = getPriority(block, oldReplicas, 
                                decommissionedReplicas,
-                               oldExpectedReplicas);
-    boolean removedBlock = remove(block, priLevel);
+                               oldExpectedReplicas); // 获取优先级
+    boolean removedBlock = remove(block, priLevel); // 从相应队列中删除
     if (priLevel == QUEUE_WITH_CORRUPT_BLOCKS &&
         oldExpectedReplicas == 1 &&
         removedBlock) {
@@ -257,7 +257,7 @@ class UnderReplicatedBlocks implements Iterable<Block> {
         "BLOCK* NameSystem.UnderReplicationBlock.remove: Removing block {}" +
             " from priority queue {}", block, priLevel);
       return true;
-    } else {
+    } else { // 如果指定队列中没有此block，则从所有队列中删除
       // Try to remove the block from all queues if the block was
       // not found in the queue for the given priority level.
       for (int i = 0; i < LEVEL; i++) { // 遍历所有队列，删除此block
@@ -292,10 +292,10 @@ class UnderReplicatedBlocks implements Iterable<Block> {
                            int decommissionedReplicas,
                            int curExpectedReplicas,
                            int curReplicasDelta, int expectedReplicasDelta) {
-    int oldReplicas = curReplicas-curReplicasDelta;
-    int oldExpectedReplicas = curExpectedReplicas-expectedReplicasDelta;
-    int curPri = getPriority(block, curReplicas, decommissionedReplicas, curExpectedReplicas);
-    int oldPri = getPriority(block, oldReplicas, decommissionedReplicas, oldExpectedReplicas);
+    int oldReplicas = curReplicas-curReplicasDelta; // 原来的副本数
+    int oldExpectedReplicas = curExpectedReplicas-expectedReplicasDelta; // 原来期望的副本数
+    int curPri = getPriority(block, curReplicas, decommissionedReplicas, curExpectedReplicas); // 当前的优先级
+    int oldPri = getPriority(block, oldReplicas, decommissionedReplicas, oldExpectedReplicas); // 原来的优先级
     if(NameNode.stateChangeLog.isDebugEnabled()) {
       NameNode.stateChangeLog.debug("UnderReplicationBlocks.update " + 
         block +
@@ -306,10 +306,10 @@ class UnderReplicatedBlocks implements Iterable<Block> {
         " curPri  " + curPri +
         " oldPri  " + oldPri);
     }
-    if(oldPri != curPri) {
+    if(oldPri != curPri) { // 当前和原来的优先级不同，则先从原来优先级队列中移除
       remove(block, oldPri);
     }
-    if(priorityQueues.get(curPri).add(block)) {
+    if(priorityQueues.get(curPri).add(block)) { // 添加到当前优先级
       NameNode.blockStateChangeLog.debug(
           "BLOCK* NameSystem.UnderReplicationBlock.update: {} has only {} " +
               "replicas and needs {} replicas so is added to " +

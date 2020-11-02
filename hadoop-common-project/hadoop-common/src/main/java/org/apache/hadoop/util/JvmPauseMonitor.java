@@ -41,30 +41,33 @@ import com.google.common.collect.Sets;
  * than its target time, it implies that the JVM or host machine has
  * paused processing, which may cause other problems. If such a pause is
  * detected, the thread logs a message.
+ *
+ * 在循环中运行sleep一段时间方法，如果sleep花费的时间比传递给sleep方法的时间长，就意味着JVM或者宿主机已经出现了停顿处理现象，
+ * 可能会导致其它问题，如果这种停顿被监测出来，线程会打印一个消息。
  */
 @InterfaceAudience.Private
-public class JvmPauseMonitor { // 监控JVM是否停顿
+public class JvmPauseMonitor {
   private static final Log LOG = LogFactory.getLog(
       JvmPauseMonitor.class);
 
   /** The target sleep time */
-  private static final long SLEEP_INTERVAL_MS = 500;
+  private static final long SLEEP_INTERVAL_MS = 500; // sleep的时间
   
   /** log WARN if we detect a pause longer than this threshold */
-  private final long warnThresholdMs;
+  private final long warnThresholdMs;  // 如果超过此时间，则打印warn
   private static final String WARN_THRESHOLD_KEY =
       "jvm.pause.warn-threshold.ms";
-  private static final long WARN_THRESHOLD_DEFAULT = 10000;
+  private static final long WARN_THRESHOLD_DEFAULT = 10000; // 默认：10s
   
   /** log INFO if we detect a pause longer than this threshold */
-  private final long infoThresholdMs;
+  private final long infoThresholdMs;  // 如果超过此时间，则打印info
   private static final String INFO_THRESHOLD_KEY =
       "jvm.pause.info-threshold.ms";
-  private static final long INFO_THRESHOLD_DEFAULT = 1000;
+  private static final long INFO_THRESHOLD_DEFAULT = 1000; // 默认：1s
 
-  private long numGcWarnThresholdExceeded = 0;
-  private long numGcInfoThresholdExceeded = 0;
-  private long totalGcExtraSleepTime = 0;
+  private long numGcWarnThresholdExceeded = 0; // warn次数
+  private long numGcInfoThresholdExceeded = 0; // info次数
+  private long totalGcExtraSleepTime = 0; // 总的gc导致的停顿时间
    
   private Thread monitorThread;
   private volatile boolean shouldRun = true;
@@ -183,14 +186,14 @@ public class JvmPauseMonitor { // 监控JVM是否停顿
         } catch (InterruptedException ie) {
           return;
         }
-        long extraSleepTime = sw.now(TimeUnit.MILLISECONDS) - SLEEP_INTERVAL_MS;
+        long extraSleepTime = sw.now(TimeUnit.MILLISECONDS) - SLEEP_INTERVAL_MS; // gc导致的停顿时间
         Map<String, GcTimes> gcTimesAfterSleep = getGcTimes();
 
-        if (extraSleepTime > warnThresholdMs) {
+        if (extraSleepTime > warnThresholdMs) { // 超过warn阈值
           ++numGcWarnThresholdExceeded;
           LOG.warn(formatMessage(
               extraSleepTime, gcTimesAfterSleep, gcTimesBeforeSleep));
-        } else if (extraSleepTime > infoThresholdMs) {
+        } else if (extraSleepTime > infoThresholdMs) { // 超过info阈值
           ++numGcInfoThresholdExceeded;
           LOG.info(formatMessage(
               extraSleepTime, gcTimesAfterSleep, gcTimesBeforeSleep));

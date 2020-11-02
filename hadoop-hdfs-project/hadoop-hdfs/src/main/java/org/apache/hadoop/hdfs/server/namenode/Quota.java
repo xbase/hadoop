@@ -20,7 +20,7 @@ package org.apache.hadoop.hdfs.server.namenode;
 import org.apache.hadoop.hdfs.util.EnumCounters;
 
 /** Quota types. */
-public enum Quota {
+public enum Quota { // quota类型
   /** The namespace usage, i.e. the number of name objects. */
   NAMESPACE,
   /** The storage space usage in bytes including replication. */

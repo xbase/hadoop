@@ -141,7 +141,7 @@ class BlocksMap {
    * Searches for the block in the BlocksMap and 
    * returns {@link Iterable} of the storages the block belongs to.
    */
-  Iterable<DatanodeStorageInfo> getStorages(Block b) {
+  Iterable<DatanodeStorageInfo> getStorages(Block b) { // 获取此block副本的存储位置
     return getStorages(blocks.get(b));
   }
 

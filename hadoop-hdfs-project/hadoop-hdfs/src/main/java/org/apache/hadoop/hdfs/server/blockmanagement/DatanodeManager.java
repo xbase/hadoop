@@ -647,18 +647,18 @@ public class DatanodeManager {
     }
   }
 
-  private boolean shouldCountVersion(DatanodeDescriptor node) {
+  private boolean shouldCountVersion(DatanodeDescriptor node) { // DN是活着的
     return node.getSoftwareVersion() != null && node.isAlive &&
       !isDatanodeDead(node);
   }
 
-  private void countSoftwareVersions() {
+  private void countSoftwareVersions() { // 统计每种DN版本的数量
     synchronized(datanodeMap) {
-      HashMap<String, Integer> versionCount = new HashMap<String, Integer>();
+      HashMap<String, Integer> versionCount = new HashMap<String, Integer>(); // <DNVersion,num> 每种DN版本的数量
       for(DatanodeDescriptor dn: datanodeMap.values()) {
         // Check isAlive too because right after removeDatanode(),
         // isDatanodeDead() is still true 
-        if(shouldCountVersion(dn))
+        if(shouldCountVersion(dn)) // DN是活着的
         {
           Integer num = versionCount.get(dn.getSoftwareVersion());
           num = num == null ? 1 : num+1;
@@ -1015,11 +1015,11 @@ public class DatanodeManager {
    * checks if any of the hosts have changed states:
    */
   public void refreshNodes(final Configuration conf) throws IOException {
-    refreshHostsReader(conf);
+    refreshHostsReader(conf); // 读取并更新included和excluded
     namesystem.writeLock();
     try {
-      refreshDatanodes();
-      countSoftwareVersions();
+      refreshDatanodes(); // 刷新DN decommission状态
+      countSoftwareVersions(); // 统计每种DN版本的数量
     } finally {
       namesystem.writeUnlock();
     }
@@ -1046,12 +1046,12 @@ public class DatanodeManager {
     for(DatanodeDescriptor node : datanodeMap.values()) {
       // Check if not include.
       if (!hostFileManager.isIncluded(node)) {
-        node.setDisallowed(true); // case 2.
+        node.setDisallowed(true); // case 2. 不在included文件，设置为不允许连接NN
       } else {
         if (hostFileManager.isExcluded(node)) {
-          decomManager.startDecommission(node); // case 3.
+          decomManager.startDecommission(node); // case 3. 在included和excluded中，开始decommission
         } else {
-          decomManager.stopDecommission(node); // case 4.
+          decomManager.stopDecommission(node); // case 4. 在included，不在excluded，停止decommission
         }
       }
     }

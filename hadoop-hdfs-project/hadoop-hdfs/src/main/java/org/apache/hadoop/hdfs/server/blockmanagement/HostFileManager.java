@@ -69,11 +69,11 @@ class HostFileManager {
     HostSet res = new HostSet();
     if (!filename.isEmpty()) {
       HashSet<String> entrySet = new HashSet<String>();
-      HostsFileReader.readFileToSet(type, filename, entrySet);
+      HostsFileReader.readFileToSet(type, filename, entrySet); // 读取文件，并把ip添加到entrySet
       for (String str : entrySet) {
-        InetSocketAddress addr = parseEntry(type, filename, str);
+        InetSocketAddress addr = parseEntry(type, filename, str); // ip转为InetSocketAddress对象
         if (addr != null) {
-          res.add(addr);
+          res.add(addr); // 添加到res中
         }
       }
     }
@@ -133,8 +133,8 @@ class HostFileManager {
    * @param excludeFile the path to the new excludes list
    * @throws IOException thrown if there is a problem reading one of the files
    */
-  void refresh(String includeFile, String excludeFile) throws IOException {
-    HostSet newIncludes = readFile("included", includeFile);
+  void refresh(String includeFile, String excludeFile) throws IOException { // 读取并更新included和excluded
+    HostSet newIncludes = readFile("included", includeFile); // 读取included文件
     HostSet newExcludes = readFile("excluded", excludeFile);
 
     refresh(newIncludes, newExcludes);

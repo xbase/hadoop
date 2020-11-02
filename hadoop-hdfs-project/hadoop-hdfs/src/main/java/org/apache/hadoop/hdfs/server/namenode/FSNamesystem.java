@@ -3244,6 +3244,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       inode = dir.getInode(fileId);
       iip = INodesInPath.fromINode(inode);
       if (inode != null) {
+        // 这行代码，说明NN不信任client传递的src(path name)？
         src = iip.getPath();
       }
     }
@@ -6259,14 +6260,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     // check stored block state
     BlockInfoContiguous storedBlock = getStoredBlock(ExtendedBlock.getLocalBlock(block));
     if (storedBlock == null || 
-        storedBlock.getBlockUCState() != BlockUCState.UNDER_CONSTRUCTION) {
+        storedBlock.getBlockUCState() != BlockUCState.UNDER_CONSTRUCTION) { // 检查block是不是UC状态
         throw new IOException(block + 
             " does not exist or is not under Construction" + storedBlock);
     }
     
     // check file inode
     final INodeFile file = ((INode)storedBlock.getBlockCollection()).asFile();
-    if (file == null || !file.isUnderConstruction() || isFileDeleted(file)) {
+    if (file == null || !file.isUnderConstruction() || isFileDeleted(file)) { // 检查文件是否被删除
       throw new IOException("The file " + storedBlock + 
           " belonged to does not exist or it is not under construction.");
     }
@@ -6274,7 +6275,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     // check lease
     if (clientName == null
         || !clientName.equals(file.getFileUnderConstructionFeature()
-            .getClientName())) {
+            .getClientName())) { // 检查是否有租约
       throw new LeaseExpiredException("Lease mismatch: " + block + 
           " is accessed by a non lease holder " + clientName); 
     }
@@ -6380,16 +6381,16 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   private void updatePipelineInternal(String clientName, ExtendedBlock oldBlock,
       ExtendedBlock newBlock, DatanodeID[] newNodes, String[] newStorageIDs,
       boolean logRetryCache)
-      throws IOException {
+      throws IOException { // 更新block信息
     assert hasWriteLock();
     // check the vadility of the block and lease holder name
-    final INodeFile pendingFile = checkUCBlock(oldBlock, clientName);
+    final INodeFile pendingFile = checkUCBlock(oldBlock, clientName); // 检查
     final BlockInfoContiguousUnderConstruction blockinfo
         = (BlockInfoContiguousUnderConstruction)pendingFile.getLastBlock();
 
     // check new GS & length: this is not expected
-    if (newBlock.getGenerationStamp() <= blockinfo.getGenerationStamp() ||
-        newBlock.getNumBytes() < blockinfo.getNumBytes()) {
+    if (newBlock.getGenerationStamp() <= blockinfo.getGenerationStamp() || // 新GS应该大于老GS
+        newBlock.getNumBytes() < blockinfo.getNumBytes()) { // 新size应该大于等于老size
       String msg = "Update " + oldBlock + " (len = " + 
         blockinfo.getNumBytes() + ") to an older state: " + newBlock + 
         " (len = " + newBlock.getNumBytes() +")";
@@ -6398,16 +6399,16 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     }
 
     // Update old block with the new generation stamp and new length
-    blockinfo.setNumBytes(newBlock.getNumBytes());
-    blockinfo.setGenerationStampAndVerifyReplicas(newBlock.getGenerationStamp());
+    blockinfo.setNumBytes(newBlock.getNumBytes()); // 更新block size
+    blockinfo.setGenerationStampAndVerifyReplicas(newBlock.getGenerationStamp()); // 更新GS，并移除老的副本，移除老副本信息
 
     // find the DatanodeDescriptor objects
     final DatanodeStorageInfo[] storages = blockManager.getDatanodeManager()
         .getDatanodeStorageInfos(newNodes, newStorageIDs);
-    blockinfo.setExpectedLocations(storages);
+    blockinfo.setExpectedLocations(storages); // 设置新副本信息
 
     String src = pendingFile.getFullPathName();
-    persistBlocks(src, pendingFile, logRetryCache);
+    persistBlocks(src, pendingFile, logRetryCache); // 记录edit
   }
 
   // rename was successful. If any part of the renamed subtree had

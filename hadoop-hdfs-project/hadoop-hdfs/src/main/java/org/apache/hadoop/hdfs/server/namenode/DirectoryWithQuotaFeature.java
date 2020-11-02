@@ -33,26 +33,26 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
   public static final long DEFAULT_NAMESPACE_QUOTA = Long.MAX_VALUE;
   public static final long DEFAULT_STORAGE_SPACE_QUOTA = HdfsConstants.QUOTA_RESET;
 
-  private QuotaCounts quota;
-  private QuotaCounts usage;
+  private QuotaCounts quota; // quota值（上限）
+  private QuotaCounts usage; // 已使用的值
 
   public static class Builder {
     private QuotaCounts quota;
     private QuotaCounts usage;
 
     public Builder() {
-      this.quota = new QuotaCounts.Builder().nameSpace(DEFAULT_NAMESPACE_QUOTA).
-          storageSpace(DEFAULT_STORAGE_SPACE_QUOTA).
+      this.quota = new QuotaCounts.Builder().nameSpace(DEFAULT_NAMESPACE_QUOTA). // 设置命名空间quota，默认无限
+          storageSpace(DEFAULT_STORAGE_SPACE_QUOTA). // 设置存储空间quota，默认无限
           typeSpaces(DEFAULT_STORAGE_SPACE_QUOTA).build();
-      this.usage = new QuotaCounts.Builder().nameSpace(1).build();
+      this.usage = new QuotaCounts.Builder().nameSpace(1).build(); // 已使用值1（自己本身）
     }
 
-    public Builder nameSpaceQuota(long nameSpaceQuota) {
+    public Builder nameSpaceQuota(long nameSpaceQuota) { // 设置命名空间quota
       this.quota.setNameSpace(nameSpaceQuota);
       return this;
     }
 
-    public Builder storageSpaceQuota(long spaceQuota) {
+    public Builder storageSpaceQuota(long spaceQuota) { // 设置存储空间quota
       this.quota.setStorageSpace(spaceQuota);
       return this;
     }
@@ -167,7 +167,7 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
    * 
    * @param delta the change of the namespace/space/type usage
    */
-  public void addSpaceConsumed2Cache(QuotaCounts delta) {
+  public void addSpaceConsumed2Cache(QuotaCounts delta) { // 增量更新quota（基本都来自于RPC）
     usage.add(delta);
   }
 
@@ -194,7 +194,7 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
   }
 
   /** @return the namespace and storagespace and typespace consumed. */
-  public QuotaCounts getSpaceConsumed() {
+  public QuotaCounts getSpaceConsumed() { // 返回一个已使用quota快照
     return new QuotaCounts.Builder().quotaCount(usage).build();
   }
 

@@ -229,15 +229,15 @@ class HeartbeatManager implements DatanodeStatistics {
   synchronized void startDecommission(final DatanodeDescriptor node) {
     if (!node.isAlive) {
       LOG.info("Dead node {} is decommissioned immediately.", node);
-      node.setDecommissioned();
+      node.setDecommissioned(); // 如果当前节点挂了，则直接设置为DECOMMISSIONED
     } else {
       stats.subtract(node);
-      node.startDecommission();
+      node.startDecommission(); // 设置DN状态为DECOMMISSION_INPROGRESS
       stats.add(node);
     }
   }
 
-  synchronized void stopDecommission(final DatanodeDescriptor node) {
+  synchronized void stopDecommission(final DatanodeDescriptor node) { // 设置为DECOMMISSIONED状态
     LOG.info("Stopping decommissioning of {} node {}",
         node.isAlive ? "live" : "dead", node);
     if (!node.isAlive) {

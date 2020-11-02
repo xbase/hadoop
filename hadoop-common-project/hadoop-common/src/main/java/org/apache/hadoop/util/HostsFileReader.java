@@ -80,14 +80,14 @@ public class HostsFileReader {
         String[] nodes = line.split("[ \t\n\f\r]+");
         if (nodes != null) {
           for (int i = 0; i < nodes.length; i++) {
-            if (nodes[i].trim().startsWith("#")) {
+            if (nodes[i].trim().startsWith("#")) { // 过滤掉被注释的ip
               // Everything from now on is a comment
               break;
             }
             if (!nodes[i].isEmpty()) {
               LOG.info("Adding " + nodes[i] + " to the list of " + type +
                   " hosts from " + filename);
-              set.add(nodes[i]);
+              set.add(nodes[i]); // 添加到Set
             }
           }
         }

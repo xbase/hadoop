@@ -725,7 +725,7 @@ public class BlockManager {
     blocksMap.replaceBlock(ucBlock); // 更新
 
     // Remove block from replication queue.
-    NumberReplicas replicas = countNodes(ucBlock); // 计算副本状态
+    NumberReplicas replicas = countNodes(ucBlock); // 计算副本个数
     neededReplications.remove(ucBlock, replicas.liveReplicas(),
         replicas.decommissionedReplicas(), getReplication(ucBlock));  // 从 需要补充副本 队列中移除
     pendingReplications.remove(ucBlock); // 从 等待复制 队列中移除
@@ -1556,7 +1556,7 @@ public class BlockManager {
     final DatanodeStorageInfo[] targets = blockplacement.chooseTarget(src, // 选择副本存储位置
         numOfReplicas, client, excludedNodes, blocksize, 
         favoredDatanodeDescriptors, storagePolicy);
-    if (targets.length < minReplication) { // 选不出足够的DN，抛异常
+    if (targets.length < minReplication) { // 只有达不到最小副本数时，才会抛异常
       throw new IOException("File " + src + " could only be replicated to "
           + targets.length + " nodes instead of minReplication (="
           + minReplication + ").  There are "
@@ -3310,7 +3310,7 @@ public class BlockManager {
     int excess = 0;
     int stale = 0;
     Collection<DatanodeDescriptor> nodesCorrupt = corruptReplicas.getNodes(b);
-    for(DatanodeStorageInfo storage : blocksMap.getStorages(b, State.NORMAL)) {
+    for(DatanodeStorageInfo storage : blocksMap.getStorages(b, State.NORMAL)) { // 从blocksMap中取最新的block信息
       final DatanodeDescriptor node = storage.getDatanodeDescriptor();
       if ((nodesCorrupt != null) && (nodesCorrupt.contains(node))) { // 记录在损坏集合中，说明此副本损坏
         corrupt++; // 损坏的副本数
@@ -3363,21 +3363,21 @@ public class BlockManager {
    * Process over replicated blocks only when active NN is out of safe mode.
    */
   void processOverReplicatedBlocksOnReCommission(
-      final DatanodeDescriptor srcNode) {
+      final DatanodeDescriptor srcNode) { // 由于取消decommission，需要对超出期望副本数的block进行处理
     if (!namesystem.isPopulatingReplQueues()) {
       return;
     }
     final Iterator<? extends Block> it = srcNode.getBlockIterator();
     int numOverReplicated = 0;
-    while(it.hasNext()) {
+    while(it.hasNext()) { // 一个block一个block判断并处理
       final Block block = it.next();
       BlockCollection bc = blocksMap.getBlockCollection(block);
       short expectedReplication = bc.getBlockReplication();
-      NumberReplicas num = countNodes(block);
+      NumberReplicas num = countNodes(block); // 统计副本数
       int numCurrentReplica = num.liveReplicas();
-      if (numCurrentReplica > expectedReplication) {
+      if (numCurrentReplica > expectedReplication) { // 是否大于期望副本数
         // over-replicated block 
-        processOverReplicatedBlock(block, expectedReplication, null, null);
+        processOverReplicatedBlock(block, expectedReplication, null, null); // 处理高于期望副本数的block
         numOverReplicated++;
       }
     }
@@ -3389,8 +3389,8 @@ public class BlockManager {
    * Returns whether a node can be safely decommissioned based on its 
    * liveness. Dead nodes cannot always be safely decommissioned.
    */
-  boolean isNodeHealthyForDecommission(DatanodeDescriptor node) {
-    if (!node.checkBlockReportReceived()) {
+  boolean isNodeHealthyForDecommission(DatanodeDescriptor node) { // 此DN是否能被安全的标记为DECOMMISSIONED
+    if (!node.checkBlockReportReceived()) { // 此节点没有发送过全量块汇报
       LOG.info("Node {} hasn't sent its first block report.", node);
       return false;
     }
@@ -3399,9 +3399,10 @@ public class BlockManager {
       return true;
     }
 
+    // 如果正在decommission的DN挂了
     updateState();
-    if (pendingReplicationBlocksCount == 0 &&
-        underReplicatedBlocksCount == 0) {
+    if (pendingReplicationBlocksCount == 0 && // 复制列表是否为空
+        underReplicatedBlocksCount == 0) { // 少副本列表是否为空
       LOG.info("Node {} is dead and there are no under-replicated" +
           " blocks or blocks pending replication. Safe to decommission.", 
           node);
@@ -3469,7 +3470,7 @@ public class BlockManager {
         neededReplications.update(block, repl.liveReplicas(), repl
             .decommissionedReplicas(), curExpectedReplicas, curReplicasDelta,
             expectedReplicasDelta);
-      } else {
+      } else { // 副本数充足
         int oldReplicas = repl.liveReplicas()-curReplicasDelta;
         int oldExpectedReplicas = curExpectedReplicas-expectedReplicasDelta;
         neededReplications.remove(block, oldReplicas, repl.decommissionedReplicas(),
@@ -3503,7 +3504,7 @@ public class BlockManager {
    * @return 0 if the block is not found;
    *         otherwise, return the replication factor of the block.
    */
-  private int getReplication(Block block) {
+  private int getReplication(Block block) { // 期望的副本数
     final BlockCollection bc = blocksMap.getBlockCollection(block);
     return bc == null? 0: bc.getBlockReplication();
   }
@@ -3553,11 +3554,11 @@ public class BlockManager {
     boolean enoughRacks = false;;
     Collection<DatanodeDescriptor> corruptNodes = 
                                   corruptReplicas.getNodes(b);
-    int numExpectedReplicas = getReplication(b);
+    int numExpectedReplicas = getReplication(b); // 期望的副本数
     String rackName = null;
     for(DatanodeStorageInfo storage : blocksMap.getStorages(b)) {
       final DatanodeDescriptor cur = storage.getDatanodeDescriptor();
-      if (!cur.isDecommissionInProgress() && !cur.isDecommissioned()) {
+      if (!cur.isDecommissionInProgress() && !cur.isDecommissioned()) { //此DN没有decommission
         if ((corruptNodes == null ) || !corruptNodes.contains(cur)) {
           if (numExpectedReplicas == 1 ||
               (numExpectedReplicas > 1 &&
@@ -3584,7 +3585,7 @@ public class BlockManager {
    * A block needs replication if the number of replicas is less than expected
    * or if it does not have enough racks.
    */
-  boolean isNeededReplication(Block b, int expected, int current) {
+  boolean isNeededReplication(Block b, int expected, int current) { // 副本数低于期望或者不符合机架放置策略
     return current < expected || !blockHasEnoughRacks(b);
   }
   

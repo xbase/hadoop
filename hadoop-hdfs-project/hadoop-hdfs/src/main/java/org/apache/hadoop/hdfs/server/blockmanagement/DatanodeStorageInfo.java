@@ -81,7 +81,7 @@ public class DatanodeStorageInfo {
   /**
    * Iterates over the list of blocks belonging to the data-node.
    */
-  class BlockIterator implements Iterator<BlockInfoContiguous> {
+  class BlockIterator implements Iterator<BlockInfoContiguous> { // 迭代此目录中所有的block
     private BlockInfoContiguous current;
 
     BlockIterator(BlockInfoContiguous head) {

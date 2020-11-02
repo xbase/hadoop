@@ -139,7 +139,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
   }
 
   private final Map<String, DatanodeStorageInfo> storageMap = 
-      new HashMap<String, DatanodeStorageInfo>();
+      new HashMap<String, DatanodeStorageInfo>(); // 存储目录Map <StorageId, DatanodeStorageInfo>
 
   /**
    * A list of CachedBlock objects on this datanode.
@@ -246,7 +246,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
    * When set to true, the node is not in include list and is not allowed
    * to communicate with the namenode
    */
-  private boolean disallowed = false;
+  private boolean disallowed = false; // 是否允许连接NN
 
   // The number of replication work pending before targets are determined
   private int PendingReplicationWithoutTargets = 0;
@@ -536,6 +536,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
     }
   }
 
+  // 迭代此DN所有的block
   private static class BlockIterator implements Iterator<BlockInfoContiguous> {
     private int index = 0;
     private final List<Iterator<BlockInfoContiguous>> iterators;
@@ -901,7 +902,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
    * checks whether atleast first block report has been received
    * @return
    */
-  public boolean checkBlockReportReceived() {
+  public boolean checkBlockReportReceived() { // 检查DN是否发送过全量块汇报
     if(this.getStorageInfos().length == 0) {
       return false;
     }

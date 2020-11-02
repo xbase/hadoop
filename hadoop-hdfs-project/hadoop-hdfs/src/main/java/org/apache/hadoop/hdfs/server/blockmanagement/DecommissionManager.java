@@ -196,17 +196,17 @@ public class DecommissionManager {
    * @param node
    */
   @VisibleForTesting
-  public void startDecommission(DatanodeDescriptor node) {
-    if (!node.isDecommissionInProgress() && !node.isDecommissioned()) {
+  public void startDecommission(DatanodeDescriptor node) { // 设置decommission状态，表示开始decommission
+    if (!node.isDecommissionInProgress() && !node.isDecommissioned()) { // 当前节点没有decommission
       // Update DN stats maintained by HeartbeatManager
-      hbManager.startDecommission(node);
+      hbManager.startDecommission(node); // 设置为DECOMMISSION_INPROGRESS状态
       // hbManager.startDecommission will set dead node to decommissioned.
       if (node.isDecommissionInProgress()) {
         for (DatanodeStorageInfo storage : node.getStorageInfos()) {
           LOG.info("Starting decommission of {} {} with {} blocks",
               node, storage, storage.numBlocks());
         }
-        node.decommissioningStatus.setStartTime(monotonicNow());
+        node.decommissioningStatus.setStartTime(monotonicNow()); // 设置decommission开始时间
         pendingNodes.add(node);
       }
     } else {
@@ -223,10 +223,11 @@ public class DecommissionManager {
   public void stopDecommission(DatanodeDescriptor node) {
     if (node.isDecommissionInProgress() || node.isDecommissioned()) {
       // Update DN stats maintained by HeartbeatManager
-      hbManager.stopDecommission(node);
+      hbManager.stopDecommission(node); // 设置为DECOMMISSIONED状态
       // Over-replicated blocks will be detected and processed when
       // the dead node comes back and send in its full block report.
       if (node.isAlive) {
+        // 由于取消decommission，需要对超出期望副本数的block进行处理
         blockManager.processOverReplicatedBlocksOnReCommission(node);
       }
       // Remove from tracking in DecommissionManager
@@ -248,7 +249,9 @@ public class DecommissionManager {
    * Full-strength replication is not always necessary, hence "sufficient".
    * @return true if sufficient, else false.
    */
-  private boolean isSufficientlyReplicated(BlockInfoContiguous block, 
+  // 正在写的block，只要达到最小副本数就行
+  // 已经写完成的block，需要达到默认副本数
+  private boolean isSufficientlyReplicated(BlockInfoContiguous block, // 副本数是否充足
       BlockCollection bc,
       NumberReplicas numberReplicas) {
     final int numExpected = bc.getBlockReplication();
@@ -262,8 +265,10 @@ public class DecommissionManager {
     // Block is under-replicated
     LOG.trace("Block {} numExpected={}, numLive={}", block, numExpected, 
         numLive);
+    // 正在写的block，只要达到最小副本数就行
+    // 已经写完成的block，需要达到默认副本数
     if (numExpected > numLive) {
-      if (bc.isUnderConstruction() && block.equals(bc.getLastBlock())) {
+      if (bc.isUnderConstruction() && block.equals(bc.getLastBlock())) { // 是否是文件最后一个正在写的block
         // Can decom a UC block as long as there will still be minReplicas
         if (numLive >= blockManager.minReplication) {
           LOG.trace("UC block {} sufficiently-replicated since numLive ({}) "
@@ -331,16 +336,16 @@ public class DecommissionManager {
     /**
      * The maximum number of blocks to check per tick.
      */
-    private final int numBlocksPerCheck;
+    private final int numBlocksPerCheck; // 拿一次写锁，最多处理这么多block
     /**
      * The maximum number of nodes to check per tick.
      */
-    private final int numNodesPerCheck;
+    private final int numNodesPerCheck; // 拿一次写锁，最多处理这么多DN节点
     /**
      * The maximum number of nodes to track in decomNodeBlocks. A value of 0
      * means no limit.
      */
-    private final int maxConcurrentTrackedNodes;
+    private final int maxConcurrentTrackedNodes; // decomNodeBlocks最多放这么多DN节点
     /**
      * The number of blocks that have been checked on this tick.
      */
@@ -410,6 +415,10 @@ public class DecommissionManager {
       }
     }
 
+    // 一个DN所有的block都满足副本数要求，才能被设置为DECOMMISSIONED
+    // 副本数要求：
+    // 1、正在写的block，只要达到最小副本数就行
+    // 2、已经写完成的block，需要达到默认副本数
     private void check() {
       final Iterator<Map.Entry<DatanodeDescriptor, AbstractList<BlockInfoContiguous>>>
           it = new CyclicIteration<>(decomNodeBlocks, iterkey).iterator();
@@ -417,12 +426,12 @@ public class DecommissionManager {
 
       while (it.hasNext()
           && !exceededNumBlocksPerCheck()
-          && !exceededNumNodesPerCheck()) {
+          && !exceededNumNodesPerCheck()) { // 遍历检查所有的decommission DN
         numNodesChecked++;
         final Map.Entry<DatanodeDescriptor, AbstractList<BlockInfoContiguous>>
             entry = it.next();
-        final DatanodeDescriptor dn = entry.getKey();
-        AbstractList<BlockInfoContiguous> blocks = entry.getValue();
+        final DatanodeDescriptor dn = entry.getKey(); // decommission DN
+        AbstractList<BlockInfoContiguous> blocks = entry.getValue(); // decommission DN上副本数不足的block
         boolean fullScan = false;
         if (blocks == null) {
           // This is a newly added datanode, run through its list to schedule 
@@ -430,14 +439,14 @@ public class DecommissionManager {
           // that are insufficiently replicated for further tracking
           LOG.debug("Newly-added node {}, doing full scan to find " +
               "insufficiently-replicated blocks.", dn);
-          blocks = handleInsufficientlyReplicated(dn);
+          blocks = handleInsufficientlyReplicated(dn); // 获取副本数不足的block，并添加到少副本集合
           decomNodeBlocks.put(dn, blocks);
           fullScan = true;
         } else {
           // This is a known datanode, check if its # of insufficiently 
           // replicated blocks has dropped to zero and if it can be decommed
           LOG.debug("Processing decommission-in-progress node {}", dn);
-          pruneSufficientlyReplicated(dn, blocks);
+          pruneSufficientlyReplicated(dn, blocks); // 从blocks中移除副本数充足的block
         }
         if (blocks.size() == 0) {
           if (!fullScan) {
@@ -449,15 +458,16 @@ public class DecommissionManager {
             // marking the datanode as decommissioned 
             LOG.debug("Node {} has finished replicating current set of "
                 + "blocks, checking with the full block map.", dn);
-            blocks = handleInsufficientlyReplicated(dn);
+            blocks = handleInsufficientlyReplicated(dn); // DECOMMISSIONED前，再检查一遍是否所有block都满足副本数要求
             decomNodeBlocks.put(dn, blocks);
           }
           // If the full scan is clean AND the node liveness is okay, 
           // we can finally mark as decommissioned.
           final boolean isHealthy =
-              blockManager.isNodeHealthyForDecommission(dn);
+              blockManager.isNodeHealthyForDecommission(dn); // 此DN是否能被安全的标记为DECOMMISSIONED
+          // blocks.size() == 0 说明此DN上所有的block都满足副本数要求
           if (blocks.size() == 0 && isHealthy) {
-            setDecommissioned(dn);
+            setDecommissioned(dn); // 设置为DECOMMISSIONED
             toRemove.add(dn);
             LOG.debug("Node {} is sufficiently replicated and healthy, "
                 + "marked as decommissioned.", dn);
@@ -482,7 +492,7 @@ public class DecommissionManager {
         iterkey = dn;
       }
       // Remove the datanodes that are decommissioned
-      for (DatanodeDescriptor dn : toRemove) {
+      for (DatanodeDescriptor dn : toRemove) { // 从decomNodeBlocks中移除
         Preconditions.checkState(dn.isDecommissioned(),
             "Removing a node that is not yet decommissioned!");
         decomNodeBlocks.remove(dn);
@@ -494,7 +504,7 @@ public class DecommissionManager {
      * datanode.
      */
     private void pruneSufficientlyReplicated(final DatanodeDescriptor datanode,
-        AbstractList<BlockInfoContiguous> blocks) {
+        AbstractList<BlockInfoContiguous> blocks) { // 从blocks中移除副本数充足的block
       processBlocksForDecomInternal(datanode, blocks.iterator(), null, true);
     }
 
@@ -509,7 +519,7 @@ public class DecommissionManager {
      * @return List of insufficiently replicated blocks 
      */
     private AbstractList<BlockInfoContiguous> handleInsufficientlyReplicated(
-        final DatanodeDescriptor datanode) {
+        final DatanodeDescriptor datanode) { // 获取低于期望副本数的block列表
       AbstractList<BlockInfoContiguous> insufficient = new ChunkedArrayList<>();
       processBlocksForDecomInternal(datanode, datanode.getBlockIterator(),
           insufficient, false);
@@ -536,40 +546,40 @@ public class DecommissionManager {
         final DatanodeDescriptor datanode,
         final Iterator<BlockInfoContiguous> it,
         final List<BlockInfoContiguous> insufficientlyReplicated,
-        boolean pruneSufficientlyReplicated) {
+        boolean pruneSufficientlyReplicated) { // 获取副本数不足的block list，并添加到少副本集合
       boolean firstReplicationLog = true;
-      int underReplicatedBlocks = 0;
-      int decommissionOnlyReplicas = 0;
-      int underReplicatedInOpenFiles = 0;
-      while (it.hasNext()) {
+      int underReplicatedBlocks = 0; // 副本数不足的block
+      int decommissionOnlyReplicas = 0; // 副本都在decommission节点中的block
+      int underReplicatedInOpenFiles = 0; // 正在写的block
+      while (it.hasNext()) { // 遍历此DN上所有的block
         numBlocksChecked++;
         final BlockInfoContiguous block = it.next();
         // Remove the block from the list if it's no longer in the block map,
         // e.g. the containing file has been deleted
-        if (blockManager.blocksMap.getStoredBlock(block) == null) {
+        if (blockManager.blocksMap.getStoredBlock(block) == null) { // 移除不在blocksMap中的block
           LOG.trace("Removing unknown block {}", block);
           it.remove();
           continue;
         }
         BlockCollection bc = blockManager.blocksMap.getBlockCollection(block);
-        if (bc == null) {
+        if (bc == null) { // 跳过没关联inode的block
           // Orphan block, will be invalidated eventually. Skip.
           continue;
         }
 
-        final NumberReplicas num = blockManager.countNodes(block);
+        final NumberReplicas num = blockManager.countNodes(block); // 统计副本数量
         final int liveReplicas = num.liveReplicas();
         final int curReplicas = liveReplicas;
 
         // Schedule under-replicated blocks for replication if not already
         // pending
-        if (blockManager.isNeededReplication(block, bc.getBlockReplication(),
+        if (blockManager.isNeededReplication(block, bc.getBlockReplication(), // 副本数是否低于期望
             liveReplicas)) {
-          if (!blockManager.neededReplications.contains(block) &&
-              blockManager.pendingReplications.getNumReplicas(block) == 0 &&
+          if (!blockManager.neededReplications.contains(block) && // 不包含在少副本集合
+              blockManager.pendingReplications.getNumReplicas(block) == 0 && // 没有生成复制任务
               namesystem.isPopulatingReplQueues()) {
             // Process these blocks only when active NN is out of safe mode.
-            blockManager.neededReplications.add(block,
+            blockManager.neededReplications.add(block, // 添加到少副本集合
                 curReplicas,
                 num.decommissionedReplicas(),
                 bc.getBlockReplication());
@@ -578,15 +588,15 @@ public class DecommissionManager {
 
         // Even if the block is under-replicated, 
         // it doesn't block decommission if it's sufficiently replicated 
-        if (isSufficientlyReplicated(block, bc, num)) {
-          if (pruneSufficientlyReplicated) {
+        if (isSufficientlyReplicated(block, bc, num)) { // 放宽条件，检查block副本数是否充足
+          if (pruneSufficientlyReplicated) { // 是否从blocks list中移除此block
             it.remove();
           }
           continue;
         }
 
         // We've found an insufficiently replicated block.
-        if (insufficientlyReplicated != null) {
+        if (insufficientlyReplicated != null) { // 添加到副本不足list中
           insufficientlyReplicated.add(block);
         }
         // Log if this is our first time through
