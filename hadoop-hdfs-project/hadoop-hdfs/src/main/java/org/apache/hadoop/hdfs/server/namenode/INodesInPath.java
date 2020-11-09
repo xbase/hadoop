@@ -52,10 +52,10 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
         Arrays.equals(HdfsConstants.DOT_SNAPSHOT_DIR_BYTES, pathComponent);
   }
 
-  static INodesInPath fromINode(INode inode) {
+  static INodesInPath fromINode(INode inode) { // 倒序获取每个层级的inode对象
     int depth = 0, index;
     INode tmp = inode;
-    while (tmp != null) {
+    while (tmp != null) { // 计算出path层级
       depth++;
       tmp = tmp.getParent();
     }
@@ -63,7 +63,7 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
     final INode[] inodes = new INode[depth];
     tmp = inode;
     index = depth;
-    while (tmp != null) {
+    while (tmp != null) { // 倒序获取每个层级的inode对象
       index--;
       path[index] = tmp.getKey();
       inodes[index] = tmp;
@@ -118,20 +118,20 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
    *        be thrown when the path refers to a symbolic link.
    * @return the specified number of existing INodes in the path
    */
-  static INodesInPath resolve(final INodeDirectory startingDir,
+  static INodesInPath resolve(final INodeDirectory startingDir,  // 正序获取每个层级的inode对象
       final byte[][] components, final boolean resolveLink)
-      throws UnresolvedLinkException { // path数组 转为 inode数组
+      throws UnresolvedLinkException { // path数组 转为 inode数组：["","c1","c2","c3"] -> [rootINode,c1,c2,null]
     Preconditions.checkArgument(startingDir.compareTo(components[0]) == 0);
 
     INode curNode = startingDir;
     int count = 0;
     int inodeNum = 0;
-    INode[] inodes = new INode[components.length];
+    INode[] inodes = new INode[components.length]; // inode数组
     boolean isSnapshot = false;
     int snapshotId = CURRENT_STATE_ID;
 
     while (count < components.length && curNode != null) {
-      final boolean lastComp = (count == components.length - 1); // 是否是最后一级目录
+      final boolean lastComp = (count == components.length - 1); // 是否是最后一个component
       inodes[inodeNum++] = curNode;
       final boolean isRef = curNode.isReference();
       final boolean isDir = curNode.isDirectory();
@@ -143,7 +143,7 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
             snapshotId)) {
           snapshotId = dir.getDirectoryWithSnapshotFeature().getLastSnapshotId();
         }
-      } else if (isRef && isDir && !lastComp) {
+      } else if (isRef && isDir && !lastComp) { // reference snapshot相关
         // If the curNode is a reference node, need to check its dstSnapshot:
         // 1. if the existing snapshot is no later than the dstSnapshot (which
         // is the latest snapshot in dst before the rename), the changes 
@@ -169,7 +169,7 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
           }
         }
       }
-      if (curNode.isSymlink() && (!lastComp || resolveLink)) {
+      if (curNode.isSymlink() && (!lastComp || resolveLink)) { // 软链相关
         final String path = constructPath(components, 0, components.length);
         final String preceding = constructPath(components, 0, count);
         final String remainder =
@@ -184,13 +184,13 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
         }
         throw new UnresolvedPathException(path, preceding, remainder, target);
       }
-      if (lastComp || !isDir) {
+      if (lastComp || !isDir) { // 当前是最后一个component，或者不是目录，跳出循环
         break;
       }
-      final byte[] childName = components[count + 1];
+      final byte[] childName = components[count + 1]; // 下一级component的path name
       
       // check if the next byte[] in components is for ".snapshot"
-      if (isDotSnapshotDir(childName) && dir.isSnapshottable()) {
+      if (isDotSnapshotDir(childName) && dir.isSnapshottable()) { // 是否是.snapshot目录
         // skip the ".snapshot" in components
         count++;
         isSnapshot = true;
@@ -206,14 +206,14 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
           curNode = s.getRoot();
           snapshotId = s.getId();
         }
-      } else {
+      } else { // 当前component是目录，获取下一级component的inode对象
         // normal case, and also for resolving file/dir under snapshot root
-        curNode = dir.getChild(childName,
+        curNode = dir.getChild(childName, // 获取child inode对象
             isSnapshot ? snapshotId : CURRENT_STATE_ID);
       }
       count++;
     }
-    if (isSnapshot && !isDotSnapshotDir(components[components.length - 1])) {
+    if (isSnapshot && !isDotSnapshotDir(components[components.length - 1])) { // snapshot相关
       // for snapshot path shrink the inode array. however, for path ending with
       // .snapshot, still keep last the null inode in the array
       INode[] newNodes = new INode[components.length - 1];
@@ -328,7 +328,7 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
   }
   
   /** @return the last inode. */
-  public INode getLastINode() {
+  public INode getLastINode() { // 获取最后一个inode对象
     return getINode(-1);
   }
 

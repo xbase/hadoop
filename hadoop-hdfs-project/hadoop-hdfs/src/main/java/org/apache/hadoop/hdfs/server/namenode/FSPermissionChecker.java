@@ -159,7 +159,7 @@ class FSPermissionChecker implements AccessControlEnforcer {
   void checkPermission(INodesInPath inodesInPath, boolean doCheckOwner,
       FsAction ancestorAccess, FsAction parentAccess, FsAction access,
       FsAction subAccess, boolean ignoreEmptyDir)
-      throws AccessControlException {
+      throws AccessControlException { // 文件系统权限检查
     if (LOG.isDebugEnabled()) {
       LOG.debug("ACCESS CHECK: " + this
           + ", doCheckOwner=" + doCheckOwner
@@ -173,23 +173,23 @@ class FSPermissionChecker implements AccessControlEnforcer {
     // If resolveLink, the check is performed on the link target.
     final int snapshotId = inodesInPath.getPathSnapshotId();
     final INode[] inodes = inodesInPath.getINodesArray();
-    final INodeAttributes[] inodeAttrs = new INodeAttributes[inodes.length];
-    final byte[][] pathByNameArr = new byte[inodes.length][];
+    final INodeAttributes[] inodeAttrs = new INodeAttributes[inodes.length]; // inode属性数组，就是inode本身
+    final byte[][] pathByNameArr = new byte[inodes.length][]; // 每级component name
     for (int i = 0; i < inodes.length && inodes[i] != null; i++) {
       if (inodes[i] != null) {
         pathByNameArr[i] = inodes[i].getLocalNameBytes();
-        inodeAttrs[i] = getINodeAttrs(pathByNameArr, i, inodes[i], snapshotId);
+        inodeAttrs[i] = getINodeAttrs(pathByNameArr, i, inodes[i], snapshotId); // inode 本身
       }
     }
 
     String path = inodesInPath.getPath();
-    int ancestorIndex = inodes.length - 2;
+    int ancestorIndex = inodes.length - 2; // 父目录的父目录下标
 
     AccessControlEnforcer enforcer =
         getAttributesProvider().getExternalAccessControlEnforcer(this);
     enforcer.checkPermission(fsOwner, supergroup, callerUgi, inodeAttrs, inodes,
         pathByNameArr, snapshotId, path, ancestorIndex, doCheckOwner,
-        ancestorAccess, parentAccess, access, subAccess, ignoreEmptyDir);
+        ancestorAccess, parentAccess, access, subAccess, ignoreEmptyDir); // 文件系统权限检查
   }
 
   @Override
@@ -199,10 +199,10 @@ class FSPermissionChecker implements AccessControlEnforcer {
       int ancestorIndex, boolean doCheckOwner, FsAction ancestorAccess,
       FsAction parentAccess, FsAction access, FsAction subAccess,
       boolean ignoreEmptyDir)
-      throws AccessControlException {
+      throws AccessControlException { // 文件系统权限检查
     for(; ancestorIndex >= 0 && inodes[ancestorIndex] == null;
         ancestorIndex--);
-    checkTraverse(inodeAttrs, path, ancestorIndex);
+    checkTraverse(inodeAttrs, path, ancestorIndex); // 检查父目录的父目录之前的目录是否有执行权限
 
     final INodeAttributes last = inodeAttrs[inodeAttrs.length - 1];
     if (parentAccess != null && parentAccess.implies(FsAction.WRITE)
@@ -256,7 +256,7 @@ class FSPermissionChecker implements AccessControlEnforcer {
   private void checkTraverse(INodeAttributes[] inodes, String path, int last
       ) throws AccessControlException {
     for(int j = 0; j <= last; j++) {
-      check(inodes[j], path, FsAction.EXECUTE);
+      check(inodes[j], path, FsAction.EXECUTE); // 检查基本权限和acl
     }
   }
 
@@ -288,18 +288,18 @@ class FSPermissionChecker implements AccessControlEnforcer {
 
   /** Guarded by {@link FSNamesystem#readLock()} */
   private void check(INodeAttributes[] inodes, String path, int i, FsAction access
-      ) throws AccessControlException {
+      ) throws AccessControlException { // 检查基本权限和acl
     check(i >= 0 ? inodes[i] : null, path, access);
   }
 
   private void check(INodeAttributes inode, String path, FsAction access
-      ) throws AccessControlException {
+      ) throws AccessControlException { // 检查基本权限和acl
     if (inode == null) {
       return;
     }
-    final FsPermission mode = inode.getFsPermission();
-    final AclFeature aclFeature = inode.getAclFeature();
-    if (aclFeature != null) {
+    final FsPermission mode = inode.getFsPermission(); // inode 权限，比如：777
+    final AclFeature aclFeature = inode.getAclFeature(); // acl
+    if (aclFeature != null) { // 检查acl
       // It's possible that the inode has a default ACL but no access ACL.
       int firstEntry = aclFeature.getEntryAt(0);
       if (AclEntryStatusFormat.getScope(firstEntry) == AclEntryScope.ACCESS) {

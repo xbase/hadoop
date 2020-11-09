@@ -36,7 +36,7 @@ import org.apache.hadoop.io.WritableFactory;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Stable
-public class FsPermission implements Writable {
+public class FsPermission implements Writable { // inode权限对象，比如：777
   private static final Log LOG = LogFactory.getLog(FsPermission.class);
 
   static final WritableFactory FACTORY = new WritableFactory() {

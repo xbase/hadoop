@@ -168,7 +168,7 @@ class FSDirStatAndListingOp {
 
     fsd.readLock();
     try {
-      if (srcs.endsWith(HdfsConstants.SEPARATOR_DOT_SNAPSHOT_DIR)) {
+      if (srcs.endsWith(HdfsConstants.SEPARATOR_DOT_SNAPSHOT_DIR)) { // snapshot相关
         return getSnapshotsListing(fsd, srcs, startAfter);
       }
       final int snapshot = iip.getPathSnapshotId();
@@ -366,7 +366,7 @@ class FSDirStatAndListingOp {
      final boolean isEncrypted;
 
      final FileEncryptionInfo feInfo = isRawPath ? null :
-         fsd.getFileEncryptionInfo(node, snapshot, iip);
+         fsd.getFileEncryptionInfo(node, snapshot, iip); // 加密相关
 
      if (node.isFile()) {
        final INodeFile fileNode = node.asFile();

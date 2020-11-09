@@ -722,7 +722,7 @@ public class BlockManager {
 
     BlockInfoContiguousUnderConstruction ucBlock =
         bc.setLastBlock(oldBlock, targets);
-    blocksMap.replaceBlock(ucBlock); // 更新
+    blocksMap.replaceBlock(ucBlock); // 更新Block信息
 
     // Remove block from replication queue.
     NumberReplicas replicas = countNodes(ucBlock); // 计算副本个数
@@ -766,10 +766,10 @@ public class BlockManager {
   private List<LocatedBlock> createLocatedBlockList(
       final BlockInfoContiguous[] blocks,
       final long offset, final long length, final int nrBlocksToReturn,
-      final AccessMode mode) throws IOException {
+      final AccessMode mode) throws IOException { // 根据offset和length，返回相应的block
     int curBlk = 0;
     long curPos = 0, blkSize = 0;
-    int nrBlocks = (blocks[0].getNumBytes() == 0) ? 0 : blocks.length;
+    int nrBlocks = (blocks[0].getNumBytes() == 0) ? 0 : blocks.length; // block个数
     for (curBlk = 0; curBlk < nrBlocks; curBlk++) {
       blkSize = blocks[curBlk].getNumBytes();
       assert blkSize > 0 : "Block of size 0";
@@ -822,7 +822,7 @@ public class BlockManager {
   /** @return a LocatedBlock for the given block */
   private LocatedBlock createLocatedBlock(final BlockInfoContiguous blk, final long pos
       ) throws IOException {
-    if (blk instanceof BlockInfoContiguousUnderConstruction) {
+    if (blk instanceof BlockInfoContiguousUnderConstruction) { // UC状态的block
       if (blk.isComplete()) {
         throw new IOException(
             "blk instanceof BlockInfoUnderConstruction && blk.isComplete()"
@@ -844,12 +844,12 @@ public class BlockManager {
           + " but corrupt replicas map has " + numCorruptReplicas);
     }
 
-    final int numNodes = blocksMap.numNodes(blk);
-    final boolean isCorrupt = numCorruptNodes == numNodes;
+    final int numNodes = blocksMap.numNodes(blk); // 实际副本数
+    final boolean isCorrupt = numCorruptNodes == numNodes; // 是否所有的副本都损坏
     final int numMachines = isCorrupt ? numNodes: numNodes - numCorruptNodes;
-    final DatanodeStorageInfo[] machines = new DatanodeStorageInfo[numMachines];
+    final DatanodeStorageInfo[] machines = new DatanodeStorageInfo[numMachines]; // 未损坏的副本
     int j = 0;
-    if (numMachines > 0) {
+    if (numMachines > 0) { // 所有的副本都损坏时，返回所有的副本；否则返回未损坏的副本
       for(DatanodeStorageInfo storage : blocksMap.getStorages(blk)) {
         final DatanodeDescriptor d = storage.getDatanodeDescriptor();
         final boolean replicaCorrupt = corruptReplicas.isReplicaCorrupt(blk, d);
@@ -877,7 +877,7 @@ public class BlockManager {
     assert namesystem.hasReadLock();
     if (blocks == null) {
       return null;
-    } else if (blocks.length == 0) {
+    } else if (blocks.length == 0) { // 此文件没有block
       return new LocatedBlocks(0, isFileUnderConstruction,
           Collections.<LocatedBlock>emptyList(), null, false, feInfo);
     } else {
@@ -886,9 +886,9 @@ public class BlockManager {
       }
       final AccessMode mode = needBlockToken? AccessMode.READ: null;
       final List<LocatedBlock> locatedblocks = createLocatedBlockList(
-          blocks, offset, length, Integer.MAX_VALUE, mode);
+          blocks, offset, length, Integer.MAX_VALUE, mode); // 根据offset和length，返回相应的block
 
-      final LocatedBlock lastlb;
+      final LocatedBlock lastlb; // 最后一个block
       final boolean isComplete;
       if (!inSnapshot) {
         final BlockInfoContiguous last = blocks[blocks.length - 1];
@@ -2233,9 +2233,7 @@ public class BlockManager {
     
     // find block by blockId
     BlockInfoContiguous storedBlock = blocksMap.getStoredBlock(block);
-    if(storedBlock == null) {
-      // NN blocksMap没有，加入到toInvalidate中
-      // 此操作说明申请块的时候，NN就会把块信息放入到blocksMap中
+    if(storedBlock == null) { // blocksMap没有，加入到toInvalidate中
       // If blocksMap does not contain reported block id,
       // the replica should be removed from the data-node.
       toInvalidate.add(new Block(block));
@@ -2380,7 +2378,7 @@ public class BlockManager {
       DatanodeDescriptor dn) {
     switch(reportedState) { // 汇报的副本状态
     case FINALIZED:
-      switch(ucState) { // 块状态
+      switch(ucState) { // NN保存的块状态
       case COMPLETE:
       case COMMITTED:
         if (storedBlock.getGenerationStamp() != reported.getGenerationStamp()) {
@@ -2417,7 +2415,7 @@ public class BlockManager {
       }
     case RBW:
     case RWR:
-      if (!storedBlock.isComplete()) {
+      if (!storedBlock.isComplete()) { // DN汇报的块状态和NN记录的，都是UC状态，则不做其他判断，认为此block没有损坏
         return null; // not corrupt
       } else if (storedBlock.getGenerationStamp() != reported.getGenerationStamp()) {
         final long reportedGS = reported.getGenerationStamp();
@@ -2478,7 +2476,7 @@ public class BlockManager {
       DatanodeStorageInfo storageInfo) throws IOException {
     BlockInfoContiguousUnderConstruction block = ucBlock.storedBlock;
     block.addReplicaIfNotPresent(
-        storageInfo, ucBlock.reportedBlock, ucBlock.reportedState); // 更新此副本信息
+        storageInfo, ucBlock.reportedBlock, ucBlock.reportedState); // 更新此副本信息，只更新replicas，并不会添加到triplets中
 
     if (ucBlock.reportedState == ReplicaState.FINALIZED &&
         !block.findDatanode(storageInfo.getDatanodeDescriptor())) { // 此副本已经完成，并且没有汇报过
@@ -2601,7 +2599,7 @@ public class BlockManager {
     }
     
     // if file is under construction, then done for now
-    if (bc.isUnderConstruction()) {
+    if (bc.isUnderConstruction()) { // 正在构建中的file，不判断副本数是否达到期望等逻辑
       return storedBlock;
     }
 
@@ -3273,11 +3271,11 @@ public class BlockManager {
         removeStoredBlock(storageInfo, rdbi.getBlock(), node);
         deleted++;
         break;
-      case RECEIVED_BLOCK: // DN已经接收完成的replica（Finalize状态）？
+      case RECEIVED_BLOCK: // DN已经接收完成的replica（Finalize状态）
         addBlock(storageInfo, rdbi.getBlock(), rdbi.getDelHints());
         received++;
         break;
-      case RECEIVING_BLOCK: // DN正在接收的replica（RBW状态）？
+      case RECEIVING_BLOCK: // DN正在接收的replica（RBW状态）
         receiving++;
         processAndHandleReportedBlock(storageInfo, rdbi.getBlock(),
                                       ReplicaState.RBW, null);

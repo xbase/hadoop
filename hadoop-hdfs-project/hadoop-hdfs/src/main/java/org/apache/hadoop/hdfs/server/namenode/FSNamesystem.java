@@ -1824,16 +1824,16 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       boolean needBlockToken)
       throws IOException {
     String src = srcArg;
-    byte[][] pathComponents = FSDirectory.getPathComponentsForReservedPath(src);
+    byte[][] pathComponents = FSDirectory.getPathComponentsForReservedPath(src); // path component数组
     src = dir.resolvePath(pc, srcArg, pathComponents);
-    final INodesInPath iip = dir.getINodesInPath(src, true);
-    final INodeFile inode = INodeFile.valueOf(iip.getLastINode(), src);
+    final INodesInPath iip = dir.getINodesInPath(src, true); // path解析为INodesInPath对象
+    final INodeFile inode = INodeFile.valueOf(iip.getLastINode(), src); // 当前path对应的inode对象
     if (isPermissionEnabled) {
-      dir.checkPathAccess(pc, iip, FsAction.READ);
-      checkUnreadableBySuperuser(pc, inode, iip.getPathSnapshotId());
+      dir.checkPathAccess(pc, iip, FsAction.READ); // 文件系统权限检查
+      checkUnreadableBySuperuser(pc, inode, iip.getPathSnapshotId()); // 超级用户不能读
     }
 
-    final long fileSize = iip.isSnapshot()
+    final long fileSize = iip.isSnapshot() // 文件大小
         ? inode.computeFileSize(iip.getPathSnapshotId())
         : inode.computeFileSizeNotIncludingLastUcBlock();
     boolean isUc = inode.isUnderConstruction();
@@ -1844,11 +1844,11 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       isUc = false;
     }
 
-    final FileEncryptionInfo feInfo =
+    final FileEncryptionInfo feInfo = // 加密相关
         FSDirectory.isReservedRawName(srcArg) ? null
             : dir.getFileEncryptionInfo(inode, iip.getPathSnapshotId(), iip);
 
-    final LocatedBlocks blocks = blockManager.createLocatedBlocks(
+    final LocatedBlocks blocks = blockManager.createLocatedBlocks( // 获取block位置信息
         inode.getBlocks(iip.getPathSnapshotId()), fileSize,
         isUc, offset, length, needBlockToken, iip.isSnapshot(), feInfo);
 
@@ -1858,9 +1858,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     }
 
     final long now = now();
-    boolean updateAccessTime = isAccessTimeSupported() && !isInSafeMode()
+    boolean updateAccessTime = isAccessTimeSupported() && !isInSafeMode() // 是否需要更新atime
         && !iip.isSnapshot()
-        && now > inode.getAccessTime() + getAccessTimePrecision();
+        && now > inode.getAccessTime() + getAccessTimePrecision(); // 超过一定间隔，更新一次atime
     return new GetBlockLocationsResult(updateAccessTime, blocks);
   }
 
@@ -2551,6 +2551,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
               src + " for client " + clientMachine);
         }
       } else {
+        // overwrite时，无论当前file是否有租约，直接删除inode和租约
         if (overwrite) { // 此文件已经存在，并且设置了覆盖，则先删除此文件
           toRemoveBlocks = new BlocksMapUpdateInfo();
           List<INode> toRemoveINodes = new ChunkedArrayList<INode>();
@@ -3528,7 +3529,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         inode = iip.getLastINode();
       } else {
         inode = dir.getInode(fileId);
-        iip = INodesInPath.fromINode(inode);
+        iip = INodesInPath.fromINode(inode); // 倒序构造IIP对象
         if (inode != null) {
           src = iip.getPath();
         }
@@ -3790,7 +3791,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         dir.writeLock();
       }
       try {
-        dir.removeFromInodeMap(removedINodes); // 删除inode
+        dir.removeFromInodeMap(removedINodes); // 从inodeMaps中删除inode
       } finally {
         if (acquireINodeMapLock) {
           dir.writeUnlock();
@@ -5915,7 +5916,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     if (pc.isSuperUser()) {
       for (XAttr xattr : FSDirXAttrOp.getXAttrs(dir, inode, snapshotId)) {
         if (XAttrHelper.getPrefixName(xattr).
-            equals(SECURITY_XATTR_UNREADABLE_BY_SUPERUSER)) {
+            equals(SECURITY_XATTR_UNREADABLE_BY_SUPERUSER)) { // 超级用户不能读
           throw new AccessControlException("Access is denied for " +
               pc.getUser() + " since the superuser is not allowed to " +
               "perform this operation.");
@@ -6213,14 +6214,17 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     return blockId;
   }
 
+  // 明明有INodeFile对象，为何还需要检查是否被删除？
+  // 因为delete操作，分两次拿fsLock，先获取fsLock删除inode，然后释放并再次获取fsLock删除block
+  // 而且Block中保存有inode的引用，所以有可能通过Block获取到被删除的inode，所以需要判断文件是否被删除
   private boolean isFileDeleted(INodeFile file) { // 检查文件是否被删除
     // Not in the inodeMap or in the snapshot but marked deleted.
-    if (dir.getInode(file.getId()) == null) {
+    if (dir.getInode(file.getId()) == null) { // 不在inodeMap，说明已经被删除
       return true;
     }
 
-    // look at the path hierarchy to see if one parent is deleted by recursive
-    // deletion
+    // look at the path hierarchy to see if one parent is deleted by recursive deletion
+    // delete目录也是一个原子操作，为何需要向上递归检查一遍？HDFS-6825，没太看懂
     INode tmpChild = file;
     INodeDirectory tmpParent = file.getParent();
     while (true) { // 向上递归检查，父目录是否被删除
@@ -6230,13 +6234,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
       INode childINode = tmpParent.getChild(tmpChild.getLocalNameBytes(),
           Snapshot.CURRENT_STATE_ID);
-      if (childINode == null || !childINode.equals(tmpChild)) {
+      // 父目录没有此inode，说明此inode已经被删除
+      if (childINode == null || !childINode.equals(tmpChild)) { // name相同，但是inode id不同
         // a newly created INode with the same name as an already deleted one
         // would be a different INode than the deleted one
         return true;
       }
 
-      if (tmpParent.isRoot()) {
+      if (tmpParent.isRoot()) { // 父目录为根目录，就不用再检查了
         break;
       }
 
@@ -6320,7 +6325,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * @throws IOException if any error occurs
    */
   LocatedBlock updateBlockForPipeline(ExtendedBlock block, 
-      String clientName) throws IOException {
+      String clientName) throws IOException { // 给block申请一个新的GS
     LocatedBlock locatedBlock;
     checkOperation(OperationCategory.WRITE);
     writeLock();

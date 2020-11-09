@@ -40,7 +40,7 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    * Block replicas as assigned when the block was allocated.
    * This defines the pipeline order.
    */
-  private List<ReplicaUnderConstruction> replicas; // 此Block的所有副本
+  private List<ReplicaUnderConstruction> replicas; // UC状态，使用此字段保存此Block的所有副本
 
   /**
    * Index of the primary data node doing the recovery. Useful for log
@@ -192,7 +192,7 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
   }
 
   /** Set expected locations */
-  public void setExpectedLocations(DatanodeStorageInfo[] targets) {
+  public void setExpectedLocations(DatanodeStorageInfo[] targets) { // 通过此方法，设置此block的副本信息
     int numLocations = targets == null ? 0 : targets.length;
     this.replicas = new ArrayList<ReplicaUnderConstruction>(numLocations);
     for(int i = 0; i < numLocations; i++)

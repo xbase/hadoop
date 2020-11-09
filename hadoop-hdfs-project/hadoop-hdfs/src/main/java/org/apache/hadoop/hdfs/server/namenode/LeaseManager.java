@@ -249,7 +249,7 @@ public class LeaseManager {
    * expire, all the corresponding locks can be released.
    *************************************************************/
   class Lease implements Comparable<Lease> {
-    private final String holder;
+    private final String holder; // ClientName，比如：DFSClient_attempt_1603790088750
     private long lastUpdate;
     // 为什么不通过file inodeId来判断lease？path可能rename
     private final Collection<String> paths = new TreeSet<String>();

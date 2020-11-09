@@ -215,6 +215,8 @@ public class BlockInfoContiguous extends Block
   /**
    * Add a {@link DatanodeStorageInfo} location for a block
    */
+  // 刚申请的block为UC状态，所有的副本信息保存在BlockInfoContiguousUnderConstruction.replicas中
+  // 当接受增量块汇报时，再调用此方法，添加到triplets中
   boolean addStorage(DatanodeStorageInfo storage) { // 添加一个副本
     // find the last null node
     int lastNode = ensureCapacity(1);

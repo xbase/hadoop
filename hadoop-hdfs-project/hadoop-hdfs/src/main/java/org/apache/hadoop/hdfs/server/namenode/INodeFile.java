@@ -234,7 +234,7 @@ public class INodeFile extends INodeWithAdditionalFields
 
   @Override // BlockCollection, the file should be under construction
   public BlockInfoContiguousUnderConstruction setLastBlock(
-      BlockInfoContiguous lastBlock, DatanodeStorageInfo[] locations)
+      BlockInfoContiguous lastBlock, DatanodeStorageInfo[] locations) // 设置最后一个block为UC，并更新副本信息
       throws IOException {
     Preconditions.checkState(isUnderConstruction(),
         "file is no longer under construction");
@@ -526,9 +526,9 @@ public class INodeFile extends INodeWithAdditionalFields
 
   @Override
   public void destroyAndCollectBlocks(BlockStoragePolicySuite bsps,
-      BlocksMapUpdateInfo collectedBlocks, final List<INode> removedINodes) { // 删除文件：删除并收集blocks
+      BlocksMapUpdateInfo collectedBlocks, final List<INode> removedINodes) { // 设置blocks和parent为null，并收集blocks
     if (blocks != null && collectedBlocks != null) {
-      for (BlockInfoContiguous blk : blocks) {
+      for (BlockInfoContiguous blk : blocks) { // 把此inode的blocks添加到collectedBlocks
         collectedBlocks.addDeleteBlock(blk);
         blk.setBlockCollection(null);
       }
@@ -537,10 +537,10 @@ public class INodeFile extends INodeWithAdditionalFields
     if (getAclFeature() != null) {
       AclStorage.removeAclFeature(getAclFeature());
     }
-    clear();
+    clear(); // 设置parent为null
     removedINodes.add(this);
     FileWithSnapshotFeature sf = getFileWithSnapshotFeature();
-    if (sf != null) {
+    if (sf != null) { // 快照相关
       sf.getDiffs().destroyAndCollectSnapshotBlocks(collectedBlocks);
       sf.clearDiffs();
     }
@@ -659,7 +659,7 @@ public class INodeFile extends INodeWithAdditionalFields
    * Compute file size of the current file size
    * but not including the last block if it is under construction.
    */
-  public final long computeFileSizeNotIncludingLastUcBlock() {
+  public final long computeFileSizeNotIncludingLastUcBlock() { // 不包括最后一个block的文件大小
     return computeFileSize(false, false);
   }
 

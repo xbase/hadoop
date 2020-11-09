@@ -29,9 +29,9 @@ import org.apache.hadoop.hdfs.server.namenode.INode.BlocksMapUpdateInfo;
  */
 @InterfaceAudience.Private
 public class FileUnderConstructionFeature implements INode.Feature {
-  // 发起写操作的客户端名字
+  // 发起写操作的客户端名字，比如：DFSClient_attempt_1603790088750
   private String clientName; // lease holder
-  // 发起写操作的客户端主机名
+  // 发起写操作的客户端ip，比如：192.168.0.160
   private final String clientMachine;
 
   public FileUnderConstructionFeature(final String clientName, final String clientMachine) {

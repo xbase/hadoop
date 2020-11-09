@@ -402,12 +402,12 @@ public class INodeDirectory extends INodeWithAdditionalFields
    *          the current directory.
    * @return the child inode.
    */
-  public INode getChild(byte[] name, int snapshotId) {
+  public INode getChild(byte[] name, int snapshotId) { // 根据name，获取child inode对象
     DirectoryWithSnapshotFeature sf;
     if (snapshotId == Snapshot.CURRENT_STATE_ID || 
-        (sf = getDirectoryWithSnapshotFeature()) == null) {
+        (sf = getDirectoryWithSnapshotFeature()) == null) { // 正常目录
       ReadOnlyList<INode> c = getCurrentChildrenList();
-      final int i = ReadOnlyList.Util.binarySearch(c, name);
+      final int i = ReadOnlyList.Util.binarySearch(c, name); // 根据name，获取child inode对象下标
       return i < 0 ? null : c.get(i);
     }
     
@@ -446,7 +446,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
    *         otherwise, return the children list corresponding to the snapshot.
    *         Note that the returned list is never null.
    */
-  public ReadOnlyList<INode> getChildrenList(final int snapshotId) {
+  public ReadOnlyList<INode> getChildrenList(final int snapshotId) { // 获取children只读列表
     DirectoryWithSnapshotFeature sf;
     if (snapshotId == Snapshot.CURRENT_STATE_ID
         || (sf = this.getDirectoryWithSnapshotFeature()) == null) {
@@ -455,7 +455,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
     return sf.getChildrenList(this, snapshotId);
   }
   
-  private ReadOnlyList<INode> getCurrentChildrenList() {
+  private ReadOnlyList<INode> getCurrentChildrenList() { // 获取children只读列表
     return children == null ? ReadOnlyList.Util.<INode> emptyList()
         : ReadOnlyList.Util.asReadOnlyList(children);
   }
@@ -749,8 +749,8 @@ public class INodeDirectory extends INodeWithAdditionalFields
 
   @Override
   public void clear() {
-    super.clear();
-    clearChildren();
+    super.clear(); // 设置parent为null
+    clearChildren(); // 设置children为null
   }
 
   /** Call cleanSubtree(..) recursively down the subtree. */
@@ -779,6 +779,8 @@ public class INodeDirectory extends INodeWithAdditionalFields
     return counts;
   }
 
+  // 递归设置此目录下所有inode的相关属性为null：children、blocks、parent
+  // 递归收集此目录下所有的inode和blocks
   @Override
   public void destroyAndCollectBlocks(final BlockStoragePolicySuite bsps,
       final BlocksMapUpdateInfo collectedBlocks,
@@ -788,12 +790,12 @@ public class INodeDirectory extends INodeWithAdditionalFields
       sf.clear(bsps, this, collectedBlocks, removedINodes);
     }
     for (INode child : getChildrenList(Snapshot.CURRENT_STATE_ID)) {
-      child.destroyAndCollectBlocks(bsps, collectedBlocks, removedINodes);
+      child.destroyAndCollectBlocks(bsps, collectedBlocks, removedINodes); // 递归处理子目录和文件
     }
     if (getAclFeature() != null) {
       AclStorage.removeAclFeature(getAclFeature());
     }
-    clear();
+    clear(); // 设置parent、blocks为null
     removedINodes.add(this);
   }
   

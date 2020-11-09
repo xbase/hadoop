@@ -134,7 +134,7 @@ class BlocksMap {
   
   /** Returns the block object it it exists in the map. */
   BlockInfoContiguous getStoredBlock(Block b) {
-    return blocks.get(b);
+    return blocks.get(b); // 以blockId为key，获取block
   }
 
   /**
@@ -220,6 +220,7 @@ class BlocksMap {
    * @param newBlock - block for replacement
    * @return new block
    */
+  // 当block状态转换时，调用此方法：uc -> complete, complete -> uc
   // 替换Block，从下面3个位置：
   // 1、blocksMap
   // 2、Block副本信息

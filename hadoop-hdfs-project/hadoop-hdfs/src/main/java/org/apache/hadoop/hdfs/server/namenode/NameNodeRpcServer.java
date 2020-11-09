@@ -601,7 +601,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
       CryptoProtocolVersion[] supportedVersions)
       throws IOException {
     checkNNStartup();
-    String clientMachine = getClientMachine(); // 客户端hostname
+    String clientMachine = getClientMachine(); // 客户端ip
     if (stateChangeLog.isDebugEnabled()) {
       stateChangeLog.debug("*DIR* NameNode.create: file "
           +src+" for "+clientName+" at "+clientMachine);
@@ -634,7 +634,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
 
   @Override // ClientProtocol
   public LastBlockWithStatus append(String src, String clientName,
-      EnumSetWritable<CreateFlag> flag) throws IOException {
+      EnumSetWritable<CreateFlag> flag) throws IOException { // 把最后一个block转为UC，并返回
     checkNNStartup();
     String clientMachine = getClientMachine();
     if (stateChangeLog.isDebugEnabled()) {
@@ -1533,7 +1533,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
     }
   }
 
-  private static String getClientMachine() { // 获取客户端hostname
+  private static String getClientMachine() { // 获取客户端ip
     String clientMachine = NamenodeWebHdfsMethods.getRemoteAddress();
     if (clientMachine == null) { //not a web client
       clientMachine = Server.getRemoteAddress();

@@ -568,7 +568,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * @throws AccessControlException
    */
   String resolvePath(FSPermissionChecker pc, String path, byte[][] pathComponents)
-      throws FileNotFoundException, AccessControlException { // 解析出真实path（主要是处理一些保留目录）
+      throws FileNotFoundException, AccessControlException { // 普通path直接返回，如果是保留目录，需要解析出真实path
     if (isReservedRawName(path) && isPermissionEnabled) {
       pc.checkSuperuserPrivilege(); // /.reserved/raw 目录需要超级用户权限
     }
@@ -1026,8 +1026,8 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
   @VisibleForTesting
   public long removeLastINode(final INodesInPath iip) {
     final int latestSnapshot = iip.getLatestSnapshotId();
-    final INode last = iip.getLastINode();
-    final INodeDirectory parent = iip.getINode(-2).asDirectory();
+    final INode last = iip.getLastINode(); // 待移除inode
+    final INodeDirectory parent = iip.getINode(-2).asDirectory(); // 待移除inode的父目录
     if (!parent.removeChild(last, latestSnapshot)) { // 删除child
       return -1;
     }
@@ -1445,7 +1445,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
   /**
    * @return path components for reserved path, else null.
    */
-  static byte[][] getPathComponentsForReservedPath(String src) { // 把保留目录，按 / 拆分
+  static byte[][] getPathComponentsForReservedPath(String src) { // 非保留目录，按 / 拆分，每级目录使用byte数组表示
     return !isReservedName(src) ? null : INode.getPathComponents(src);
   }
 
@@ -1493,8 +1493,8 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * @throws FileNotFoundException if inodeid is invalid
    */
   static String resolvePath(String src, byte[][] pathComponents,
-      FSDirectory fsd) throws FileNotFoundException { // 解析出真实path（主要是处理一些保留目录）
-    final int nComponents = (pathComponents == null) ?
+      FSDirectory fsd) throws FileNotFoundException { // 普通path直接返回，如果是保留目录，需要解析出真实path
+    final int nComponents = (pathComponents == null) ? // path层级数
         0 : pathComponents.length;
     if (nComponents <= 2) {
       return src; // 普通目录或 /.reserved下的非保留目录，直接返回
@@ -1643,8 +1643,8 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
   INodesInPath getINodesInPath4Write(String src, boolean resolveLink)
           throws UnresolvedLinkException, SnapshotAccessControlException {
     final byte[][] components = INode.getPathComponents(src); // 根据 / 切分path，每个部分用byte数组表示
-    INodesInPath inodesInPath = INodesInPath.resolve(rootDir, components,
-        resolveLink); // path数组 转为 inode数组
+    INodesInPath inodesInPath = INodesInPath.resolve(rootDir, components, // path数组 转为 inode数组
+        resolveLink);
     if (inodesInPath.isSnapshot()) {
       throw new SnapshotAccessControlException(
               "Modification on a read-only snapshot is disallowed");
