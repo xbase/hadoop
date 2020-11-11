@@ -47,17 +47,17 @@ class FSDirMkdirOp {
     if(NameNode.stateChangeLog.isDebugEnabled()) {
       NameNode.stateChangeLog.debug("DIR* NameSystem.mkdirs: " + src);
     }
-    if (!DFSUtil.isValidName(src)) {
+    if (!DFSUtil.isValidName(src)) { // path name是否有效
       throw new InvalidPathException(src);
     }
     FSPermissionChecker pc = fsd.getPermissionChecker();
     byte[][] pathComponents = FSDirectory.getPathComponentsForReservedPath(src);
     fsd.writeLock();
     try {
-      src = fsd.resolvePath(pc, src, pathComponents);
+      src = fsd.resolvePath(pc, src, pathComponents); // 真实path
       INodesInPath iip = fsd.getINodesInPath4Write(src);
       if (fsd.isPermissionEnabled()) {
-        fsd.checkTraverse(pc, iip);
+        fsd.checkTraverse(pc, iip); // 检查权限
       }
 
       final INode lastINode = iip.getLastINode();
@@ -66,28 +66,28 @@ class FSDirMkdirOp {
       }
 
       INodesInPath existing = lastINode != null ? iip : iip.getExistingINodes();
-      if (lastINode == null) {
+      if (lastINode == null) { // 说明待创建目录不存在
         if (fsd.isPermissionEnabled()) {
           fsd.checkAncestorAccess(pc, iip, FsAction.WRITE);
         }
 
         if (!createParent) {
-          fsd.verifyParentDir(iip, src);
+          fsd.verifyParentDir(iip, src);  // 检查父节点是否存在，不存在则抛异常
         }
 
         // validate that we have enough inodes. This is, at best, a
         // heuristic because the mkdirs() operation might need to
         // create multiple inodes.
-        fsn.checkFsObjectLimit();
+        fsn.checkFsObjectLimit(); // 检查元数据数量是否已达上限
 
-        List<String> nonExisting = iip.getPath(existing.length(),
+        List<String> nonExisting = iip.getPath(existing.length(), // 获取不存在的目录
             iip.length() - existing.length());
         int length = nonExisting.size();
         if (length > 1) {
           List<String> ancestors = nonExisting.subList(0, length - 1);
           // Ensure that the user can traversal the path by adding implicit
           // u+wx permission to all ancestor directories
-          existing = createChildrenDirectories(fsd, existing, ancestors,
+          existing = createChildrenDirectories(fsd, existing, ancestors, // 创建前面缺失的目录
               addImplicitUwx(permissions, permissions));
           if (existing == null) {
             throw new IOException("Failed to create directory: " + src);
@@ -95,11 +95,11 @@ class FSDirMkdirOp {
         }
 
         if ((existing = createChildrenDirectories(fsd, existing,
-            nonExisting.subList(length - 1, length), permissions)) == null) {
+            nonExisting.subList(length - 1, length), permissions)) == null) { // 创建最后一级目录
           throw new IOException("Failed to create directory: " + src);
         }
       }
-      return fsd.getAuditFileInfo(existing);
+      return fsd.getAuditFileInfo(existing); // 如果是外部来的请求，则返回HdfsFileStatus对象
     } finally {
       fsd.writeUnlock();
     }
@@ -163,7 +163,7 @@ class FSDirMkdirOp {
     assert fsd.hasWriteLock();
 
     for (String component : children) {
-      existing = createSingleDirectory(fsd, existing, component, perm);
+      existing = createSingleDirectory(fsd, existing, component, perm); // 创建一个目录
       if (existing == null) {
         return null;
       }
@@ -186,9 +186,9 @@ class FSDirMkdirOp {
 
   private static INodesInPath createSingleDirectory(FSDirectory fsd,
       INodesInPath existing, String localName, PermissionStatus perm)
-      throws IOException {
+      throws IOException { // 创建一个目录
     assert fsd.hasWriteLock();
-    existing = unprotectedMkdir(fsd, fsd.allocateNewInodeId(), existing,
+    existing = unprotectedMkdir(fsd, fsd.allocateNewInodeId(), existing,  // 创建一个目录
         localName.getBytes(Charsets.UTF_8), perm, null, now());
     if (existing == null) {
       return null;
@@ -200,7 +200,7 @@ class FSDirMkdirOp {
     NameNode.getNameNodeMetrics().incrFilesCreated();
 
     String cur = existing.getPath();
-    fsd.getEditLog().logMkDir(cur, newNode);
+    fsd.getEditLog().logMkDir(cur, newNode); // 记录edit log
     if (NameNode.stateChangeLog.isDebugEnabled()) {
       NameNode.stateChangeLog.debug("mkdirs: created directory " + cur);
     }
@@ -224,19 +224,19 @@ class FSDirMkdirOp {
   private static INodesInPath unprotectedMkdir(FSDirectory fsd, long inodeId,
       INodesInPath parent, byte[] name, PermissionStatus permission,
       List<AclEntry> aclEntries, long timestamp)
-      throws QuotaExceededException, AclException, FileAlreadyExistsException {
+      throws QuotaExceededException, AclException, FileAlreadyExistsException { // 创建一个目录
     assert fsd.hasWriteLock();
     assert parent.getLastINode() != null;
-    if (!parent.getLastINode().isDirectory()) {
+    if (!parent.getLastINode().isDirectory()) { // 检查parent是否是目录
       throw new FileAlreadyExistsException("Parent path is not a directory: " +
           parent.getPath() + " " + DFSUtil.bytes2String(name));
     }
     final INodeDirectory dir = new INodeDirectory(inodeId, name, permission,
         timestamp);
 
-    INodesInPath iip = fsd.addLastINode(parent, dir, true);
+    INodesInPath iip = fsd.addLastINode(parent, dir, true); // 添加到父目录的child列表
     if (iip != null && aclEntries != null) {
-      AclStorage.updateINodeAcl(dir, aclEntries, Snapshot.CURRENT_STATE_ID);
+      AclStorage.updateINodeAcl(dir, aclEntries, Snapshot.CURRENT_STATE_ID); // 更新acl
     }
     return iip;
   }

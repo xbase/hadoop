@@ -648,7 +648,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * when image/edits have been loaded and the file/dir to be deleted is not
    * contained in snapshots.
    */
-  void updateCountForDelete(final INode inode, final INodesInPath iip) {
+  void updateCountForDelete(final INode inode, final INodesInPath iip) { // 更新quota
     if (getFSNamesystem().isImageLoaded() &&
         !inode.isInLatestSnapshot(iip.getLatestSnapshotId())) {
       QuotaCounts counts = inode.computeQuotaUsage(getBlockStoragePolicySuite());
@@ -1024,7 +1024,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    *          1 otherwise.
    */
   @VisibleForTesting
-  public long removeLastINode(final INodesInPath iip) {
+  public long removeLastINode(final INodesInPath iip) { // 移除最后一级inode
     final int latestSnapshot = iip.getLatestSnapshotId();
     final INode last = iip.getLastINode(); // 待移除inode
     final INodeDirectory parent = iip.getINode(-2).asDirectory(); // 待移除inode的父目录
@@ -1641,7 +1641,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * @throws SnapshotAccessControlException if path is in RO snapshot
    */
   INodesInPath getINodesInPath4Write(String src, boolean resolveLink)
-          throws UnresolvedLinkException, SnapshotAccessControlException {
+          throws UnresolvedLinkException, SnapshotAccessControlException {  // 通过path，正序获取每个层级的inode对象
     final byte[][] components = INode.getPathComponents(src); // 根据 / 切分path，每个部分用byte数组表示
     INodesInPath inodesInPath = INodesInPath.resolve(rootDir, components, // path数组 转为 inode数组
         resolveLink);
@@ -1730,7 +1730,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
   }
 
   HdfsFileStatus getAuditFileInfo(INodesInPath iip)
-      throws IOException {
+      throws IOException { // 如果是外部来的请求，则返回HdfsFileStatus对象
     return (namesystem.isAuditEnabled() && namesystem.isExternalInvocation())
         ? FSDirStatAndListingOp.getFileInfo(this, iip.getPath(), iip, false,
             false) : null;
@@ -1740,7 +1740,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * Verify that parent directory of src exists.
    */
   void verifyParentDir(INodesInPath iip, String src)
-      throws FileNotFoundException, ParentNotDirectoryException { // 检查父节点是否存在
+      throws FileNotFoundException, ParentNotDirectoryException { // 检查父节点是否存在，不存在则抛异常
     Path parent = new Path(src).getParent();
     if (parent != null) {
       final INode parentNode = iip.getINode(-2);

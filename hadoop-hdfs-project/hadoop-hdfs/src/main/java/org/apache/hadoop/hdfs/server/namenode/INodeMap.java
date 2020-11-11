@@ -36,7 +36,7 @@ public class INodeMap { // 维护 inodeID -> INode 的映射关系
   
   static INodeMap newInstance(INodeDirectory rootDir) {
     // Compute the map capacity by allocating 1% of total memory
-    int capacity = LightWeightGSet.computeCapacity(1, "INodeMap");
+    int capacity = LightWeightGSet.computeCapacity(1, "INodeMap"); // map的初始化capacity
     GSet<INode, INodeWithAdditionalFields> map
         = new LightWeightGSet<INode, INodeWithAdditionalFields>(capacity);
     map.put(rootDir);
@@ -88,7 +88,7 @@ public class INodeMap { // 维护 inodeID -> INode 的映射关系
    *         such {@link INode} in the map.
    */
   public INode get(long id) {
-    INode inode = new INodeWithAdditionalFields(id, null, new PermissionStatus(
+    INode inode = new INodeWithAdditionalFields(id, null, new PermissionStatus( // 构造一个inode对象
         "", "", new FsPermission((short) 0)), 0, 0) {
       
       @Override

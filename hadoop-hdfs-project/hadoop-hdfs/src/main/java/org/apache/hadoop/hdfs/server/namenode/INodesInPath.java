@@ -118,7 +118,7 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
    *        be thrown when the path refers to a symbolic link.
    * @return the specified number of existing INodes in the path
    */
-  static INodesInPath resolve(final INodeDirectory startingDir,  // 正序获取每个层级的inode对象
+  static INodesInPath resolve(final INodeDirectory startingDir,  // 通过components，正序获取每个层级的inode对象
       final byte[][] components, final boolean resolveLink)
       throws UnresolvedLinkException { // path数组 转为 inode数组：["","c1","c2","c3"] -> [rootINode,c1,c2,null]
     Preconditions.checkArgument(startingDir.compareTo(components[0]) == 0);
@@ -235,7 +235,7 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
    * @param inode the new inode
    * @return a new INodesInPath instance
    */
-  public static INodesInPath replace(INodesInPath iip, int pos, INode inode) {
+  public static INodesInPath replace(INodesInPath iip, int pos, INode inode) { // 替换iip对象指定位置的inode对象
     Preconditions.checkArgument(iip.length() > 0 && pos > 0 // no for root
         && pos < iip.length());
     if (iip.getINode(pos) == null) {
@@ -358,7 +358,7 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
    * @param length number of path components
    * @return sub-list of the path
    */
-  public List<String> getPath(int offset, int length) {
+  public List<String> getPath(int offset, int length) { // 获取指定范围的component list，[offset,offset+length]
     Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length
         <= path.length);
     ImmutableList.Builder<String> components = ImmutableList.builder();

@@ -72,14 +72,14 @@ public class LeaseManager {
 
   private final FSNamesystem fsnamesystem;
 
-  private long softLimit = HdfsConstants.LEASE_SOFTLIMIT_PERIOD;
-  private long hardLimit = HdfsConstants.LEASE_HARDLIMIT_PERIOD;
+  private long softLimit = HdfsConstants.LEASE_SOFTLIMIT_PERIOD; // 1分钟
+  private long hardLimit = HdfsConstants.LEASE_HARDLIMIT_PERIOD; // 1小时
 
   //
   // Used for handling lock-leases
   // Mapping: leaseHolder -> Lease
   //
-  private final SortedMap<String, Lease> leases = new TreeMap<String, Lease>();
+  private final SortedMap<String, Lease> leases = new TreeMap<String, Lease>(); // <holder,lease> holder=clientName
   // Set of: Lease
   private final NavigableSet<Lease> sortedLeases = new TreeSet<Lease>();
 
@@ -87,19 +87,19 @@ public class LeaseManager {
   // Map path names to leases. It is protected by the sortedLeases lock.
   // The map stores pathnames in lexicographical order.
   //
-  private final SortedMap<String, Lease> sortedLeasesByPath = new TreeMap<String, Lease>();
+  private final SortedMap<String, Lease> sortedLeasesByPath = new TreeMap<String, Lease>(); // <path,lease>
 
   private Daemon lmthread;
   private volatile boolean shouldRunMonitor;
 
   LeaseManager(FSNamesystem fsnamesystem) {this.fsnamesystem = fsnamesystem;}
 
-  Lease getLease(String holder) {
+  Lease getLease(String holder) { // 获取此holder的lease对象
     return leases.get(holder);
   }
 
   @VisibleForTesting
-  int getNumSortedLeases() {return sortedLeases.size();}
+  int getNumSortedLeases() {return sortedLeases.size();} // lease的数量
 
   /**
    * This method iterates through all the leases and counts the number of blocks
@@ -107,13 +107,13 @@ public class LeaseManager {
    * calling this method.
    * @return
    */
-  synchronized long getNumUnderConstructionBlocks() {
+  synchronized long getNumUnderConstructionBlocks() { // 统计正在构建中的block数量
     assert this.fsnamesystem.hasReadLock() : "The FSNamesystem read lock wasn't"
       + "acquired before counting under construction blocks";
     long numUCBlocks = 0;
     for (Lease lease : sortedLeases) {
       for (String path : lease.getPaths()) {
-        final INodeFile cons;
+        final INodeFile cons; // 正在构建中的inode
         try {
           cons = this.fsnamesystem.getFSDirectory().getINode(path).asFile();
           if (!cons.isUnderConstruction()) {
@@ -128,7 +128,7 @@ public class LeaseManager {
         if(blocks == null)
           continue;
         for(BlockInfoContiguous b : blocks) {
-          if(!b.isComplete())
+          if(!b.isComplete()) // 正在构建中的block
             numUCBlocks++;
         }
       }
@@ -138,13 +138,13 @@ public class LeaseManager {
   }
 
   /** @return the lease containing src */
-  public Lease getLeaseByPath(String src) {return sortedLeasesByPath.get(src);}
+  public Lease getLeaseByPath(String src) {return sortedLeasesByPath.get(src);} // 通过path获取lease
 
   /** @return the number of leases currently in the system */
-  public synchronized int countLease() {return sortedLeases.size();}
+  public synchronized int countLease() {return sortedLeases.size();} // lease的数量
 
   /** @return the number of paths contained in all leases */
-  synchronized int countPath() {
+  synchronized int countPath() { // 所有正在写的path数量
     int count = 0;
     for(Lease lease : sortedLeases) {
       count += lease.getPaths().size();
@@ -155,9 +155,10 @@ public class LeaseManager {
   /**
    * Adds (or re-adds) the lease for the specified file.
    */
-  synchronized Lease addLease(String holder, String src) {
-    Lease lease = getLease(holder);
-    if (lease == null) {
+  // 需要原子
+  synchronized Lease addLease(String holder, String src) { // 为一个path添加lease
+    Lease lease = getLease(holder); // 获取此holder的lease对象
+    if (lease == null) { // 如果lease不存在，则创建一个lease，否则续约
       lease = new Lease(holder);
       leases.put(holder, lease);
       sortedLeases.add(lease);
@@ -172,16 +173,17 @@ public class LeaseManager {
   /**
    * Remove the specified lease and src.
    */
-  synchronized void removeLease(Lease lease, String src) {
+  // 需要原子
+  synchronized void removeLease(Lease lease, String src) { // 删除指定path的lease
     sortedLeasesByPath.remove(src);
-    if (!lease.removePath(src)) {
+    if (!lease.removePath(src)) { // 删除此path
       if (LOG.isDebugEnabled()) {
         LOG.debug(src + " not found in lease.paths (=" + lease.paths + ")");
       }
     }
 
     if (!lease.hasPath()) {
-      leases.remove(lease.holder);
+      leases.remove(lease.holder); // 删除此holder
       if (!sortedLeases.remove(lease)) {
         LOG.error(lease + " not found in sortedLeases");
       }
@@ -191,17 +193,17 @@ public class LeaseManager {
   /**
    * Remove the lease for the specified holder and src
    */
-  synchronized void removeLease(String holder, String src) {
-    Lease lease = getLease(holder);
+  synchronized void removeLease(String holder, String src) { // 删除指定path的lease
+    Lease lease = getLease(holder); // 获取此holder的lease对象
     if (lease != null) {
-      removeLease(lease, src);
+      removeLease(lease, src); // 删除指定path的lease
     } else {
       LOG.warn("Removing non-existent lease! holder=" + holder +
           " src=" + src);
     }
   }
 
-  synchronized void removeAllLeases() {
+  synchronized void removeAllLeases() { // 清空所有lease
     sortedLeases.clear();
     sortedLeasesByPath.clear();
     leases.clear();
@@ -210,7 +212,7 @@ public class LeaseManager {
   /**
    * Reassign lease for file src to the new holder.
    */
-  synchronized Lease reassignLease(Lease lease, String src, String newHolder) {
+  synchronized Lease reassignLease(Lease lease, String src, String newHolder) { // 更换holder
     assert newHolder != null : "new lease holder is null";
     if (lease != null) {
       removeLease(lease, src);
@@ -221,21 +223,21 @@ public class LeaseManager {
   /**
    * Renew the lease(s) held by the given client
    */
-  synchronized void renewLease(String holder) {
+  synchronized void renewLease(String holder) { // 续约
     renewLease(getLease(holder));
   }
-  synchronized void renewLease(Lease lease) {
+  synchronized void renewLease(Lease lease) { // 续约
     if (lease != null) {
       sortedLeases.remove(lease);
-      lease.renew();
-      sortedLeases.add(lease);
+      lease.renew(); // 最后更新时间
+      sortedLeases.add(lease); // 从sortedLeases中remove再add，更新一下排序
     }
   }
 
   /**
    * Renew all of the currently open leases.
    */
-  synchronized void renewAllLeases() {
+  synchronized void renewAllLeases() { // 为所有lease续约
     for (Lease l : leases.values()) {
       renewLease(l);
     }
@@ -250,7 +252,7 @@ public class LeaseManager {
    *************************************************************/
   class Lease implements Comparable<Lease> {
     private final String holder; // ClientName，比如：DFSClient_attempt_1603790088750
-    private long lastUpdate;
+    private long lastUpdate; // 最后更新时间
     // 为什么不通过file inodeId来判断lease？path可能rename
     private final Collection<String> paths = new TreeSet<String>();
   
@@ -339,7 +341,7 @@ public class LeaseManager {
     }
   }
 
-  synchronized void changeLease(String src, String dst) {
+  synchronized void changeLease(String src, String dst) { // 所有以src开头path的lease，都更新为dst
     if (LOG.isDebugEnabled()) {
       LOG.debug(getClass().getSimpleName() + ".changelease: " +
                " src=" + src + ", dest=" + dst);
@@ -347,7 +349,7 @@ public class LeaseManager {
 
     final int len = src.length();
     for(Map.Entry<String, Lease> entry
-        : findLeaseWithPrefixPath(src, sortedLeasesByPath).entrySet()) {
+        : findLeaseWithPrefixPath(src, sortedLeasesByPath).entrySet()) { // 获取所有以src为前缀的path
       final String oldpath = entry.getKey();
       final Lease lease = entry.getValue();
       // replace stem of src with new destination
@@ -361,9 +363,9 @@ public class LeaseManager {
     }
   }
 
-  synchronized void removeLeaseWithPrefixPath(String prefix) {
+  synchronized void removeLeaseWithPrefixPath(String prefix) { // 删除所有以prefix为前缀path的lease
     for(Map.Entry<String, Lease> entry
-        : findLeaseWithPrefixPath(prefix, sortedLeasesByPath).entrySet()) {
+        : findLeaseWithPrefixPath(prefix, sortedLeasesByPath).entrySet()) { // 获取所有以prefix为前缀的path
       if (LOG.isDebugEnabled()) {
         LOG.debug(LeaseManager.class.getSimpleName()
             + ".removeLeaseWithPrefixPath: entry=" + entry);
@@ -373,7 +375,7 @@ public class LeaseManager {
   }
 
   static private Map<String, Lease> findLeaseWithPrefixPath(
-      String prefix, SortedMap<String, Lease> path2lease) {
+      String prefix, SortedMap<String, Lease> path2lease) { // 获取所有以prefix为前缀的path
     if (LOG.isDebugEnabled()) {
       LOG.debug(LeaseManager.class.getSimpleName() + ".findLease: prefix=" + prefix);
     }
@@ -383,7 +385,7 @@ public class LeaseManager {
     
     // prefix may ended with '/'
     if (prefix.charAt(srclen - 1) == Path.SEPARATOR_CHAR) {
-      srclen -= 1;
+      srclen -= 1; // srclen最后一个字符如果是'/'，则移除
     }
 
     for(Map.Entry<String, Lease> entry : path2lease.tailMap(prefix).entrySet()) {
@@ -391,7 +393,7 @@ public class LeaseManager {
       if (!p.startsWith(prefix)) {
         return entries;
       }
-      if (p.length() == srclen || p.charAt(srclen) == Path.SEPARATOR_CHAR) {
+      if (p.length() == srclen || p.charAt(srclen) == Path.SEPARATOR_CHAR) { // 所有以prefix为前缀的path
         entries.put(entry.getKey(), entry.getValue());
       }
     }
@@ -443,13 +445,13 @@ public class LeaseManager {
    * Get the list of inodes corresponding to valid leases.
    * @return list of inodes
    */
-  Map<String, INodeFile> getINodesUnderConstruction() {
+  Map<String, INodeFile> getINodesUnderConstruction() { // 获取所有正在构建中的INodeFile
     Map<String, INodeFile> inodes = new TreeMap<String, INodeFile>();
     for (String p : sortedLeasesByPath.keySet()) {
       // verify that path exists in namespace
       try {
-        INodeFile node = INodeFile.valueOf(fsnamesystem.dir.getINode(p), p);
-        if (node.isUnderConstruction()) {
+        INodeFile node = INodeFile.valueOf(fsnamesystem.dir.getINode(p), p); // 通过path获取inode对象
+        if (node.isUnderConstruction()) { // 是否正在构建
           inodes.put(p, node);
         } else {
           LOG.warn("Ignore the lease of file " + p
@@ -467,16 +469,16 @@ public class LeaseManager {
    */
   @VisibleForTesting
   synchronized boolean checkLeases() {
-    boolean needSync = false;
+    boolean needSync = false; // 是否需要sync edit
     assert fsnamesystem.hasWriteLock();
     Lease leaseToCheck = null;
     try {
-      leaseToCheck = sortedLeases.first();
+      leaseToCheck = sortedLeases.first(); // 最长时间没更新的lease
     } catch(NoSuchElementException e) {}
 
     while(leaseToCheck != null) {
       if (!leaseToCheck.expiredHardLimit()) {
-        break;
+        break; // 没达到hardLimit，退出循环
       }
 
       LOG.info(leaseToCheck + " has expired hard limit");
@@ -486,13 +488,13 @@ public class LeaseManager {
       // internalReleaseLease() removes paths corresponding to empty files,
       // i.e. it needs to modify the collection being iterated over
       // causing ConcurrentModificationException
-      String[] leasePaths = new String[leaseToCheck.getPaths().size()];
+      String[] leasePaths = new String[leaseToCheck.getPaths().size()]; // 此holder正在写的path
       leaseToCheck.getPaths().toArray(leasePaths);
       for(String p : leasePaths) {
         try {
           INodesInPath iip = fsnamesystem.getFSDirectory().getINodesInPath(p,
               true);
-          boolean completed = fsnamesystem.internalReleaseLease(leaseToCheck, p,
+          boolean completed = fsnamesystem.internalReleaseLease(leaseToCheck, p, // lease recovery
               iip, HdfsServerConstants.NAMENODE_LEASE_HOLDER);
           if (LOG.isDebugEnabled()) {
             if (completed) {
@@ -503,17 +505,17 @@ public class LeaseManager {
           }
           // If a lease recovery happened, we need to sync later.
           if (!needSync && !completed) {
-            needSync = true;
+            needSync = true; // 每当有lease recovery成功，就需要sync edit
           }
         } catch (IOException e) {
           LOG.error("Cannot release the path " + p + " in the lease "
               + leaseToCheck, e);
-          removing.add(p);
+          removing.add(p); // lease recovery发生异常
         }
       }
 
       for(String p : removing) {
-        removeLease(leaseToCheck, p);
+        removeLease(leaseToCheck, p); // 删除recovery失败path的lease
       }
       leaseToCheck = sortedLeases.higher(leaseToCheck);
     }
@@ -536,7 +538,7 @@ public class LeaseManager {
         + "\n}";
   }
 
-  void startMonitor() {
+  void startMonitor() { // 开启检查lease线程
     Preconditions.checkState(lmthread == null,
         "Lease Monitor already running");
     shouldRunMonitor = true;
@@ -544,7 +546,7 @@ public class LeaseManager {
     lmthread.start();
   }
   
-  void stopMonitor() {
+  void stopMonitor() { // 停止检查lease线程
     if (lmthread != null) {
       shouldRunMonitor = false;
       try {

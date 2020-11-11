@@ -51,7 +51,7 @@ class FSDirDeleteOp {
         filesRemoved = -1;
       } else {
         List<INodeDirectory> snapshottableDirs = new ArrayList<>();
-        FSDirSnapshotOp.checkSnapshot(iip.getLastINode(), snapshottableDirs);
+        FSDirSnapshotOp.checkSnapshot(iip.getLastINode(), snapshottableDirs); // snapshot相关
         filesRemoved = unprotectedDelete(fsd, iip, collectedBlocks,
                                          removedINodes, mtime); // 从父目录中删除inode，并收集此inode下的inode和block
         fsd.getFSNamesystem().removeSnapshottableDirs(snapshottableDirs);
@@ -84,7 +84,7 @@ class FSDirDeleteOp {
     if (!recursive && fsd.isNonEmptyDirectory(iip)) { // 目录不为空
       throw new PathIsNotEmptyDirectoryException(src + " is non empty");
     }
-    if (fsd.isPermissionEnabled()) {
+    if (fsd.isPermissionEnabled()) { // 检查权限
       fsd.checkPermission(pc, iip, false, null, FsAction.WRITE, null,
                           FsAction.ALL, true);
     }
@@ -172,14 +172,14 @@ class FSDirDeleteOp {
 
   private static boolean deleteAllowed(final INodesInPath iip,
       final String src) {
-    if (iip.length() < 1 || iip.getLastINode() == null) {
+    if (iip.length() < 1 || iip.getLastINode() == null) { // 待删除inode不存在
       if (NameNode.stateChangeLog.isDebugEnabled()) {
         NameNode.stateChangeLog.debug(
             "DIR* FSDirectory.unprotectedDelete: failed to remove "
                 + src + " because it does not exist");
       }
       return false;
-    } else if (iip.length() == 1) { // src is the root
+    } else if (iip.length() == 1) { // src is the root 根目录不能删除
       NameNode.stateChangeLog.warn(
           "DIR* FSDirectory.unprotectedDelete: failed to remove " + src +
               " because the root is not allowed to be deleted");
@@ -231,7 +231,7 @@ class FSDirDeleteOp {
     if (!targetNode.isInLatestSnapshot(latestSnapshot)) {
       targetNode.destroyAndCollectBlocks(fsd.getBlockStoragePolicySuite(),
         collectedBlocks, removedINodes); // 置null，并收集此inode下的inode和blocks
-    } else {
+    } else { // snapshot相关
       QuotaCounts counts = targetNode.cleanSubtree(
         fsd.getBlockStoragePolicySuite(), CURRENT_STATE_ID,
           latestSnapshot, collectedBlocks, removedINodes);

@@ -45,7 +45,7 @@ import com.google.common.annotations.VisibleForTesting;
  *       (2) implementing {@link LinkedElement} interface.
  */
 // LightWeightGSet 相比于Set，更像是一个Map，但Value是Key的子类，
-// 容量固定为：总内存的2%，且不会触发rehash
+// 容量固定为：总内存的n%，且不会触发rehash
 @InterfaceAudience.Private
 public class LightWeightGSet<K, E extends K> implements GSet<K, E> {
   /**
@@ -344,8 +344,8 @@ public class LightWeightGSet<K, E extends K> implements GSet<K, E> {
     final String vmBit = System.getProperty("sun.arch.data.model");
 
     //Percentage of max memory
-    final double percentDivisor = 100.0/percentage;
-    final double percentMemory = maxMemory/percentDivisor;
+    final double percentDivisor = 100.0/percentage; // 占总内存的百分之多少
+    final double percentMemory = maxMemory/percentDivisor; // 具体占多少内存，单位：Byte
     
     //compute capacity
     final int e1 = (int)(Math.log(percentMemory)/Math.log(2.0) + 0.5);

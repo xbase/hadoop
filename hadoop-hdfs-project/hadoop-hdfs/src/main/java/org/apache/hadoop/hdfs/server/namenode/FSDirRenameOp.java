@@ -59,7 +59,7 @@ class FSDirRenameOp {
       NameNode.stateChangeLog.debug("DIR* NameSystem.renameTo: " + src +
           " to " + dst);
     }
-    if (!DFSUtil.isValidName(dst)) {
+    if (!DFSUtil.isValidName(dst)) { // path name是否有效
       throw new IOException("Invalid name: " + dst);
     }
     FSPermissionChecker pc = fsd.getPermissionChecker();
@@ -70,10 +70,10 @@ class FSDirRenameOp {
     src = fsd.resolvePath(pc, src, srcComponents);
     dst = fsd.resolvePath(pc, dst, dstComponents);
     @SuppressWarnings("deprecation")
-    final boolean status = renameTo(fsd, pc, src, dst, logRetryCache);
+    final boolean status = renameTo(fsd, pc, src, dst, logRetryCache); // mv操作
     if (status) {
       INodesInPath dstIIP = fsd.getINodesInPath(dst, false);
-      resultingStat = fsd.getAuditFileInfo(dstIIP);
+      resultingStat = fsd.getAuditFileInfo(dstIIP); // 获取HdfsFileStatus对象
     }
     return new RenameOldResult(status, resultingStat);
   }
@@ -83,7 +83,7 @@ class FSDirRenameOp {
    * dstInodes[dstInodes.length-1]
    */
   private static void verifyQuotaForRename(FSDirectory fsd, INodesInPath src,
-      INodesInPath dst) throws QuotaExceededException {
+      INodesInPath dst) throws QuotaExceededException { // 检查quota
     if (!fsd.getFSNamesystem().isImageLoaded() || fsd.shouldSkipQuotaChecks()) {
       // Do not check quota if edits log is still being processed
       return;
@@ -111,10 +111,10 @@ class FSDirRenameOp {
       throws PathComponentTooLongException, MaxDirectoryItemsExceededException {
     byte[] dstChildName = dstIIP.getLastLocalName();
     final String parentPath = dstIIP.getParentPath();
-    fsd.verifyMaxComponentLength(dstChildName, parentPath);
+    fsd.verifyMaxComponentLength(dstChildName, parentPath); // 判断name是否超长
     // Do not enforce max directory items if renaming within same directory.
     if (srcIIP.getINode(-2) != dstIIP.getINode(-2)) {
-      fsd.verifyMaxDirItems(dstIIP.getINode(-2).asDirectory(), parentPath);
+      fsd.verifyMaxDirItems(dstIIP.getINode(-2).asDirectory(), parentPath); // 一个目录下的child数量是否超上限
     }
   }
 
@@ -145,6 +145,9 @@ class FSDirRenameOp {
    * @deprecated See {@link #renameToInt(FSDirectory, String, String,
    * boolean, Options.Rename...)}
    */
+  // Step 1: 各种前置条件检查
+  // Step 2: 把src从原目录删除
+  // Step 3: 添加到目标目录
   @Deprecated
   static boolean unprotectedRenameTo(FSDirectory fsd, String src, String dst,
       final INodesInPath srcIIP, final INodesInPath dstIIP, long timestamp)
@@ -152,7 +155,7 @@ class FSDirRenameOp {
     assert fsd.hasWriteLock();
     final INode srcInode = srcIIP.getLastINode();
     try {
-      validateRenameSource(srcIIP);
+      validateRenameSource(srcIIP); // 检查rename src是否合法
     } catch (SnapshotException e) {
       throw e;
     } catch (IOException ignored) {
@@ -160,34 +163,34 @@ class FSDirRenameOp {
     }
 
     // validate the destination
-    if (dst.equals(src)) {
+    if (dst.equals(src)) { // src 和 dst 相同
       return true;
     }
 
     try {
-      validateDestination(src, dst, srcInode);
+      validateDestination(src, dst, srcInode); // 检查rename dst是否合法
     } catch (IOException ignored) {
       return false;
     }
 
-    if (dstIIP.getLastINode() != null) {
+    if (dstIIP.getLastINode() != null) { // dst是否已经存在
       NameNode.stateChangeLog.warn("DIR* FSDirectory.unprotectedRenameTo: " +
           "failed to rename " + src + " to " + dst + " because destination " +
           "exists");
       return false;
     }
     INode dstParent = dstIIP.getINode(-2);
-    if (dstParent == null) {
+    if (dstParent == null) { // dst父目录是否存在
       NameNode.stateChangeLog.warn("DIR* FSDirectory.unprotectedRenameTo: " +
           "failed to rename " + src + " to " + dst + " because destination's " +
           "parent does not exist");
       return false;
     }
 
-    fsd.ezManager.checkMoveValidity(srcIIP, dstIIP, src);
+    fsd.ezManager.checkMoveValidity(srcIIP, dstIIP, src); // 加密相关
     // Ensure dst has quota to accommodate rename
-    verifyFsLimitsForRename(fsd, srcIIP, dstIIP);
-    verifyQuotaForRename(fsd, srcIIP, dstIIP);
+    verifyFsLimitsForRename(fsd, srcIIP, dstIIP); // 一个目录下的child数量是否超上限
+    verifyQuotaForRename(fsd, srcIIP, dstIIP); // 检查quota
 
     RenameOperation tx = new RenameOperation(fsd, src, dst, srcIIP, dstIIP);
 
@@ -195,19 +198,19 @@ class FSDirRenameOp {
 
     try {
       // remove src
-      if (!tx.removeSrc4OldRename()) {
+      if (!tx.removeSrc4OldRename()) { // 从原目录删除src
         return false;
       }
 
-      added = tx.addSourceToDestination();
+      added = tx.addSourceToDestination(); // 添加到目的目录
       if (added) {
         if (NameNode.stateChangeLog.isDebugEnabled()) {
           NameNode.stateChangeLog.debug("DIR* FSDirectory" +
               ".unprotectedRenameTo: " + src + " is renamed to " + dst);
         }
 
-        tx.updateMtimeAndLease(timestamp);
-        tx.updateQuotasInSourceTree(fsd.getBlockStoragePolicySuite());
+        tx.updateMtimeAndLease(timestamp); // 更新mtime
+        tx.updateQuotasInSourceTree(fsd.getBlockStoragePolicySuite()); // 更新quota
 
         return true;
       }
@@ -452,10 +455,10 @@ class FSDirRenameOp {
     // Check write access to parent of src
     final INodesInPath srcIIP = fsd.getINodesInPath4Write(src, false);
     // Note: We should not be doing this.  This is move() not renameTo().
-    final String actualDst = fsd.isDir(dst) ?
+    final String actualDst = fsd.isDir(dst) ? // mv 到的实际目的path
         dst + Path.SEPARATOR + new Path(src).getName() : dst;
     final INodesInPath dstIIP = fsd.getINodesInPath4Write(actualDst, false);
-    if (fsd.isPermissionEnabled()) {
+    if (fsd.isPermissionEnabled()) { // 检查权限
       fsd.checkPermission(pc, srcIIP, false, null, FsAction.WRITE, null, null,
           false);
       // Check write access to ancestor of dst
@@ -471,11 +474,11 @@ class FSDirRenameOp {
     boolean stat = false;
     fsd.writeLock();
     try {
-      stat = unprotectedRenameTo(fsd, src, actualDst, srcIIP, dstIIP, mtime);
+      stat = unprotectedRenameTo(fsd, src, actualDst, srcIIP, dstIIP, mtime); // mv操作
     } finally {
       fsd.writeUnlock();
     }
-    if (stat) {
+    if (stat) { // 成功时，记录edit
       fsd.getEditLog().logRename(src, actualDst, mtime, logRetryCache);
       return true;
     }
@@ -484,16 +487,16 @@ class FSDirRenameOp {
 
   private static void validateDestination(
       String src, String dst, INode srcInode)
-      throws IOException {
+      throws IOException { // 检查rename dst是否合法
     String error;
     if (srcInode.isSymlink() &&
-        dst.equals(srcInode.asSymlink().getSymlinkString())) {
+        dst.equals(srcInode.asSymlink().getSymlinkString())) { // 软链相关
       throw new FileAlreadyExistsException("Cannot rename symlink " + src
           + " to its target " + dst);
     }
     // dst cannot be a directory or a file under src
     if (dst.startsWith(src)
-        && dst.charAt(src.length()) == Path.SEPARATOR_CHAR) {
+        && dst.charAt(src.length()) == Path.SEPARATOR_CHAR) { // 不能rename到src的子目录里
       error = "Rename destination " + dst
           + " is a directory or file under source " + src;
       NameNode.stateChangeLog.warn("DIR* FSDirectory.unprotectedRenameTo: "
@@ -532,7 +535,7 @@ class FSDirRenameOp {
   }
 
   private static void validateRenameSource(INodesInPath srcIIP)
-      throws IOException {
+      throws IOException { // 检查rename source是否合法
     String error;
     final INode srcInode = srcIIP.getLastINode();
     // validate source
@@ -542,7 +545,7 @@ class FSDirRenameOp {
           + error);
       throw new FileNotFoundException(error);
     }
-    if (srcIIP.length() == 1) {
+    if (srcIIP.length() == 1) { // 不能rename根目录
       error = "rename source cannot be the root";
       NameNode.stateChangeLog.warn("DIR* FSDirectory.unprotectedRenameTo: "
           + error);
@@ -550,7 +553,7 @@ class FSDirRenameOp {
     }
     // srcInode and its subtree cannot contain snapshottable directories with
     // snapshots
-    FSDirSnapshotOp.checkSnapshot(srcInode, null);
+    FSDirSnapshotOp.checkSnapshot(srcInode, null); // snapshot相关
   }
 
   private static class RenameOperation {
@@ -635,8 +638,8 @@ class FSDirRenameOp {
       }
     }
 
-    boolean removeSrc4OldRename() {
-      final long removedSrc = fsd.removeLastINode(srcIIP);
+    boolean removeSrc4OldRename() { // 移除src
+      final long removedSrc = fsd.removeLastINode(srcIIP); // 移除最后一级inode
       if (removedSrc == -1) {
         NameNode.stateChangeLog.warn("DIR* FSDirRenameOp.unprotectedRenameTo: "
             + "failed to rename " + src + " to " + dst + " because the source" +
@@ -644,8 +647,8 @@ class FSDirRenameOp {
         return false;
       } else {
         // update the quota count if necessary
-        fsd.updateCountForDelete(srcChild, srcIIP);
-        srcIIP = INodesInPath.replace(srcIIP, srcIIP.length() - 1, null);
+        fsd.updateCountForDelete(srcChild, srcIIP); // 更新quota
+        srcIIP = INodesInPath.replace(srcIIP, srcIIP.length() - 1, null); // 替换iip对象最后一个inode为null
         return true;
       }
     }
@@ -661,19 +664,19 @@ class FSDirRenameOp {
       return removedNum;
     }
 
-    boolean addSourceToDestination() {
+    boolean addSourceToDestination() {  // 添加到父目录的child列表
       final INode dstParent = dstParentIIP.getLastINode();
       final byte[] dstChildName = dstIIP.getLastLocalName();
-      final INode toDst;
+      final INode toDst; // rename目标inode对象
       if (withCount == null) {
-        srcChild.setLocalName(dstChildName);
+        srcChild.setLocalName(dstChildName); // 设置为rename后的名字
         toDst = srcChild;
-      } else {
+      } else { // snapshot相关
         withCount.getReferredINode().setLocalName(dstChildName);
         toDst = new INodeReference.DstReference(dstParent.asDirectory(),
             withCount, dstIIP.getLatestSnapshotId());
       }
-      return fsd.addLastINodeNoQuotaCheck(dstParentIIP, toDst) != null;
+      return fsd.addLastINodeNoQuotaCheck(dstParentIIP, toDst) != null;  // 添加到父目录的child列表
     }
 
     void updateMtimeAndLease(long timestamp) throws QuotaExceededException {

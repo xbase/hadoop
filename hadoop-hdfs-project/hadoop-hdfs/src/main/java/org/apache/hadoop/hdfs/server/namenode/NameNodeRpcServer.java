@@ -864,7 +864,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
 
     boolean ret = false;
     try {
-      ret = namesystem.renameTo(src, dst, cacheEntry != null);
+      ret = namesystem.renameTo(src, dst, cacheEntry != null); // mv操作
     } finally {
       RetryCache.setState(cacheEntry, ret);
     }

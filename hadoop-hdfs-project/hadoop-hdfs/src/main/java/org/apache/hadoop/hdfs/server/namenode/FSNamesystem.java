@@ -3666,7 +3666,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     try {
       checkOperation(OperationCategory.WRITE);
       checkNameNodeSafeMode("Cannot rename " + src);
-      ret = FSDirRenameOp.renameToInt(dir, src, dst, logRetryCache);
+      ret = FSDirRenameOp.renameToInt(dir, src, dst, logRetryCache); // mv操作
     } catch (AccessControlException e)  {
       logAuditEvent(false, "rename", src, dst, null);
       throw e;
