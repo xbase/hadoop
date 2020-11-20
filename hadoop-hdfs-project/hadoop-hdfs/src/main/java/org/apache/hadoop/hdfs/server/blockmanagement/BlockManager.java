@@ -583,8 +583,8 @@ public class BlockManager {
    * @throws IOException if the block does not have at least a minimal number
    * of replicas reported from data-nodes.
    */
-  // block：分配时（addBlock、recovery等），记录的block信息
-  // commitBlock：本次commit的block信息
+  // block：分配时（addBlock、recovery等），NN记录的block信息
+  // commitBlock：client提交的待commit的block信息
   private static boolean commitBlock(
       final BlockInfoContiguousUnderConstruction block, final Block commitBlock)
       throws IOException {
@@ -613,9 +613,9 @@ public class BlockManager {
    */
   public boolean commitOrCompleteLastBlock(BlockCollection bc,
       Block commitBlock) throws IOException { // commit一个Block，如果达到最小副本数，则complete这个block
-    if(commitBlock == null)
+    if(commitBlock == null) // client上报的last block
       return false; // not committing, this is a block allocation retry
-    BlockInfoContiguous lastBlock = bc.getLastBlock();
+    BlockInfoContiguous lastBlock = bc.getLastBlock(); // NN记录的last block
     if(lastBlock == null)
       return false; // no blocks in file yet
     if(lastBlock.isComplete())
@@ -1801,7 +1801,7 @@ public class BlockManager {
     Collection<Block> invalidatedBlocks = null;
 
     try {
-      node = datanodeManager.getDatanode(nodeID);
+      node = datanodeManager.getDatanode(nodeID); // NN端描述一个DN
       if (node == null || !node.isAlive) {
         throw new IOException(
             "ProcessReport from dead or unregistered node: " + nodeID);
@@ -1809,24 +1809,24 @@ public class BlockManager {
 
       // To minimize startup time, we discard any second (or later) block reports
       // that we receive while still in startup phase.
-      DatanodeStorageInfo storageInfo = node.getStorageInfo(storage.getStorageID());
+      DatanodeStorageInfo storageInfo = node.getStorageInfo(storage.getStorageID()); // NN端描述DN一个存储目录，包括此目录中存储的块
 
       if (storageInfo == null) {
         // We handle this for backwards compatibility.
         storageInfo = node.updateStorage(storage);
       }
       if (namesystem.isInStartupSafeMode()
-          && storageInfo.getBlockReportCount() > 0) {
+          && storageInfo.getBlockReportCount() > 0) { // 启动的时候，一个storage只处理一次全量块汇报
         blockLog.info("BLOCK* processReport: "
             + "discarded non-initial block report from {}"
             + " because namenode still in startup phase", nodeID);
         return !node.hasStaleStorages();
       }
 
-      if (storageInfo.getBlockReportCount() == 0) {
+      if (storageInfo.getBlockReportCount() == 0) { // storage的第一次全量块汇报
         // The first block report can be processed a lot more efficiently than
         // ordinary block reports.  This shortens restart times.
-        processFirstBlockReport(storageInfo, newReport); // 启动时的第一次全量块汇报
+        processFirstBlockReport(storageInfo, newReport); // 第一次块汇报，直接添加block，不维护BM中的副本集合
       } else {
         invalidatedBlocks = processReport(storageInfo, newReport);
       }
@@ -1834,16 +1834,16 @@ public class BlockManager {
       storageInfo.receivedBlockReport();
       if (context != null) {
         storageInfo.setLastBlockReportId(context.getReportId());
-        if (lastStorageInRpc) {
+        if (lastStorageInRpc) { // 本次汇报的最后一个storage
           int rpcsSeen = node.updateBlockReportContext(context);
           if (rpcsSeen >= context.getTotalRpcs()) {
-            List<DatanodeStorageInfo> zombies = node.removeZombieStorages();
+            List<DatanodeStorageInfo> zombies = node.removeZombieStorages(); // 移除有问题的磁盘
             if (zombies.isEmpty()) {
               LOG.debug("processReport 0x{}: no zombie storages found.",
                   Long.toHexString(context.getReportId()));
             } else {
               for (DatanodeStorageInfo zombie : zombies) {
-                removeZombieReplicas(context, zombie);
+                removeZombieReplicas(context, zombie); // 从NN内存中移除问题磁盘的副本信息
               }
             }
             node.clearBlockReportContext();
@@ -1880,7 +1880,7 @@ public class BlockManager {
   }
 
   private void removeZombieReplicas(BlockReportContext context,
-      DatanodeStorageInfo zombie) {
+      DatanodeStorageInfo zombie) { // 从NN内存中移除问题磁盘的副本信息
     LOG.warn("processReport 0x{}: removing zombie storage {}, which no " +
              "longer exists on the DataNode.",
               Long.toHexString(context.getReportId()), zombie.getStorageID());
@@ -1895,7 +1895,7 @@ public class BlockManager {
       // TODO: remove this assumption in case we want to put a block on
       // more than one storage on a datanode (and because it's a difficult
       // assumption to really enforce)
-      removeStoredBlock(block, zombie.getDatanodeDescriptor());
+      removeStoredBlock(block, zombie.getDatanodeDescriptor()); // 从NN内存中移除此副本信息
       invalidateBlocks.remove(zombie.getDatanodeDescriptor(), block);
     }
     assert(zombie.numBlocks() == 0);
@@ -1978,7 +1978,9 @@ public class BlockManager {
           endPostponedMisReplicatedBlocksCount) + " blocks are removed.");
     }
   }
-  
+
+  // Step 1: 判断副本状态
+  // Step 2: 根据副本状态，执行不同的操作
   private Collection<Block> processReport(
       final DatanodeStorageInfo storageInfo,
       final BlockListAsLongs report) throws IOException { // 非第一次全量块汇报
@@ -1986,16 +1988,17 @@ public class BlockManager {
     // Modify the (block-->datanode) map, according to the difference
     // between the old and new block report.
     //
-    Collection<BlockInfoContiguous> toAdd = new LinkedList<BlockInfoContiguous>();
-    Collection<Block> toRemove = new TreeSet<Block>();
-    Collection<Block> toInvalidate = new LinkedList<Block>();
-    Collection<BlockToMarkCorrupt> toCorrupt = new LinkedList<BlockToMarkCorrupt>();
-    Collection<StatefulBlockInfo> toUC = new LinkedList<StatefulBlockInfo>();
+    Collection<BlockInfoContiguous> toAdd = new LinkedList<BlockInfoContiguous>(); // DN和NN一致，添加到NN
+    Collection<Block> toRemove = new TreeSet<Block>(); // NN有，DN没有，从NN中删除
+    Collection<Block> toInvalidate = new LinkedList<Block>(); // NN没有，DN有，从DN中删除
+    Collection<BlockToMarkCorrupt> toCorrupt = new LinkedList<BlockToMarkCorrupt>(); // DN和NN不一致，先补副本，再从DN中删除
+    Collection<StatefulBlockInfo> toUC = new LinkedList<StatefulBlockInfo>(); // 正在构建中的副本，更新NN（UC block replicas字段）
     reportDiff(storageInfo, report,
-        toAdd, toRemove, toInvalidate, toCorrupt, toUC);
+        toAdd, toRemove, toInvalidate, toCorrupt, toUC); // Step 1: 判断副本状态
    
     DatanodeDescriptor node = storageInfo.getDatanodeDescriptor();
     // Process the blocks on each queue
+    // Step 2: 根据副本状态，执行不同的操作
     for (StatefulBlockInfo b : toUC) { 
       addStoredBlockUnderConstruction(b, storageInfo);
     }
@@ -2072,7 +2075,7 @@ public class BlockManager {
    * @param report - the initial block report, to be processed
    * @throws IOException 
    */
-  private void processFirstBlockReport(
+  private void processFirstBlockReport( // Storage的第一次块汇报，直接添加block，不维护BM中的副本集合
       final DatanodeStorageInfo storageInfo,
       final BlockListAsLongs report) throws IOException {
     if (report == null) return;
@@ -2096,7 +2099,7 @@ public class BlockManager {
       
       // If block is corrupt, mark it and continue to next block.
       BlockUCState ucState = storedBlock.getBlockUCState();
-      BlockToMarkCorrupt c = checkReplicaCorrupt(
+      BlockToMarkCorrupt c = checkReplicaCorrupt( // 根据GS和长度，判断此副本是否损坏
           iblk, reportedState, storedBlock, ucState,
           storageInfo.getDatanodeDescriptor());
       if (c != null) {
@@ -2105,16 +2108,16 @@ public class BlockManager {
           // just have an out-of-date gen-stamp or state for, for example.
           queueReportedBlock(storageInfo, iblk, reportedState,
               QUEUE_REASON_CORRUPT_STATE);
-        } else {
+        } else { // 发现一个损坏的副本
           markBlockAsCorrupt(c, storageInfo, storageInfo.getDatanodeDescriptor());
         }
         continue;
       }
       
       // If block is under construction, add this replica to its list
-      if (isBlockUnderConstruction(storedBlock, ucState, reportedState)) {
+      if (isBlockUnderConstruction(storedBlock, ucState, reportedState)) { // 此副本是否正在构建中
         ((BlockInfoContiguousUnderConstruction)storedBlock)
-            .addReplicaIfNotPresent(storageInfo, iblk, reportedState);
+            .addReplicaIfNotPresent(storageInfo, iblk, reportedState); // 添加或更新block replicas列表
         // OpenFileBlocks only inside snapshots also will be added to safemode
         // threshold. So we need to update such blocks to safemode
         // refer HDFS-5283
@@ -2128,11 +2131,12 @@ public class BlockManager {
       }      
       //add replica if appropriate
       if (reportedState == ReplicaState.FINALIZED) {
-        addStoredBlockImmediate(storedBlock, storageInfo);
+        addStoredBlockImmediate(storedBlock, storageInfo); // 添加block
       }
     }
   }
 
+  // 判断副本状态
   private void reportDiff(DatanodeStorageInfo storageInfo, 
       BlockListAsLongs newReport, 
       Collection<BlockInfoContiguous> toAdd,              // add to DatanodeDescriptor
@@ -2143,7 +2147,8 @@ public class BlockManager {
 
     // place a delimiter in the list which separates blocks 
     // that have been reported from those that have not
-    // 放置一个分隔符，分隔符之后的是DN没有汇报的副本
+    // 放置一个分隔符block到blockList的列表头，之后处理block的时候，把每个处理过的block都移动到blockList的列表头
+    // 这样处理之后，分隔符block之后的block，就需要从NN内存中删除（NN中有，DN中没有）
     BlockInfoContiguous delimiter = new BlockInfoContiguous(new Block(), (short) 1);
     AddBlockResult result = storageInfo.addBlock(delimiter);
     assert result == AddBlockResult.ADDED 
@@ -2157,12 +2162,13 @@ public class BlockManager {
     // scan the report and process newly reported blocks
     for (BlockReportReplica iblk : newReport) {
       ReplicaState iState = iblk.getState();
-      BlockInfoContiguous storedBlock = processReportedBlock(storageInfo,
+      BlockInfoContiguous storedBlock = processReportedBlock(storageInfo, // 判断副本状态
           iblk, iState, toAdd, toInvalidate, toCorrupt, toUC);
 
       // move block to the head of the list
       if (storedBlock != null &&
           (curIndex = storedBlock.findStorageInfo(storageInfo)) >= 0) {
+        // 把处理过的block，移动到blockList的列表头
         headIndex = storageInfo.moveBlockToHead(storedBlock, curIndex, headIndex);
       }
     }
@@ -2171,9 +2177,9 @@ public class BlockManager {
     // all of them are next to the delimiter
     Iterator<BlockInfoContiguous> it =
         storageInfo.new BlockIterator(delimiter.getNext(0));
-    while(it.hasNext())
+    while(it.hasNext()) // 分隔符之后的block，都添加到toRemove列表中
       toRemove.add(it.next());
-    storageInfo.removeBlock(delimiter);
+    storageInfo.removeBlock(delimiter); // 删除分隔符
   }
 
   /**
@@ -2198,12 +2204,12 @@ public class BlockManager {
    * @param storageInfo DatanodeStorageInfo that sent the report.
    * @param block reported block replica
    * @param reportedState reported replica state
-   * @param toAdd add to DatanodeDescriptor DN汇报的此副本信息和inode一致，且是Finalize状态且之前未汇报过，添加到NN
-   * @param toInvalidate missing blocks (not in the blocks map) DN汇报的此副本，NN blocksMap没有，从DN删除
+   * @param toAdd add to DatanodeDescriptor DN汇报的此副本信息和blocksMap中一致，且是Finalize状态且之前未汇报过，添加到NN
+   * @param toInvalidate missing blocks (not in the blocks map) DN汇报的此副本，blocksMap没有，从DN删除
    *        should be removed from the data-node
-   * @param toCorrupt replicas with unexpected length or generation stamp; DN汇报的信息和inode不一致，从DN删除
+   * @param toCorrupt replicas with unexpected length or generation stamp; DN汇报的信息和blocksMap中不一致，从DN删除
    *        add to corrupt replicas
-   * @param toUC replicas of blocks currently under construction 此块正在构建中
+   * @param toUC replicas of blocks currently under construction 正在构建中的副本
    * @return the up-to-date stored block, if it should be kept.
    *         Otherwise, null.
    */
@@ -2496,11 +2502,12 @@ public class BlockManager {
    * 
    * @throws IOException
    */
+  // 启动时，Storage的第一次全量块汇报，直接添加block，不维护BM中的副本集合
   private void addStoredBlockImmediate(BlockInfoContiguous storedBlock,
       DatanodeStorageInfo storageInfo)
   throws IOException {
     assert (storedBlock != null && namesystem.hasWriteLock());
-    if (!namesystem.isInStartupSafeMode() 
+    if (!namesystem.isInStartupSafeMode() // 退出安全模式后，则使用正常的addStoredBlock()方法
         || namesystem.isPopulatingReplQueues()) {
       addStoredBlock(storedBlock, storageInfo, null, false);
       return;
@@ -2512,7 +2519,7 @@ public class BlockManager {
     // Now check for completion of blocks and safe block count
     int numCurrentReplica = countLiveNodes(storedBlock);
     if (storedBlock.getBlockUCState() == BlockUCState.COMMITTED
-        && numCurrentReplica >= minReplication) {
+        && numCurrentReplica >= minReplication) { // 达到最小副本数committed状态的block，则complete
       completeBlock(storedBlock.getBlockCollection(), storedBlock, false);
     } else if (storedBlock.isComplete() && result == AddBlockResult.ADDED) {
       // check whether safe replication is reached for the block
@@ -2528,7 +2535,7 @@ public class BlockManager {
    * needed replications if this takes care of the problem.
    * @return the block that is stored in blockMap.
    */
-  // 添加此副本信息到block和DN中，并且维护相应集合
+  // 添加此副本信息到block和DN中，并且维护BM相应集合
   private Block addStoredBlock(final BlockInfoContiguous block,
                                DatanodeStorageInfo storageInfo,
                                DatanodeDescriptor delNodeHint,
@@ -3086,14 +3093,14 @@ public class BlockManager {
    * Modify (block-->datanode) map. Possibly generate replication tasks, if the
    * removed block is still valid.
    */
-  // 移除此副本信息，并且维护相应集合
+  // 从NN内存中移除此副本信息，并且维护相应集合
   public void removeStoredBlock(Block block, DatanodeDescriptor node) {
     blockLog.debug("BLOCK* removeStoredBlock: {} from {}", block, node);
     assert (namesystem.hasWriteLock());
     {
-      if (!blocksMap.removeNode(block, node)) { // 移除此副本信息
+      if (!blocksMap.removeNode(block, node)) { // 移除此副本信息（DN的blockList和block的storageList）
         blockLog.debug("BLOCK* removeStoredBlock: {} has already been" +
-            " removed from node {}", block, node);
+            " removed from node {}", block, node); // 说明已经被移除过了
         return;
       }
 
@@ -3194,6 +3201,7 @@ public class BlockManager {
       ReplicaState reportedState, DatanodeDescriptor delHintNode) // delHintNode 用来干什么？
       throws IOException {
     // 每次只处理一个Block为何要初始化这么多Collection？
+    // 因为processReportedBlock()是和全量块汇报共用的，全量块汇报一次会处理多个block
     // blockReceived reports a finalized block
     Collection<BlockInfoContiguous> toAdd = new LinkedList<BlockInfoContiguous>();
     Collection<Block> toInvalidate = new LinkedList<Block>();

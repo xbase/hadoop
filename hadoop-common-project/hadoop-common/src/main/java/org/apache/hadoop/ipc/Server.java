@@ -323,7 +323,7 @@ public abstract class Server {
   /**
    * Returns the clientId from the current RPC request
    */
-  public static byte[] getClientId() {
+  public static byte[] getClientId() { // ipc client UUID
     Call call = CurCall.get();
     return call != null ? call.clientId : RpcConstants.DUMMY_CLIENT_ID;
   }

@@ -278,9 +278,9 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
       throw new IOException("Trying to commit inconsistent block: id = "
           + block.getBlockId() + ", expected id = " + getBlockId());
     blockUCState = BlockUCState.COMMITTED; // 修改block状态
-    this.setNumBytes(block.getNumBytes()); // 设置size
+    this.setNumBytes(block.getNumBytes()); // 以client提交的block size为准
     // Sort out invalid replicas.
-    setGenerationStampAndVerifyReplicas(block.getGenerationStamp()); // 设置GS
+    setGenerationStampAndVerifyReplicas(block.getGenerationStamp()); // 以client提交的GS为准
   }
 
   /**

@@ -138,7 +138,7 @@ public class Client {
   private final int connectionTimeout;
 
   private final boolean fallbackAllowed;
-  private final byte[] clientId;
+  private final byte[] clientId; // ipc client UUID
   
   final static int CONNECTION_CONTEXT_CALL_ID = -3;
   

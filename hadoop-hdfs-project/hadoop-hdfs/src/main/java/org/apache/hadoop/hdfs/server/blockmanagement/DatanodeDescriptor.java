@@ -310,7 +310,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
   static final private List<DatanodeStorageInfo> EMPTY_STORAGE_INFO_LIST =
       ImmutableList.of();
 
-  List<DatanodeStorageInfo> removeZombieStorages() {
+  List<DatanodeStorageInfo> removeZombieStorages() { // 移除有问题的磁盘
     List<DatanodeStorageInfo> zombies = null;
     synchronized (storageMap) {
       Iterator<Map.Entry<String, DatanodeStorageInfo>> iter =
@@ -318,6 +318,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
       while (iter.hasNext()) {
         Map.Entry<String, DatanodeStorageInfo> entry = iter.next();
         DatanodeStorageInfo storageInfo = entry.getValue();
+        // 此storage记录的lastBlockReportId，不是本次的blockReportId，则说明DN上此磁盘有问题了
         if (storageInfo.getLastBlockReportId() != curBlockReportId) {
           LOG.info(storageInfo.getStorageID() + " had lastBlockReportId 0x" +
               Long.toHexString(storageInfo.getLastBlockReportId()) +

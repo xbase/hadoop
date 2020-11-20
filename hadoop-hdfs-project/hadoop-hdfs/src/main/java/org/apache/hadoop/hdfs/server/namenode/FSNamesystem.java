@@ -3151,7 +3151,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       src = fileState.path;
 
       if (onRetryBlock[0] != null) { // 重试请求，则直接返回上一次分配好的block
-        if (onRetryBlock[0].getLocations().length > 0) {
+        // 有一个不一致的case：
+        // 1、clientA调用addBlock，但是卡在sync edit
+        // 2、clientA超时，并重试，这时会返回retryBlock
+        // 3、NN做了一次主备切换
+        // 4、当clientA commit上一个block时，会抛异常"Cannot allocate block in "
+        // 如果是addBlock或者completeFile时还好，commit last block会抛异常
+        // 如果是hsync场景，就有可能把NN认为的last block数据搞丢
+        if (onRetryBlock[0].getLocations().length > 0) { // 是否已经分配好副本
           // This is a retry. Just return the last block if having locations.
           return onRetryBlock[0];
         } else {
@@ -3250,7 +3257,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       }
     }
     final INodeFile pendingFile = checkLease(src, clientName, inode, fileId); // 检查租约
-    BlockInfoContiguous lastBlockInFile = pendingFile.getLastBlock(); // NN中记录的上一个block信息
+    BlockInfoContiguous lastBlockInFile = pendingFile.getLastBlock(); // NN中记录的最后一个block信息
     if (!Block.matchingIdAndGenStamp(previousBlock, lastBlockInFile)) { // client上报和NN记录的block信息(id和GS)是否相同
       // The block that the client claims is the current last block
       // doesn't match up with what we think is the last block. There are
@@ -3288,7 +3295,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
             "BLOCK* NameSystem.allocateBlock: handling block allocation" +
             " writing to a file with a complete previous block: src={}" +
             " lastBlock={}", src, lastBlockInFile);
-      } else if (Block.matchingIdAndGenStamp(penultimateBlock, previousBlock)) { // NN记录的倒数第二个block和client上一个block信息
+      } else if (Block.matchingIdAndGenStamp(penultimateBlock, previousBlock)) { // NN记录的倒数第二个block和client汇报的上一个block信息 相同
         if (lastBlockInFile.getNumBytes() != 0) {                                // 说明这个请求，是client发送的重试请求
           throw new IOException(
               "Request looked like a retry to allocate block " +
@@ -3302,7 +3309,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
             "caught retry for allocation of a new block in " +
             src + ". Returning previously allocated block " + lastBlockInFile);
         long offset = pendingFile.computeFileSize();
-        onRetryBlock[0] = makeLocatedBlock(lastBlockInFile, // 将上一个block保存到onRetryBlock中，返回给client
+        onRetryBlock[0] = makeLocatedBlock(lastBlockInFile, // 将最后一个block保存到onRetryBlock中，返回给client
             ((BlockInfoContiguousUnderConstruction)lastBlockInFile).getExpectedStorageLocations(),
             offset);
         return new FileState(pendingFile, src, iip);
@@ -4012,10 +4019,10 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       }
       final INodeFile pendingFile = checkLease(src, clientName, inode, fileId);
       if (lastBlockLength > 0) {
-        pendingFile.getFileUnderConstructionFeature().updateLengthOfLastBlock(
+        pendingFile.getFileUnderConstructionFeature().updateLengthOfLastBlock(  // 更新最后一个正在写的block的长度
             pendingFile, lastBlockLength);
       }
-      persistBlocks(src, pendingFile, false);
+      persistBlocks(src, pendingFile, false); // 记录edit
     } finally {
       writeUnlock();
     }

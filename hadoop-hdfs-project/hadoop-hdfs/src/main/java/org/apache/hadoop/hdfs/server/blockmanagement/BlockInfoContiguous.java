@@ -57,7 +57,7 @@ public class BlockInfoContiguous extends Block
    * per replica is 42 bytes (LinkedList#Entry object per replica) versus 16
    * bytes using the triplets.
    */
-  // 副本的存储位置
+  // 副本的存储位置 storage list
   // 在HDFS2.6之前，使用DatanodeDescriptor对象描述（表示存储在哪个DN节点）
   // 现在使用DatanodeStorageInfo描述（表示DN节点的哪个存储目录）
   private Object[] triplets;

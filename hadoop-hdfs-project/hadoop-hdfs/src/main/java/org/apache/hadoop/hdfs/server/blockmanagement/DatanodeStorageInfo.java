@@ -33,7 +33,7 @@ import org.apache.hadoop.hdfs.server.protocol.StorageReport;
  * A Datanode has one or more storages. A storage in the Datanode is represented
  * by this class.
  */
-// 描述DN上一个存储目录，包括此目录中存储的块
+// NN端描述DN一个存储目录，包括此目录中存储的块
 public class DatanodeStorageInfo {
   public static final DatanodeStorageInfo[] EMPTY_ARRAY = {};
 
@@ -224,8 +224,8 @@ public class DatanodeStorageInfo {
   }
 
   // 添加一个Replica：
-  // 1、在block中添加此Replica
-  // 2、添加到DN block list head
+  // 1、在block中添加此Replica（block -> storage list）
+  // 2、添加到DN block list head（storage -> block list）
   public AddBlockResult addBlock(BlockInfoContiguous b) {
     // First check whether the block belongs to a different storage
     // on the same DN.
