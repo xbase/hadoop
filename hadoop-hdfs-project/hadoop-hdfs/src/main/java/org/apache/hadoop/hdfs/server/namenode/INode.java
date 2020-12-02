@@ -490,7 +490,7 @@ public abstract class INode implements INodeAttributes, Diff.Element<byte[]> {
    * Get the quota set for this inode
    * @return the quota counts.  The count is -1 if it is not set.
    */
-  public QuotaCounts getQuotaCounts() {
+  public QuotaCounts getQuotaCounts() { // 代表此目录没开启quota
     return new QuotaCounts.Builder().
         nameSpace(HdfsConstants.QUOTA_RESET).
         storageSpace(HdfsConstants.QUOTA_RESET).
@@ -498,7 +498,7 @@ public abstract class INode implements INodeAttributes, Diff.Element<byte[]> {
         build();
   }
 
-  public final boolean isQuotaSet() {
+  public final boolean isQuotaSet() { // 此目录是否开启了quota，并且quota设置的大于0
     final QuotaCounts qc = getQuotaCounts();
     return qc.anyNsSsCountGreaterOrEqual(0) || qc.anyTypeSpaceCountGreaterOrEqual(0);
   }
@@ -508,7 +508,7 @@ public abstract class INode implements INodeAttributes, Diff.Element<byte[]> {
    * Entry point for FSDirectory where blockStoragePolicyId is given its initial
    * value.
    */
-  public final QuotaCounts computeQuotaUsage(BlockStoragePolicySuite bsps) {
+  public final QuotaCounts computeQuotaUsage(BlockStoragePolicySuite bsps) { // 计算quota的增减值
     final byte storagePolicyId = isSymlink() ?
         BlockStoragePolicySuite.ID_UNSPECIFIED : getStoragePolicyID();
     return computeQuotaUsage(bsps, storagePolicyId,

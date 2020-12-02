@@ -648,10 +648,11 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * when image/edits have been loaded and the file/dir to be deleted is not
    * contained in snapshots.
    */
+  // 使用的场景有：delete、rename
   void updateCountForDelete(final INode inode, final INodesInPath iip) { // 更新quota
     if (getFSNamesystem().isImageLoaded() &&
         !inode.isInLatestSnapshot(iip.getLatestSnapshotId())) {
-      QuotaCounts counts = inode.computeQuotaUsage(getBlockStoragePolicySuite());
+      QuotaCounts counts = inode.computeQuotaUsage(getBlockStoragePolicySuite()); // 计算quota的增减值
       unprotectedUpdateCount(iip, iip.length() - 1, counts.negation());
     }
   }
@@ -659,16 +660,18 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
   /**
    * Update usage count without replication factor change
    */
+  // 通过指定delta，更新quota
+  // 使用的场景有：addBlock
   void updateCount(INodesInPath iip, long nsDelta, long ssDelta, short replication,
       boolean checkQuota) throws QuotaExceededException { // 检查并更新quota
     final INodeFile fileINode = iip.getLastINode().asFile();
-    EnumCounters<StorageType> typeSpaceDeltas =
+    EnumCounters<StorageType> typeSpaceDeltas =  // 获取存储类型quota
       getStorageTypeDeltas(fileINode.getStoragePolicyID(), ssDelta,
           replication, replication);
     updateCount(iip, iip.length() - 1,
       new QuotaCounts.Builder().nameSpace(nsDelta).storageSpace(ssDelta * replication).
           typeSpaces(typeSpaceDeltas).build(),
-        checkQuota);
+        checkQuota); // 检查并更新quota
   }
 
   /**
@@ -694,6 +697,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * @param checkQuota if true then check if quota is exceeded
    * @throws QuotaExceededException if the new count violates any quota limit
    */
+  // 存储空间quota考虑了副本数
   void updateCount(INodesInPath iip, int numOfINodes,
                     QuotaCounts counts, boolean checkQuota)
                     throws QuotaExceededException { // 检查并更新quota
@@ -716,7 +720,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * See {@link #updateCount(INodesInPath, int, QuotaCounts, boolean)}
    */ 
    void updateCountNoQuotaCheck(INodesInPath inodesInPath,
-      int numOfINodes, QuotaCounts counts) {
+      int numOfINodes, QuotaCounts counts) { // 只更新quota不检查
     assert hasWriteLock();
     try {
       updateCount(inodesInPath, numOfINodes, counts, false);
@@ -731,17 +735,17 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    */
   static void unprotectedUpdateCount(INodesInPath inodesInPath,
       int numOfINodes, QuotaCounts counts) { // 每级父目录都要更新
-    for(int i=0; i < numOfINodes; i++) {
-      if (inodesInPath.getINode(i).isQuotaSet()) { // a directory with quota
+    for(int i=0; i < numOfINodes; i++) { // 正向更新
+      if (inodesInPath.getINode(i).isQuotaSet()) { // a directory with quota 此目录是否开启了quota
         inodesInPath.getINode(i).asDirectory().getDirectoryWithQuotaFeature()
-            .addSpaceConsumed2Cache(counts);
+            .addSpaceConsumed2Cache(counts); // 增量更新
       }
     }
   }
 
   public EnumCounters<StorageType> getStorageTypeDeltas(byte storagePolicyID,
-      long dsDelta, short oldRep, short newRep) {
-    EnumCounters<StorageType> typeSpaceDeltas =
+      long dsDelta, short oldRep, short newRep) { // 获取存储类型quota
+    EnumCounters<StorageType> typeSpaceDeltas = // 存储类型quota
         new EnumCounters<StorageType>(StorageType.class);
     // Storage type and its quota are only available when storage policy is set
     if (storagePolicyID != BlockStoragePolicySuite.ID_UNSPECIFIED) {
@@ -856,24 +860,24 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * @throws QuotaExceededException if quota limit is exceeded.
    */
   static void verifyQuota(INodesInPath iip, int pos, QuotaCounts deltas,
-                          INode commonAncestor) throws QuotaExceededException { // 检查quota
+                          INode commonAncestor) throws QuotaExceededException { // 检查quota是否超了
     if (deltas.getNameSpace() <= 0 && deltas.getStorageSpace() <= 0
-        && deltas.getTypeSpaces().allLessOrEqual(0L)) {
+        && deltas.getTypeSpaces().allLessOrEqual(0L)) { // quota delta小于等于0，就不用检查了
       // if quota is being freed or not being consumed
       return;
     }
 
     // check existing components in the path
-    for(int i = (pos > iip.length() ? iip.length(): pos) - 1; i >= 0; i--) { // 每级父目录都要检查quota
+    for(int i = (pos > iip.length() ? iip.length(): pos) - 1; i >= 0; i--) { // 反向，每级父目录都要检查quota
       if (commonAncestor == iip.getINode(i)) {
         // Stop checking for quota when common ancestor is reached
         return;
       }
       final DirectoryWithQuotaFeature q
           = iip.getINode(i).asDirectory().getDirectoryWithQuotaFeature();
-      if (q != null) { // a directory with quota
+      if (q != null) { // a directory with quota 目录是否设置了quota
         try {
-          q.verifyQuota(deltas);
+          q.verifyQuota(deltas); // 检查是否超quota
         } catch (QuotaExceededException e) {
           List<INode> inodes = iip.getReadOnlyINodes();
           final String path = getFullPathName(inodes.toArray(new INode[inodes.size()]), i);
@@ -981,7 +985,9 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
     // always verify inode name
     verifyINodeName(inode.getLocalNameBytes()); // 检查name是否是保留字符
 
-    final QuotaCounts counts = inode.computeQuotaUsage(getBlockStoragePolicySuite());
+    // 新建文件或目录，只会 nsQuota+1
+    // rename场景 存储空间quota delta计算的是整个文件的大小
+    final QuotaCounts counts = inode.computeQuotaUsage(getBlockStoragePolicySuite()); // 计算quota增减值
     updateCount(existing, pos, counts, checkQuota); // 检查并更新quota
 
     boolean isRename = (inode.getParent() != null);
@@ -990,7 +996,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
       // 添加到父节点
       added = parent.addChild(inode, true, existing.getLatestSnapshotId());
     } catch (QuotaExceededException e) {
-      updateCountNoQuotaCheck(existing, pos, counts.negation());
+      updateCountNoQuotaCheck(existing, pos, counts.negation()); // 添加失败则把刚才加的quota再减回去 nsQuota-1
       throw e;
     }
     if (!added) {

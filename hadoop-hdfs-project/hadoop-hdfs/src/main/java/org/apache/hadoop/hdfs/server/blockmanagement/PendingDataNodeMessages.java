@@ -32,8 +32,13 @@ import com.google.common.collect.Maps;
  * before they are actually available in the namespace, or while
  * they have an outdated state in the namespace. In those cases,
  * we queue those block-related messages in this structure.
- * */  
-class PendingDataNodeMessages { // Standby节点在没有收到edit信息之前，先收到了DN的块汇报，放到此集合，延迟处理
+ * */
+// Standby节点在没有收到edit信息之前，先收到了DN的块汇报，放到此集合，延迟处理
+// 处理的地方有3处：
+// 1、回放edit时，处理指定block的延迟副本
+// 2、切主时，处理所有延迟block
+// 3、移除DN，移除相应DN的延迟block
+class PendingDataNodeMessages {
   
   final Map<Block, Queue<ReportedBlockInfo>> queueByBlockId =
     Maps.newHashMap();
@@ -43,7 +48,7 @@ class PendingDataNodeMessages { // Standby节点在没有收到edit信息之前�
   static class ReportedBlockInfo {
     private final Block block;
     private final DatanodeStorageInfo storageInfo;
-    private final ReplicaState reportedState;
+    private final ReplicaState reportedState; // DN汇报的副本状态
 
     ReportedBlockInfo(DatanodeStorageInfo storageInfo, Block block,
         ReplicaState reportedState) {
@@ -76,15 +81,15 @@ class PendingDataNodeMessages { // Standby节点在没有收到edit信息之前�
    * Remove all pending DN messages which reference the given DN.
    * @param dn the datanode whose messages we should remove.
    */
-  void removeAllMessagesForDatanode(DatanodeDescriptor dn) {
+  void removeAllMessagesForDatanode(DatanodeDescriptor dn) { // 移除指定DN的延迟block信息
     for (Map.Entry<Block, Queue<ReportedBlockInfo>> entry :
-        queueByBlockId.entrySet()) {
+        queueByBlockId.entrySet()) { // 所有的延迟block
       Queue<ReportedBlockInfo> newQueue = Lists.newLinkedList();
       Queue<ReportedBlockInfo> oldQueue = entry.getValue();
       while (!oldQueue.isEmpty()) {
         ReportedBlockInfo rbi = oldQueue.remove();
         if (!rbi.getStorageInfo().getDatanodeDescriptor().equals(dn)) {
-          newQueue.add(rbi);
+          newQueue.add(rbi); // 非指定DN上的副本信息添加到newQueue
         } else {
           count--;
         }
@@ -105,7 +110,7 @@ class PendingDataNodeMessages { // Standby节点在没有收到edit信息之前�
    * @return any messages that were previously queued for the given block,
    * or null if no messages were queued.
    */
-  Queue<ReportedBlockInfo> takeBlockQueue(Block block) {
+  Queue<ReportedBlockInfo> takeBlockQueue(Block block) { // 回放edit时，处理指定block的延迟副本
     Queue<ReportedBlockInfo> queue = queueByBlockId.remove(block);
     if (queue != null) {
       count -= queue.size();
@@ -140,7 +145,7 @@ class PendingDataNodeMessages { // Standby节点在没有收到edit信息之前�
     return sb.toString();
   }
 
-  Iterable<ReportedBlockInfo> takeAll() {
+  Iterable<ReportedBlockInfo> takeAll() { // 切主时，处理所有延迟block
     List<ReportedBlockInfo> rbis = Lists.newArrayListWithCapacity(
         count);
     for (Queue<ReportedBlockInfo> q : queueByBlockId.values()) {

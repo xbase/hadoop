@@ -110,7 +110,7 @@ public class BlockManager {
   private volatile long pendingReplicationBlocksCount = 0L;
   private volatile long corruptReplicaBlocksCount = 0L;
   private volatile long underReplicatedBlocksCount = 0L;
-  private volatile long scheduledReplicationBlocksCount = 0L;
+  private volatile long scheduledReplicationBlocksCount = 0L; // replicationMonitor一次生成的块复制任务数
   private final AtomicLong excessBlocksCount = new AtomicLong(0L);
   private final AtomicLong postponedMisreplicatedBlocksCount = new AtomicLong(0L);
   private final long startupDelayBlockDeletionInMs;
@@ -178,7 +178,13 @@ public class BlockManager {
    * when the failover happened.
    */
   // 推迟操作的副本集合
-  // 由于副本数多余期望值，而需要删除的block，NN HA切换时，为避免误删除，先保存在这里
+  // 由于副本数多余期望值、损坏等原因，而需要删除的block，NN HA切换时，为避免误删除，先保存在这里
+
+  // 如果一个block中有一个replica所在的dn storage为stale状态，那么这个block不允许执行删除操作，以防止误删除
+  // 切主的时候，会把所有DN的storage标记为stale状态
+  // 直到DN发送过一次心跳和全量块汇报，才会把此DN的storage的stale状态改为false
+
+  // ReplicationMonitor会周期扫描此集合中的block，并处理
   private final Set<Block> postponedMisreplicatedBlocks = Sets.newHashSet();
 
   /**
@@ -636,6 +642,8 @@ public class BlockManager {
    * of replicas reported from data-nodes.
    */
   // complete 一个 block
+  // 只有complete的时候，才会把block从UC状态转为正常状态
+  // addBlock、complete file、block report、commitBlockSynchronization(block recovery之后)，都会判断是否可以complete block
   private BlockInfoContiguous completeBlock(final BlockCollection bc,
       final int blkIndex, boolean force) throws IOException {
     if(blkIndex < 0)
@@ -767,8 +775,9 @@ public class BlockManager {
       final BlockInfoContiguous[] blocks,
       final long offset, final long length, final int nrBlocksToReturn,
       final AccessMode mode) throws IOException { // 根据offset和length，返回相应的block
-    int curBlk = 0;
-    long curPos = 0, blkSize = 0;
+    int curBlk = 0; // client需要的offset落在第几个block上
+    long curPos = 0; // offset of the first byte of the block in the file 此block在文件中的offset
+    long blkSize = 0; // block size
     int nrBlocks = (blocks[0].getNumBytes() == 0) ? 0 : blocks.length; // block个数
     for (curBlk = 0; curBlk < nrBlocks; curBlk++) {
       blkSize = blocks[curBlk].getNumBytes();
@@ -788,7 +797,7 @@ public class BlockManager {
       results.add(createLocatedBlock(blocks[curBlk], curPos, mode));
       curPos += blocks[curBlk].getNumBytes();
       curBlk++;
-    } while (curPos < endOff 
+    } while (curPos < endOff // client需要的length
           && curBlk < blocks.length
           && results.size() < nrBlocksToReturn);
     return results;
@@ -820,6 +829,9 @@ public class BlockManager {
   }
 
   /** @return a LocatedBlock for the given block */
+  // 创建返回给client的block对象
+  // 1、正在构建中的block，返回所有的副本
+  // 2、完成的block，如果所有的副本都损坏了，则返回所有的副本；否则返回未损坏的副本
   private LocatedBlock createLocatedBlock(final BlockInfoContiguous blk, final long pos
       ) throws IOException {
     if (blk instanceof BlockInfoContiguousUnderConstruction) { // UC状态的block
@@ -836,7 +848,7 @@ public class BlockManager {
     }
 
     // get block locations
-    final int numCorruptNodes = countNodes(blk).corruptReplicas();
+    final int numCorruptNodes = countNodes(blk).corruptReplicas(); // 损坏的副本个数
     final int numCorruptReplicas = corruptReplicas.numCorruptReplicas(blk);
     if (numCorruptNodes != numCorruptReplicas) {
       LOG.warn("Inconsistent number of corrupt replicas for "
@@ -1050,7 +1062,7 @@ public class BlockManager {
 
    
   /** Remove the blocks associated to the given datanode. */
-  void removeBlocksAssociatedTo(final DatanodeDescriptor node) {
+  void removeBlocksAssociatedTo(final DatanodeDescriptor node) { // 从NN内存中，移除此DN的所有block信息
     final Iterator<? extends Block> it = node.getBlockIterator();
     while(it.hasNext()) {
       removeStoredBlock(it.next(), node);
@@ -1212,7 +1224,7 @@ public class BlockManager {
    * present in the BlocksMap
    */
   private boolean invalidateBlock(BlockToMarkCorrupt b, DatanodeInfo dn
-      ) throws IOException {
+      ) throws IOException { // 添加到待删除集合，并从NN内存中移除此副本信息
     blockLog.info("BLOCK* invalidateBlock: {} on {}", b, dn);
     DatanodeDescriptor node = getDatanodeManager().getDatanode(dn);
     if (node == null) {
@@ -1232,7 +1244,7 @@ public class BlockManager {
     } else if (nr.liveReplicas() >= 1) {
       // If we have at least one copy on a live node, then we can delete it.
       addToInvalidates(b.corrupted, dn); // 添加到待删除集合
-      removeStoredBlock(b.stored, node);
+      removeStoredBlock(b.stored, node); // 从NN内存中移除此副本信息
       blockLog.debug("BLOCK* invalidateBlocks: {} on {} listed for deletion.",
           b, dn);
       return true;
@@ -1249,14 +1261,14 @@ public class BlockManager {
   }
 
 
-  private void postponeBlock(Block blk) {
+  private void postponeBlock(Block blk) { // 添加到推迟操作副本集合
     if (postponedMisreplicatedBlocks.add(blk)) {
       postponedMisreplicatedBlocksCount.incrementAndGet();
     }
   }
   
   
-  void updateState() {
+  void updateState() { // 更新metric值
     pendingReplicationBlocksCount = pendingReplications.size();
     underReplicatedBlocksCount = neededReplications.size();
     corruptReplicaBlocksCount = corruptReplicas.size();
@@ -1908,8 +1920,8 @@ public class BlockManager {
   /**
    * Rescan the list of blocks which were previously postponed.
    */
-  void rescanPostponedMisreplicatedBlocks() {
-    if (getPostponedMisreplicatedBlocksCount() == 0) {
+  void rescanPostponedMisreplicatedBlocks() { // 处理postponedMisreplicatedBlocks中的block
+    if (getPostponedMisreplicatedBlocksCount() == 0) { // 没有需要延后处理的block
       return;
     }
     long startTimeRescanPostponedMisReplicatedBlocks = Time.monotonicNow();
@@ -1927,16 +1939,16 @@ public class BlockManager {
       int i = 0;
       long startIndex = 0;
       long blocksPerRescan =
-          datanodeManager.getBlocksPerPostponedMisreplicatedBlocksRescan();
+          datanodeManager.getBlocksPerPostponedMisreplicatedBlocksRescan(); // 获取一次写锁，处理的延迟block个数
       long base = getPostponedMisreplicatedBlocksCount() - blocksPerRescan;
-      if (base > 0) {
+      if (base > 0) { // 如果延迟block总数大于blocksPerRescan，则随机一个位置开始处理，而不是每次都从头开始处理blocksPerRescan个
         startIndex = DFSUtil.getRandom().nextLong() % (base+1);
         if (startIndex < 0) {
           startIndex += (base+1);
         }
       }
       Iterator<Block> it = postponedMisreplicatedBlocks.iterator();
-      for (int tmp = 0; tmp < startIndex; tmp++) {
+      for (int tmp = 0; tmp < startIndex; tmp++) { // startIndex之前的直接跳过
         it.next();
       }
 
@@ -1947,7 +1959,7 @@ public class BlockManager {
         }
 
         BlockInfoContiguous bi = blocksMap.getStoredBlock(b);
-        if (bi == null) {
+        if (bi == null) { // blocksMap中没有此block，可以直接移除
           if (LOG.isDebugEnabled()) {
             LOG.debug("BLOCK* rescanPostponedMisreplicatedBlocks: " +
                 "Postponed mis-replicated block " + b + " no longer found " +
@@ -1957,12 +1969,12 @@ public class BlockManager {
           postponedMisreplicatedBlocksCount.decrementAndGet();
           continue;
         }
-        MisReplicationResult res = processMisReplicatedBlock(bi);
+        MisReplicationResult res = processMisReplicatedBlock(bi); // 处理延迟block
         if (LOG.isDebugEnabled()) {
           LOG.debug("BLOCK* rescanPostponedMisreplicatedBlocks: " +
               "Re-scanned block " + b + ", result is " + res);
         }
-        if (res != MisReplicationResult.POSTPONE) {
+        if (res != MisReplicationResult.POSTPONE) { // 表明处理成功，移除
           it.remove();
           postponedMisreplicatedBlocksCount.decrementAndGet();
         }
@@ -2322,8 +2334,9 @@ public class BlockManager {
    * block. This is called from FSEditLogLoader whenever a block's state
    * in the namespace has changed or a new block has been created.
    */
+  // 回放edit的时候，会判断是否有延迟处理的副本信息，并处理
   public void processQueuedMessagesForBlock(Block b) throws IOException {
-    Queue<ReportedBlockInfo> queue = pendingDNMessages.takeBlockQueue(b);
+    Queue<ReportedBlockInfo> queue = pendingDNMessages.takeBlockQueue(b); // 获取指定block的延迟副本
     if (queue == null) {
       // Nothing to re-process
       return;
@@ -2337,13 +2350,13 @@ public class BlockManager {
       if (LOG.isDebugEnabled()) {
         LOG.debug("Processing previouly queued message " + rbi);
       }
-      if (rbi.getReportedState() == null) {
+      if (rbi.getReportedState() == null) { // 被删除的block
         // This is a DELETE_BLOCK request
         DatanodeStorageInfo storageInfo = rbi.getStorageInfo();
         removeStoredBlock(rbi.getBlock(),
-            storageInfo.getDatanodeDescriptor());
+            storageInfo.getDatanodeDescriptor()); // 移除此副本信息
       } else {
-        processAndHandleReportedBlock(rbi.getStorageInfo(),
+        processAndHandleReportedBlock(rbi.getStorageInfo(), // 添加到相应集合
             rbi.getBlock(), rbi.getReportedState(), null);
       }
     }
@@ -2355,11 +2368,13 @@ public class BlockManager {
    * we are the definitive master node and thus should be up-to-date
    * with the namespace information.
    */
+  // Standby节点在没有收到edit信息之前，先收到了DN的块汇报，把这些块存到pendingDNMessages中
+  // 切主的时候，会先回放到最新的edit，然后处理一下pendingDNMessages中的块汇报信息
   public void processAllPendingDNMessages() throws IOException {
     assert !shouldPostponeBlocksFromFuture :
       "processAllPendingDNMessages() should be called after disabling " +
       "block postponement.";
-    int count = pendingDNMessages.count();
+    int count = pendingDNMessages.count(); // 延后处理的块汇报消息
     if (count > 0) {
       LOG.info("Processing " + count + " messages from DataNodes " +
           "that were previously queued during standby state");
@@ -2640,7 +2655,7 @@ public class BlockManager {
           " but corrupt replicas map has " + corruptReplicasCount);
     }
     if ((corruptReplicasCount > 0) && (numLiveReplicas >= fileReplication)) {
-      // 副本数足够才执行删除副本
+      // 副本数多余期望副本数，把损坏的副本删除
       invalidateCorruptReplicas(storedBlock);
     }
     return storedBlock;
@@ -2674,7 +2689,7 @@ public class BlockManager {
    *
    * @param blk Block whose corrupt replicas need to be invalidated
    */
-  private void invalidateCorruptReplicas(BlockInfoContiguous blk) {
+  private void invalidateCorruptReplicas(BlockInfoContiguous blk) { // 删除此block损坏的副本
     Collection<DatanodeDescriptor> nodes = corruptReplicas.getNodes(blk);
     boolean removedFromBlocksMap = true;
     if (nodes == null)
@@ -2685,7 +2700,7 @@ public class BlockManager {
     for (DatanodeDescriptor node : nodesCopy) {
       try {
         if (!invalidateBlock(new BlockToMarkCorrupt(blk, null,
-              Reason.ANY), node)) {
+              Reason.ANY), node)) { // 添加到带删除集合，并从NN内存中移除此副本信息
           removedFromBlocksMap = false;
         }
       } catch (IOException e) {
@@ -2695,7 +2710,7 @@ public class BlockManager {
       }
     }
     // Remove the block from corruptReplicasMap
-    if (removedFromBlocksMap) {
+    if (removedFromBlocksMap) { // 说明添加到invalidateBlocks集合成功
       corruptReplicas.removeFromCorruptReplicasMap(blk);
     }
   }
@@ -3452,7 +3467,7 @@ public class BlockManager {
     // Remove the block from pendingReplications and neededReplications
     pendingReplications.remove(block); // 从复制队列中删除
     neededReplications.remove(block, UnderReplicatedBlocks.LEVEL);
-    if (postponedMisreplicatedBlocks.remove(block)) {
+    if (postponedMisreplicatedBlocks.remove(block)) { // 从延迟处理队列删除
       postponedMisreplicatedBlocksCount.decrementAndGet();
     }
   }
@@ -3712,9 +3727,9 @@ public class BlockManager {
           if (namesystem.isPopulatingReplQueues()) {
             computeDatanodeWork();
             processPendingReplications();
-            rescanPostponedMisreplicatedBlocks();
+            rescanPostponedMisreplicatedBlocks(); // 处理postponedMisreplicatedBlocks中的block
           }
-          Thread.sleep(replicationRecheckInterval);
+          Thread.sleep(replicationRecheckInterval); // 默认：3s
         } catch (Throwable t) {
           if (!namesystem.isRunning()) {
             LOG.info("Stopping ReplicationMonitor.");
@@ -3853,17 +3868,17 @@ public class BlockManager {
     final int nodesToProcess = (int) Math.ceil(numlive
         * this.blocksInvalidateWorkPct);
 
-    int workFound = this.computeReplicationWork(blocksToProcess);
+    int workFound = this.computeReplicationWork(blocksToProcess); // 生成block复制任务
 
     // Update counters
     namesystem.writeLock();
     try {
-      this.updateState();
-      this.scheduledReplicationBlocksCount = workFound;
+      this.updateState(); // 更新metric值
+      this.scheduledReplicationBlocksCount = workFound;   // 更新metric值: replicationMonitor一次生成的块复制任务数
     } finally {
       namesystem.writeUnlock();
     }
-    workFound += this.computeInvalidateWork(nodesToProcess);
+    workFound += this.computeInvalidateWork(nodesToProcess); // 生成block删除任务
     return workFound;
   }
 
@@ -3871,7 +3886,7 @@ public class BlockManager {
    * Clear all queues that hold decisions previously made by
    * this NameNode.
    */
-  public void clearQueues() {
+  public void clearQueues() { // 清空BM副本相关数据结构
     neededReplications.clear();
     pendingReplications.clear();
     excessReplicateMap.clear();

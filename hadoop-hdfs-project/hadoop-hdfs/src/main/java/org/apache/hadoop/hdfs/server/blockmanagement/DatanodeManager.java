@@ -141,7 +141,7 @@ public class DatanodeManager {
   /**
    * Number of blocks to check for each postponedMisreplicatedBlocks iteration
    */
-  private final long blocksPerPostponedMisreplicatedBlocksRescan;
+  private final long blocksPerPostponedMisreplicatedBlocksRescan;  // 一次处理的延迟block个数
 
   /**
    * Whether or not this cluster has ever consisted of more than 1 rack,

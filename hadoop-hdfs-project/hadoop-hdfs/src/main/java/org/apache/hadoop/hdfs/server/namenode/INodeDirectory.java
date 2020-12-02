@@ -528,7 +528,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
       return false;
     }
 
-    if (isInLatestSnapshot(latestSnapshotId)) {
+    if (isInLatestSnapshot(latestSnapshotId)) { // snapshot相关
       // create snapshot feature if necessary
       DirectoryWithSnapshotFeature sf = this.getDirectoryWithSnapshotFeature();
       if (sf == null) {

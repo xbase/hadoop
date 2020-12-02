@@ -612,7 +612,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
     }
     namesystem.checkOperation(OperationCategory.WRITE);
     CacheEntryWithPayload cacheEntry = RetryCache.waitForCompletion(retryCache, null); // 是否是重试请求
-    if (cacheEntry != null && cacheEntry.isSuccess()) {
+    if (cacheEntry != null && cacheEntry.isSuccess()) { // 只有之前的请求成功且sync完edit，才能使用cache
       return (HdfsFileStatus) cacheEntry.getPayload();
     }
 
@@ -624,7 +624,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
           flag.get(), createParent, replication, blockSize, supportedVersions,
           cacheEntry != null); // 创建文件
     } finally {
-      RetryCache.setState(cacheEntry, status != null, status);
+      RetryCache.setState(cacheEntry, status != null, status); // sync完edit，更新cacheEntry状态
     }
 
     metrics.incrFilesCreated();

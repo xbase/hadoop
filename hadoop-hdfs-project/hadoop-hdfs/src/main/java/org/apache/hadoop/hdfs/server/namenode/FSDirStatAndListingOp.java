@@ -190,7 +190,7 @@ class FSDirStatAndListingOp {
       final ReadOnlyList<INode> contents = dirInode.getChildrenList(snapshot);
       int startChild = INodeDirectory.nextChild(contents, startAfter);
       int totalNumChildren = contents.size();
-      int numOfListing = Math.min(totalNumChildren - startChild, // 一次ls可以获取到文件数
+      int numOfListing = Math.min(totalNumChildren - startChild, // 一次ls可以获取到的文件数
           fsd.getLsLimit());
       int locationBudget = fsd.getLsLimit();
       int listingCnt = 0;

@@ -38,7 +38,7 @@ import com.google.common.collect.Lists;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
-public class LocatedBlock {
+public class LocatedBlock { // 返回给client的block对象
 
   private final ExtendedBlock b;
   private long offset;  // offset of the first byte of the block in the file

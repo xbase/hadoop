@@ -78,7 +78,7 @@ public class QuotaCounts {
     this.tsCounts = builder.tsCounts;
   }
 
-  public void add(QuotaCounts that) {
+  public void add(QuotaCounts that) { // 增量更新quota
     this.nsSsCounts.add(that.nsSsCounts);
     this.tsCounts.add(that.tsCounts);
   }

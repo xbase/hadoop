@@ -1113,11 +1113,11 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         
         LOG.info("Catching up to latest edits from old active before " +
             "taking over writer role in edits logs");
-        editLogTailer.catchupDuringFailover();
+        editLogTailer.catchupDuringFailover(); // 回放到最新的edit
         
         blockManager.setPostponeBlocksFromFuture(false);
-        blockManager.getDatanodeManager().markAllDatanodesStale();
-        blockManager.clearQueues();
+        blockManager.getDatanodeManager().markAllDatanodesStale(); // 标记所有DN为stale
+        blockManager.clearQueues(); // 清空BM副本相关数据结构
         blockManager.processAllPendingDNMessages();
 
         // Only need to re-process the queue, If not in SafeMode.
@@ -1835,7 +1835,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
     final long fileSize = iip.isSnapshot() // 文件大小
         ? inode.computeFileSize(iip.getPathSnapshotId())
-        : inode.computeFileSizeNotIncludingLastUcBlock();
+        : inode.computeFileSizeNotIncludingLastUcBlock();  // 不包括最后一个block的文件大小
     boolean isUc = inode.isUnderConstruction();
     if (iip.isSnapshot()) {
       // if src indicates a snapshot file, we need to make sure the returned
@@ -1959,7 +1959,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    *         false if file does not exist or is a directory
    */
   boolean setReplication(final String src, final short replication)
-      throws IOException {
+      throws IOException { // 只能修改file的副本数
     boolean success = false;
     waitForLoadingFSImage();
     checkOperation(OperationCategory.WRITE);
@@ -3156,7 +3156,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         // 2、clientA超时，并重试，这时会返回retryBlock
         // 3、NN做了一次主备切换
         // 4、当clientA commit上一个block时，会抛异常"Cannot allocate block in "
-        // 如果是addBlock或者completeFile时还好，commit last block会抛异常
+        // 如果是addBlock或者completeFile时还好，commit last block会抛异常，相当于client白写了一个block
         // 如果是hsync场景，就有可能把NN认为的last block数据搞丢
         if (onRetryBlock[0].getLocations().length > 0) { // 是否已经分配好副本
           // This is a retry. Just return the last block if having locations.

@@ -199,14 +199,14 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
   }
 
   /** Verify if the namespace quota is violated after applying delta. */
-  private void verifyNamespaceQuota(long delta) throws NSQuotaExceededException {
+  private void verifyNamespaceQuota(long delta) throws NSQuotaExceededException { // 是否超ns quota
     if (Quota.isViolated(quota.getNameSpace(), usage.getNameSpace(), delta)) {
       throw new NSQuotaExceededException(quota.getNameSpace(),
           usage.getNameSpace() + delta);
     }
   }
   /** Verify if the storagespace quota is violated after applying delta. */
-  private void verifyStoragespaceQuota(long delta) throws DSQuotaExceededException {
+  private void verifyStoragespaceQuota(long delta) throws DSQuotaExceededException { // 是否超ss quota
     if (Quota.isViolated(quota.getStorageSpace(), usage.getStorageSpace(), delta)) {
       throw new DSQuotaExceededException(quota.getStorageSpace(),
           usage.getStorageSpace() + delta);
@@ -214,7 +214,7 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
   }
 
   private void verifyQuotaByStorageType(EnumCounters<StorageType> typeDelta)
-      throws QuotaByStorageTypeExceededException {
+      throws QuotaByStorageTypeExceededException { // 是否超 存储类型ss quota
     if (!isQuotaByStorageTypeSet()) {
       return;
     }
@@ -235,9 +235,9 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
    * space quota is violated after applying the deltas.
    */
   void verifyQuota(QuotaCounts counts) throws QuotaExceededException {
-    verifyNamespaceQuota(counts.getNameSpace());
-    verifyStoragespaceQuota(counts.getStorageSpace());
-    verifyQuotaByStorageType(counts.getTypeSpaces());
+    verifyNamespaceQuota(counts.getNameSpace()); // 是否超ns quota
+    verifyStoragespaceQuota(counts.getStorageSpace()); // 是否超ss quota
+    verifyQuotaByStorageType(counts.getTypeSpaces()); // 是否超 存储类型ss quota
   }
 
   boolean isQuotaSet() {

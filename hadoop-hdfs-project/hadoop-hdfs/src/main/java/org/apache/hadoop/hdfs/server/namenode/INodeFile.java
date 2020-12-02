@@ -471,8 +471,8 @@ public class INodeFile extends INodeWithAdditionalFields
       size += in.blocks.length;
     }
 
-    setBlocks(newlist);
-    updateBlockCollection();
+    setBlocks(newlist); // 更新block list
+    updateBlockCollection(); // 修改block的inode引用
   }
   
   /**
@@ -555,15 +555,15 @@ public class INodeFile extends INodeWithAdditionalFields
   // This is the only place that needs to use the BlockStoragePolicySuite to
   // derive the intended storage type usage for quota by storage type
   @Override
-  public final QuotaCounts computeQuotaUsage(
+  public final QuotaCounts computeQuotaUsage( // 计算quota的增减值
       BlockStoragePolicySuite bsps, byte blockStoragePolicyId,
       QuotaCounts counts, boolean useCache,
       int lastSnapshotId) {
-    long nsDelta = 1;
-    final long ssDeltaNoReplication;
+    long nsDelta = 1; // namespace quota增减值
+    final long ssDeltaNoReplication; // 存储quota增减值，一副本（计算的是整个文件的大小）
     short replication;
     FileWithSnapshotFeature sf = getFileWithSnapshotFeature();
-    if (sf != null) {
+    if (sf != null) { // snapshot相关
       FileDiffList fileDiffList = sf.getDiffs();
       int last = fileDiffList.getLastSnapshotId();
 
@@ -580,20 +580,20 @@ public class INodeFile extends INodeWithAdditionalFields
         replication = getReplication(sid);
       }
     } else {
-      ssDeltaNoReplication = storagespaceConsumedNoReplication();
-      replication = getBlockReplication();
+      ssDeltaNoReplication = storagespaceConsumedNoReplication();  // 整个文件的大小
+      replication = getBlockReplication(); // 期望的副本数
     }
     counts.addNameSpace(nsDelta);
     counts.addStorageSpace(ssDeltaNoReplication * replication);
 
     if (blockStoragePolicyId != ID_UNSPECIFIED){
-      BlockStoragePolicy bsp = bsps.getPolicy(blockStoragePolicyId);
-      List<StorageType> storageTypes = bsp.chooseStorageTypes(replication);
+      BlockStoragePolicy bsp = bsps.getPolicy(blockStoragePolicyId); // 存储策略
+      List<StorageType> storageTypes = bsp.chooseStorageTypes(replication); // 每个副本的存储类型
       for (StorageType t : storageTypes) {
         if (!t.supportTypeQuota()) {
           continue;
         }
-        counts.addTypeSpace(t, ssDeltaNoReplication);
+        counts.addTypeSpace(t, ssDeltaNoReplication); // 不同存储类型的quota
       }
     }
     return counts;
@@ -709,12 +709,13 @@ public class INodeFile extends INodeWithAdditionalFields
     return storagespaceConsumedNoReplication() * getBlockReplication();
   }
 
-  public final long storagespaceConsumedNoReplication() {
+  public final long storagespaceConsumedNoReplication() { // 计算整个文件的大小
     FileWithSnapshotFeature sf = getFileWithSnapshotFeature();
     if(sf == null) {
-      return computeFileSize(true, true);
+      return computeFileSize(true, true); // 最后一个block按照期望大小来计算
     }
 
+    // snapshot相关
     // Collect all distinct blocks
     long size = 0;
     Set<Block> allBlocks = new HashSet<Block>(Arrays.asList(getBlocks()));

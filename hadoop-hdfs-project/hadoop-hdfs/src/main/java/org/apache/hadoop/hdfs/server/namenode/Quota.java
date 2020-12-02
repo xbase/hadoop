@@ -58,7 +58,7 @@ public enum Quota { // quota类型
    * The quota is violated if quota is set, delta > 0 and usage + delta > quota.
    */
   static boolean isViolated(final long quota, final long usage,
-      final long delta) {
+      final long delta) { // 是否超quota
     return quota >= 0 && delta > 0 && usage > quota - delta;
   }
 }
