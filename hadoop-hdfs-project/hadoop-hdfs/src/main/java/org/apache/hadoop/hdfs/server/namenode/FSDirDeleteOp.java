@@ -137,7 +137,7 @@ class FSDirDeleteOp {
    */
   static BlocksMapUpdateInfo deleteInternal(
       FSNamesystem fsn, String src, INodesInPath iip, boolean logRetryCache)
-      throws IOException {
+      throws IOException { // 删除inode
     assert fsn.hasWriteLock();
     if (NameNode.stateChangeLog.isDebugEnabled()) {
       NameNode.stateChangeLog.debug("DIR* NameSystem.delete: " + src);

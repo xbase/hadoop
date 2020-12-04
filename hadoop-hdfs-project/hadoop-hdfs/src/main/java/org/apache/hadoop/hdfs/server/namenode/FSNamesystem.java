@@ -3770,7 +3770,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     List<Block> toDeleteList = blocks.getToDeleteList();
     Iterator<Block> iter = toDeleteList.iterator();
     while (iter.hasNext()) {
-      writeLock(); // 这个写锁粒度，是不是太细了
+      writeLock();
       try {
         for (int i = 0; i < BLOCK_DELETION_INCREMENT && iter.hasNext(); i++) {
           blockManager.removeBlock(iter.next()); // block一个一个删除
@@ -4747,6 +4747,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
      * Periodically go over the list of lazyPersist files with missing
      * blocks and unlink them from the namespace.
      */
+    // 文件的存储策略如果是LAZY_PERSIST，如果此文件有missing block，那么就要把这个文件删除
+    // 此种存储策略的block在内存中，而且只有一副本，但丢一个block，就删除整个文件，还是太暴力了
     private void clearCorruptLazyPersistFiles()
         throws IOException {
 
@@ -4756,26 +4758,28 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       boolean changed = false;
       writeLock();
       try {
-        final Iterator<Block> it = blockManager.getCorruptReplicaBlockIterator();
+        final Iterator<Block> it = blockManager.getCorruptReplicaBlockIterator(); // missing block迭代器
 
+        // Step 1: 扫描存储策略是LAZY_PERSIST，并且有missing block的文件，并添加到filesToDelete
         while (it.hasNext()) {
           Block b = it.next();
           BlockInfoContiguous blockInfo = blockManager.getStoredBlock(b);
           if (blockInfo.getBlockCollection().getStoragePolicyID()
-              == lpPolicy.getId()) {
+              == lpPolicy.getId()) { // 文件的存储策略是否是LAZY_PERSIST
             filesToDelete.add(blockInfo.getBlockCollection());
           }
         }
 
+        // Step 2: 删除filesToDelete中的文件
         for (BlockCollection bc : filesToDelete) {
           LOG.warn("Removing lazyPersist file " + bc.getName() + " with no replicas.");
           BlocksMapUpdateInfo toRemoveBlocks =
-              FSDirDeleteOp.deleteInternal(
+              FSDirDeleteOp.deleteInternal( // 删除inode
                   FSNamesystem.this, bc.getName(),
                   INodesInPath.fromINode((INodeFile) bc), false);
-          changed |= toRemoveBlocks != null;
+          changed |= toRemoveBlocks != null; // 是否需要记录edit
           if (toRemoveBlocks != null) {
-            removeBlocks(toRemoveBlocks); // Incremental deletion of blocks
+            removeBlocks(toRemoveBlocks); // Incremental deletion of blocks 删除block
           }
         }
       } finally {
