@@ -581,7 +581,7 @@ public class DatanodeManager {
   }
 
   /** Is the datanode dead? */
-  boolean isDatanodeDead(DatanodeDescriptor node) {
+  boolean isDatanodeDead(DatanodeDescriptor node) { // 超时没有心跳的DN，即认为挂掉
     return (node.getLastUpdateMonotonic() <
             (monotonicNow() - heartbeatExpireInterval));
   }
@@ -1258,13 +1258,13 @@ public class DatanodeManager {
   /** For generating datanode reports */
   public List<DatanodeDescriptor> getDatanodeListForReport(
       final DatanodeReportType type) {
-    final boolean listLiveNodes =
+    final boolean listLiveNodes = // 活着的DN
         type == DatanodeReportType.ALL ||
         type == DatanodeReportType.LIVE;
-    final boolean listDeadNodes =
+    final boolean listDeadNodes = // 挂掉的DN
         type == DatanodeReportType.ALL ||
         type == DatanodeReportType.DEAD;
-    final boolean listDecommissioningNodes =
+    final boolean listDecommissioningNodes = // 正在decommission的DN
         type == DatanodeReportType.ALL ||
         type == DatanodeReportType.DECOMMISSIONING;
 
@@ -1276,8 +1276,8 @@ public class DatanodeManager {
     synchronized(datanodeMap) {
       nodes = new ArrayList<DatanodeDescriptor>(datanodeMap.size());
       for (DatanodeDescriptor dn : datanodeMap.values()) {
-        final boolean isDead = isDatanodeDead(dn);
-        final boolean isDecommissioning = dn.isDecommissionInProgress();
+        final boolean isDead = isDatanodeDead(dn); // 是否挂掉
+        final boolean isDecommissioning = dn.isDecommissionInProgress(); // 是否正在decommission
 
         if (((listLiveNodes && !isDead) ||
             (listDeadNodes && isDead) ||
@@ -1291,6 +1291,7 @@ public class DatanodeManager {
     }
 
     if (listDeadNodes) {
+      // 在include文件中，但是不在datanodeMap中的dn也加入到dead列表中返回
       for (InetSocketAddress addr : includedNodes) {
         if (foundNodes.matchedBy(addr) || excludedNodes.match(addr)) {
           continue;

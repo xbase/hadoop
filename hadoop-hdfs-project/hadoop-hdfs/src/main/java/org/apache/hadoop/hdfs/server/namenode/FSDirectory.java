@@ -778,7 +778,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
   }
 
   /** Return the name of the path represented by inodes at [0, pos] */
-  static String getFullPathName(INode[] inodes, int pos) {
+  static String getFullPathName(INode[] inodes, int pos) { // 获取path字符串
     StringBuilder fullPathName = new StringBuilder();
     if (inodes[0].isRoot()) {
       if (pos == 0) return Path.SEPARATOR;
@@ -796,13 +796,13 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * @return the relative path of an inode from one of its ancestors,
    *         represented by an array of inodes.
    */
-  private static INode[] getRelativePathINodes(INode inode, INode ancestor) {
+  private static INode[] getRelativePathINodes(INode inode, INode ancestor) { // 获取path inode数组
     // calculate the depth of this inode from the ancestor
-    int depth = 0;
+    int depth = 0; // path深度
     for (INode i = inode; i != null && !i.equals(ancestor); i = i.getParent()) {
       depth++;
     }
-    INode[] inodes = new INode[depth];
+    INode[] inodes = new INode[depth]; // path inode数组
 
     // fill up the inodes in the path from this inode to root
     for (int i = 0; i < depth; i++) {
@@ -823,9 +823,9 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
   
   /** Return the full path name of the specified inode */
   static String getFullPathName(INode inode) {
-    INode[] inodes = getFullPathINodes(inode);
+    INode[] inodes = getFullPathINodes(inode); // 获取path inode数组
     // inodes can be null only when its called without holding lock
-    return inodes == null ? "" : getFullPathName(inodes, inodes.length - 1);
+    return inodes == null ? "" : getFullPathName(inodes, inodes.length - 1); // 获取path字符串
   }
 
   /**

@@ -292,26 +292,26 @@ class HeartbeatManager implements DatanodeStatistics {
       DatanodeStorageInfo failedStorage = null; // 查找到的第一个故障Storage（这个Storage所在的DN并没有故障）
 
       // check the number of stale nodes
-      int numOfStaleNodes = 0;
-      int numOfStaleStorages = 0;
-      synchronized(this) { // 统计故障DN和故障Storage的数量
+      int numOfStaleNodes = 0; // 统计stale DN数量
+      int numOfStaleStorages = 0; // 统计stale storage数量
+      synchronized(this) {
         for (DatanodeDescriptor d : datanodes) {
-          if (dead == null && dm.isDatanodeDead(d)) {
+          if (dead == null && dm.isDatanodeDead(d)) { // 第一个故障dn
             stats.incrExpiredHeartbeats();
             dead = d;
           }
-          if (d.isStale(dm.getStaleInterval())) {
+          if (d.isStale(dm.getStaleInterval())) { // dn是否stale
             numOfStaleNodes++;
           }
           DatanodeStorageInfo[] storageInfos = d.getStorageInfos();
           for(DatanodeStorageInfo storageInfo : storageInfos) {
-            if (storageInfo.areBlockContentsStale()) {
+            if (storageInfo.areBlockContentsStale()) { // storage是否stale
               numOfStaleStorages++;
             }
 
             if (failedStorage == null &&
                 storageInfo.areBlocksOnFailedStorage() &&
-                d != dead) {
+                d != dead) { // 第一个故障storage
               failedStorage = storageInfo;
             }
           }
@@ -324,6 +324,7 @@ class HeartbeatManager implements DatanodeStatistics {
       }
 
       allAlive = dead == null && failedStorage == null;
+      // HeartbeatManager monitor 一次只删除一个故障dn和一个故障storage
       if (dead != null) {
         // acquire the fsnamesystem lock, and then remove the dead node.
         namesystem.writeLock();

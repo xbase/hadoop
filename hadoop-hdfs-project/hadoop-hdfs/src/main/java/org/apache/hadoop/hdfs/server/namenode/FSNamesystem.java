@@ -3230,7 +3230,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
           throws IOException  {
     assert hasReadLock();
 
-    checkBlock(previous); // 检查block是否合法
+    checkBlock(previous); // 检查blockPoolId是否匹配
     onRetryBlock[0] = null;
     checkNameNodeSafeMode("Cannot add block to " + src);
 
@@ -3249,7 +3249,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     } else {
       // Newer clients pass the inode ID, so we can just get the inode
       // directly.
-      inode = dir.getInode(fileId);
+      inode = dir.getInode(fileId); // 为什么不使用src来获取iip？
       iip = INodesInPath.fromINode(inode);
       if (inode != null) {
         // 这行代码，说明NN不信任client传递的src(path name)？
@@ -4820,7 +4820,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     return getFSImage().getEditLog();
   }    
 
-  private void checkBlock(ExtendedBlock block) throws IOException { // 检查block是否合法
+  private void checkBlock(ExtendedBlock block) throws IOException { // 检查blockPoolId是否匹配
     if (block != null && !this.blockPoolId.equals(block.getBlockPoolId())) {
       throw new IOException("Unexpected BlockPoolId " + block.getBlockPoolId()
           + " - expected " + blockPoolId);

@@ -774,6 +774,12 @@ class NameNodeRpcServer implements NamenodeProtocols {
     }
   }
 
+    /**
+     * addBlock 和 complete 都要求上一个block必须complete
+     * 如果上一个block没有complete，
+     * addBlock 会抛异常 NotReplicatedYetException
+     * complete 会返回 false
+     */
   @Override // ClientProtocol
   public boolean complete(String src, String clientName,
                           ExtendedBlock last,  long fileId)

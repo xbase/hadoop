@@ -1075,7 +1075,7 @@ public class BlockManager {
   }
 
   /** Remove the blocks associated to the given DatanodeStorageInfo. */
-  void removeBlocksAssociatedTo(final DatanodeStorageInfo storageInfo) {
+  void removeBlocksAssociatedTo(final DatanodeStorageInfo storageInfo) { // 从NN内存中，移除此Storage的所有block信息
     assert namesystem.hasWriteLock();
     final Iterator<? extends Block> it = storageInfo.getBlockIterator();
     DatanodeDescriptor node = storageInfo.getDatanodeDescriptor();
@@ -1192,11 +1192,11 @@ public class BlockManager {
         b.reasonCode); // 添加到corruptReplicas集合中
 
     NumberReplicas numberOfReplicas = countNodes(b.stored); // 统计各种情况的副本个数
-    boolean hasEnoughLiveReplicas = numberOfReplicas.liveReplicas() >= bc
+    boolean hasEnoughLiveReplicas = numberOfReplicas.liveReplicas() >= bc // 副本数达到期望副本数
         .getBlockReplication();
     boolean minReplicationSatisfied =
-        numberOfReplicas.liveReplicas() >= minReplication;
-    boolean hasMoreCorruptReplicas = minReplicationSatisfied &&
+        numberOfReplicas.liveReplicas() >= minReplication; // 正常的副本满足最小副本数
+    boolean hasMoreCorruptReplicas = minReplicationSatisfied && // 删除损坏的副本之后，正常的副本 是否充足
         (numberOfReplicas.liveReplicas() + numberOfReplicas.corruptReplicas()) >
         bc.getBlockReplication();
     boolean corruptedDuringWrite = minReplicationSatisfied && // 发现 正在写的副本 是损坏的
@@ -3333,6 +3333,7 @@ public class BlockManager {
     Collection<DatanodeDescriptor> nodesCorrupt = corruptReplicas.getNodes(b);
     for(DatanodeStorageInfo storage : blocksMap.getStorages(b, State.NORMAL)) { // 从blocksMap中取最新的block信息
       final DatanodeDescriptor node = storage.getDatanodeDescriptor();
+      // 如果正常的副本和损坏的副本在一个DN上，有可能会误判？
       if ((nodesCorrupt != null) && (nodesCorrupt.contains(node))) { // 记录在损坏集合中，说明此副本损坏
         corrupt++; // 损坏的副本数
       } else if (node.isDecommissionInProgress() || node.isDecommissioned()) { // 节点正在decommission
