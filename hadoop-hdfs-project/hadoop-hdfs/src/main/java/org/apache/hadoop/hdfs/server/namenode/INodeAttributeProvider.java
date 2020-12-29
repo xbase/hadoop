@@ -34,7 +34,7 @@ import org.apache.hadoop.security.UserGroupInformation;
 
 @InterfaceAudience.Public
 @InterfaceStability.Unstable
-public abstract class INodeAttributeProvider {
+public abstract class INodeAttributeProvider { // 自定义权限控制，代替掉默认的777权限判断方式
 
   /**
    * The AccessControlEnforcer allows implementations to override the
@@ -128,7 +128,7 @@ public abstract class INodeAttributeProvider {
    * @param defaultEnforcer The Default AccessControlEnforcer
    * @return The AccessControlEnforcer to use
    */
-  public AccessControlEnforcer getExternalAccessControlEnforcer(
+  public AccessControlEnforcer getExternalAccessControlEnforcer( // 可以返回自定义的权限控制实现
       AccessControlEnforcer defaultEnforcer) {
     return defaultEnforcer;
   }

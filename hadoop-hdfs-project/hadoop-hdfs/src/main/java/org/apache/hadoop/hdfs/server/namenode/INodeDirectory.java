@@ -636,19 +636,21 @@ public class INodeDirectory extends INodeWithAdditionalFields
           summary.getCounts());
     }
     final DirectoryWithQuotaFeature q = getDirectoryWithQuotaFeature();
-    if (q != null) {
+    if (q != null) { // 设置了quota
+      // 计算目录所占用的存储空间、文件数量、目录数量，并和quota中的记录对比是否一致
       return q.computeContentSummary(this, summary);
     } else {
+      // 只计算目录所占用的存储空间、文件数量、目录数量
       return computeDirectoryContentSummary(summary, Snapshot.CURRENT_STATE_ID);
     }
   }
 
   protected ContentSummaryComputationContext computeDirectoryContentSummary(
-      ContentSummaryComputationContext summary, int snapshotId) {
+      ContentSummaryComputationContext summary, int snapshotId) { // 计算目录所占用的存储空间、文件数量、目录数量
     ReadOnlyList<INode> childrenList = getChildrenList(snapshotId);
     // Explicit traversing is done to enable repositioning after relinquishing
     // and reacquiring locks.
-    for (int i = 0;  i < childrenList.size(); i++) {
+    for (int i = 0;  i < childrenList.size(); i++) { // children列表
       INode child = childrenList.get(i);
       byte[] childName = child.getLocalNameBytes();
 

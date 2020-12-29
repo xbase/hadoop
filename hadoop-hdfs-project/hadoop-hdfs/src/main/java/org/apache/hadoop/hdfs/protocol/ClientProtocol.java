@@ -466,6 +466,11 @@ public interface ClientProtocol {
    * @throws SnapshotAccessControlException if path is in RO snapshot
    * @throws IOException an I/O error occurred 
    */
+  /**
+   * rename 和 rename2 的区别：
+   * 1、如果dst存在，并且dst是个目录：rename会把src移动到dst目录内；rename2会报错
+   * 2、rename2可以设置overwrite选项，如果dst是个空目录或者文件，可以被overwrite掉
+   */
   @AtMostOnce
   public boolean rename(String src, String dst) 
       throws UnresolvedLinkException, SnapshotAccessControlException, IOException;
@@ -565,7 +570,7 @@ public interface ClientProtocol {
    * @param recursive if true deletes a non empty directory recursively,
    * else throws an exception.
    * @return true only if the existing file or directory was actually removed 
-   * from the file system.
+   * from the file system.   delete只有实际删除至少一个非空文件，才会返回true
    * 
    * @throws AccessControlException If access is denied
    * @throws FileNotFoundException If file <code>src</code> is not found
@@ -945,6 +950,7 @@ public interface ClientProtocol {
    * @throws UnresolvedLinkException if <code>path</code> contains a symlink. 
    * @throws IOException If an I/O error occurred
    */
+  // count 命令
   @Idempotent
   public ContentSummary getContentSummary(String path)
       throws AccessControlException, FileNotFoundException,

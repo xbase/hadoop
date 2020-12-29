@@ -442,7 +442,7 @@ public abstract class INode implements INodeAttributes, Diff.Element<byte[]> {
    */
   public final ContentSummary computeAndConvertContentSummary(
       ContentSummaryComputationContext summary) {
-    ContentCounts counts = computeContentSummary(summary).getCounts();
+    ContentCounts counts = computeContentSummary(summary).getCounts(); // 计算目录所占用的存储空间、文件数量、目录数量
     final QuotaCounts q = getQuotaCounts();
     return new ContentSummary.Builder().
         length(counts.getLength()).

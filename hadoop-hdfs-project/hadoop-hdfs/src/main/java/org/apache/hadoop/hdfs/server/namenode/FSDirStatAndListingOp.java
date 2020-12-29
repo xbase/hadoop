@@ -276,7 +276,7 @@ class FSDirStatAndListingOp {
     fsd.readLock();
     try {
       final INode i = src.getLastINode();
-      byte policyId = includeStoragePolicy && i != null && !i.isSymlink() ?
+      byte policyId = includeStoragePolicy && i != null && !i.isSymlink() ? // 存储策略
           i.getStoragePolicyID() : BlockStoragePolicySuite.ID_UNSPECIFIED;
       return i == null ? null : createFileStatus(
           fsd, path, HdfsFileStatus.EMPTY_NAME, i, policyId,
@@ -290,7 +290,7 @@ class FSDirStatAndListingOp {
       FSDirectory fsd, String src, boolean resolveLink, boolean isRawPath,
       boolean includeStoragePolicy)
     throws IOException {
-    String srcs = FSDirectory.normalizePath(src);
+    String srcs = FSDirectory.normalizePath(src); // 标准化path
     if (srcs.endsWith(HdfsConstants.SEPARATOR_DOT_SNAPSHOT_DIR)) { // snapshot相关
       if (fsd.getINode4DotSnapshot(srcs) != null) {
         return new HdfsFileStatus(0, true, 0, 0, 0, 0, null, null, null, null,
@@ -497,7 +497,7 @@ class FSDirStatAndListingOp {
         ContentSummaryComputationContext cscc =
             new ContentSummaryComputationContext(fsd, fsd.getFSNamesystem(),
                 fsd.getContentCountLimit(), fsd.getContentSleepMicroSec());
-        ContentSummary cs = targetNode.computeAndConvertContentSummary(cscc);
+        ContentSummary cs = targetNode.computeAndConvertContentSummary(cscc); // 计算目录所占用的存储空间、文件数量、目录数量
         fsd.addYieldCount(cscc.getYieldCount());
         return cs;
       }

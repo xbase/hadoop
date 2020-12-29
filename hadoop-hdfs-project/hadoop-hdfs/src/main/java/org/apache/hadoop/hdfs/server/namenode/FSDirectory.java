@@ -164,13 +164,13 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
   // whether quota by storage type is allowed
   private final boolean quotaByStorageTypeEnabled;
 
-  private final String fsOwnerShortUserName;
-  private final String supergroup;
+  private final String fsOwnerShortUserName;  // 启动NN进程的用户
+  private final String supergroup; // 配置的supergroup
   private final INodeId inodeId;
 
   private final FSEditLog editLog;
 
-  private INodeAttributeProvider attributeProvider;
+  private INodeAttributeProvider attributeProvider; // 权限控制，默认是777权限控制方式
 
   public void setINodeAttributeProvider(INodeAttributeProvider provider) {
     attributeProvider = provider;
@@ -227,7 +227,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
       DFSConfigKeys.DFS_PERMISSIONS_ENABLED_KEY,
       DFSConfigKeys.DFS_PERMISSIONS_ENABLED_DEFAULT);
     this.fsOwnerShortUserName =
-      UserGroupInformation.getCurrentUser().getShortUserName();
+      UserGroupInformation.getCurrentUser().getShortUserName(); // 启动NN进程的用户
     this.supergroup = conf.get(
       DFSConfigKeys.DFS_PERMISSIONS_SUPERUSERGROUP_KEY,
       DFSConfigKeys.DFS_PERMISSIONS_SUPERUSERGROUP_DEFAULT);
@@ -1042,7 +1042,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
         && INodeReference.tryRemoveReference(last) > 0) ? 0 : 1;
   }
 
-  static String normalizePath(String src) {
+  static String normalizePath(String src) { // 标准化path，不能以'/'结尾
     if (src.length() > 1 && src.endsWith("/")) {
       src = src.substring(0, src.length() - 1);
     }
@@ -1450,8 +1450,11 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
 
   /**
    * @return path components for reserved path, else null.
+   *
+   *  保留目录(/.reserved/...)，按 / 拆分，每级目录使用byte数组表示
+   *  非保留目录，返回null
    */
-  static byte[][] getPathComponentsForReservedPath(String src) { // 非保留目录，按 / 拆分，每级目录使用byte数组表示
+  static byte[][] getPathComponentsForReservedPath(String src) {
     return !isReservedName(src) ? null : INode.getPathComponents(src);
   }
 
@@ -1462,7 +1465,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
   }
 
   /** Check if a given path is reserved */
-  public static boolean isReservedName(String src) { // 是否是保留目录 /.reserved/
+  public static boolean isReservedName(String src) { // 是否是保留目录 /.reserved/...
     return src.startsWith(DOT_RESERVED_PATH_PREFIX + Path.SEPARATOR);
   }
 
@@ -1497,6 +1500,16 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    *         in {@code src} as is. If the path refers to a path in the "raw"
    *         directory, return the non-raw pathname.
    * @throws FileNotFoundException if inodeid is invalid
+   *
+   * /.reserved/... 下面有两种特殊的path：
+   * 1、/.reserved/.inodes/$inodeId：（老版）保存snapshot INodeFileUC文件的path，访问此path将会返回$inodeId的path
+   * 参见HDFS-5428
+   * 2、/.reserved/raw/...：保存被加密的文件内容
+   * 比如：/ezone/a是加密文件（/ezone是一个encryption zone）
+   * 访问/ezone/a：返回的是解密之后的内容
+   * 访问/.reserved/raw/ezone/a：返回的是加密的内容
+   *
+   * 在/.reserved/目录下，但不是上面描述的这两种情况，都直接返回src
    */
   static String resolvePath(String src, byte[][] pathComponents,
       FSDirectory fsd) throws FileNotFoundException { // 普通path直接返回，如果是保留目录，需要解析出真实path
@@ -1522,6 +1535,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
       if (nComponents == 3) {
         return Path.SEPARATOR;
       } else {
+        // 返回真实path，比如访问/.reserved/raw/ezone/a，返回/ezone/a
         return constructRemainingPath("", pathComponents, 3);
       }
     } else {
@@ -1530,7 +1544,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
     }
   }
 
-  // 通过inodeId查找文件路径
+  // 通过inodeId查找文件路径，访问这种path：/.reserved/.inodes/<inodeid>
   private static String resolveDotInodesPath(String src,
       byte[][] pathComponents, FSDirectory fsd)
       throws FileNotFoundException {

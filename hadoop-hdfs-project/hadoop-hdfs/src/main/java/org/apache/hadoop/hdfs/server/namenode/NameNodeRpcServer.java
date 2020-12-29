@@ -905,7 +905,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
     if(stateChangeLog.isDebugEnabled()) {
       stateChangeLog.debug("*DIR* NameNode.rename: " + src + " to " + dst);
     }
-    if (!checkPathLength(dst)) {
+    if (!checkPathLength(dst)) { // path的长度和深度是否超长
       throw new IOException("rename: Pathname too long.  Limit "
           + MAX_PATH_LENGTH + " characters, " + MAX_PATH_DEPTH + " levels.");
     }

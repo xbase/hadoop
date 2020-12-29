@@ -65,7 +65,7 @@ class FSDirMkdirOp {
         throw new FileAlreadyExistsException("Path is not a directory: " + src);
       }
 
-      INodesInPath existing = lastINode != null ? iip : iip.getExistingINodes();
+      INodesInPath existing = lastINode != null ? iip : iip.getExistingINodes(); // 当前path已经存在的inode
       if (lastINode == null) { // 说明待创建目录不存在
         if (fsd.isPermissionEnabled()) {
           fsd.checkAncestorAccess(pc, iip, FsAction.WRITE);
@@ -84,7 +84,7 @@ class FSDirMkdirOp {
             iip.length() - existing.length());
         int length = nonExisting.size();
         if (length > 1) {
-          List<String> ancestors = nonExisting.subList(0, length - 1);
+          List<String> ancestors = nonExisting.subList(0, length - 1); // 待创建目录 前面缺失的目录
           // Ensure that the user can traversal the path by adding implicit
           // u+wx permission to all ancestor directories
           existing = createChildrenDirectories(fsd, existing, ancestors, // 创建前面缺失的目录

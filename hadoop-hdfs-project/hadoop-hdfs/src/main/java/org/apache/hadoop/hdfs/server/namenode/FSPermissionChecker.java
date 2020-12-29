@@ -68,14 +68,14 @@ class FSPermissionChecker implements AccessControlEnforcer {
     return sb.toString();
   }
 
-  private final String fsOwner;
-  private final String supergroup;
-  private final UserGroupInformation callerUgi;
+  private final String fsOwner; // 启动NN的用户
+  private final String supergroup; // 配置的supergroup
+  private final UserGroupInformation callerUgi; // 此次请求对应的ugi
 
-  private final String user;
-  private final Set<String> groups;
-  private final boolean isSuper;
-  private final INodeAttributeProvider attributeProvider;
+  private final String user; // 此次请求对应的用户
+  private final Set<String> groups;  // 此次请求对应的用户所属的group
+  private final boolean isSuper; // 是否是超级用户
+  private final INodeAttributeProvider attributeProvider; // 权限控制实现
 
 
   FSPermissionChecker(String fsOwner, String supergroup,
@@ -183,7 +183,7 @@ class FSPermissionChecker implements AccessControlEnforcer {
     }
 
     String path = inodesInPath.getPath();
-    int ancestorIndex = inodes.length - 2; // 父目录的父目录下标
+    int ancestorIndex = inodes.length - 2; // 父目录的下标
 
     AccessControlEnforcer enforcer =
         getAttributesProvider().getExternalAccessControlEnforcer(this);

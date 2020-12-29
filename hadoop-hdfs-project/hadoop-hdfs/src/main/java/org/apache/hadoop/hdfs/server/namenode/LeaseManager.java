@@ -212,7 +212,7 @@ public class LeaseManager {
   /**
    * Reassign lease for file src to the new holder.
    */
-  synchronized Lease reassignLease(Lease lease, String src, String newHolder) { // 更换holder
+  synchronized Lease reassignLease(Lease lease, String src, String newHolder) { // 重新指定lease：更换holder
     assert newHolder != null : "new lease holder is null";
     if (lease != null) {
       removeLease(lease, src);
@@ -254,6 +254,7 @@ public class LeaseManager {
     private final String holder; // ClientName，比如：DFSClient_attempt_1603790088750
     private long lastUpdate; // 最后更新时间
     // 为什么不通过file inodeId来判断lease？path可能rename
+    // 删除目录的时候，可以通过path前缀，删除此目录下file的所有lease，使用inodeId无法简单的实现
     private final Collection<String> paths = new TreeSet<String>();
   
     /** Only LeaseManager object can create a lease */
@@ -489,11 +490,10 @@ public class LeaseManager {
       // i.e. it needs to modify the collection being iterated over
       // causing ConcurrentModificationException
       String[] leasePaths = new String[leaseToCheck.getPaths().size()]; // 此holder正在写的path
-      leaseToCheck.getPaths().toArray(leasePaths);
+      leaseToCheck.getPaths().toArray(leasePaths); // 深复制此holder正在写的所有path
       for(String p : leasePaths) {
         try {
-          INodesInPath iip = fsnamesystem.getFSDirectory().getINodesInPath(p,
-              true);
+          INodesInPath iip = fsnamesystem.getFSDirectory().getINodesInPath(p, true);
           boolean completed = fsnamesystem.internalReleaseLease(leaseToCheck, p, // lease recovery
               iip, HdfsServerConstants.NAMENODE_LEASE_HOLDER);
           if (LOG.isDebugEnabled()) {

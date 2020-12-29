@@ -600,7 +600,7 @@ public class NameNode implements NameNodeStatusMXBean {
   /* optimize ugi lookup for RPC operations to avoid a trip through
    * UGI.getCurrentUser which is synch'ed
    */
-  public static UserGroupInformation getRemoteUser() throws IOException {
+  public static UserGroupInformation getRemoteUser() throws IOException { // client用户
     UserGroupInformation ugi = Server.getRemoteUser();
     return (ugi != null) ? ugi : UserGroupInformation.getCurrentUser();
   }

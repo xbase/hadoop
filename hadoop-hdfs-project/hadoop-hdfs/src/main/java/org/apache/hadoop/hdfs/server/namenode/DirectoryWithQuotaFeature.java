@@ -128,16 +128,16 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
       final ContentSummaryComputationContext summary) {
     final long original = summary.getCounts().getStoragespace();
     long oldYieldCount = summary.getYieldCount();
-    dir.computeDirectoryContentSummary(summary, Snapshot.CURRENT_STATE_ID);
+    dir.computeDirectoryContentSummary(summary, Snapshot.CURRENT_STATE_ID); // 计算目录所占用的存储空间、文件数量、目录数量
     // Check only when the content has not changed in the middle.
     if (oldYieldCount == summary.getYieldCount()) {
-      checkStoragespace(dir, summary.getCounts().getStoragespace() - original);
+      checkStoragespace(dir, summary.getCounts().getStoragespace() - original); // 和quota中的记录对比是否一致
     }
     return summary;
   }
 
   private void checkStoragespace(final INodeDirectory dir, final long computed) {
-    if (-1 != quota.getStorageSpace() && usage.getStorageSpace() != computed) {
+    if (-1 != quota.getStorageSpace() && usage.getStorageSpace() != computed) { // 和quota中的记录对比是否一致
       NameNode.LOG.error("BUG: Inconsistent storagespace for directory "
           + dir.getFullPathName() + ". Cached = " + usage.getStorageSpace()
           + " != Computed = " + computed);

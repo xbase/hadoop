@@ -601,14 +601,14 @@ public class INodeFile extends INodeWithAdditionalFields
 
   @Override
   public final ContentSummaryComputationContext computeContentSummary(
-      final ContentSummaryComputationContext summary) {
+      final ContentSummaryComputationContext summary) { // 计算文件所占用的空间和文件数
     final ContentCounts counts = summary.getCounts();
     FileWithSnapshotFeature sf = getFileWithSnapshotFeature();
     long fileLen = 0;
     if (sf == null) {
-      fileLen = computeFileSize();
-      counts.addContent(Content.FILE, 1);
-    } else {
+      fileLen = computeFileSize(); // 文件大小
+      counts.addContent(Content.FILE, 1); // 文件数量加1
+    } else { // snapshot相关
       final FileDiffList diffs = sf.getDiffs();
       final int n = diffs.asList().size();
       counts.addContent(Content.FILE, n);
@@ -618,10 +618,10 @@ public class INodeFile extends INodeWithAdditionalFields
         fileLen = computeFileSize();
       }
     }
-    counts.addContent(Content.LENGTH, fileLen);
-    counts.addContent(Content.DISKSPACE, storagespaceConsumed());
+    counts.addContent(Content.LENGTH, fileLen); // 文件大小，不考虑副本
+    counts.addContent(Content.DISKSPACE, storagespaceConsumed()); // 文件大小，考虑副本
 
-    if (getStoragePolicyID() != ID_UNSPECIFIED){
+    if (getStoragePolicyID() != ID_UNSPECIFIED){ // 不同存储类型
       BlockStoragePolicy bsp = summary.getBlockStoragePolicySuite().
           getPolicy(getStoragePolicyID());
       List<StorageType> storageTypes = bsp.chooseStorageTypes(getFileReplication());
@@ -646,7 +646,7 @@ public class INodeFile extends INodeWithAdditionalFields
    */
   public final long computeFileSize(int snapshotId) { // 计算文件大小
     FileWithSnapshotFeature sf = this.getFileWithSnapshotFeature();
-    if (snapshotId != CURRENT_STATE_ID && sf != null) {
+    if (snapshotId != CURRENT_STATE_ID && sf != null) { // snapshot相关
       final FileDiff d = sf.getDiffs().getDiffById(snapshotId);
       if (d != null) {
         return d.getFileSize();

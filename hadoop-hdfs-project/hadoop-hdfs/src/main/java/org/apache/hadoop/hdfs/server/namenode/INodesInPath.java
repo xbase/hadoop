@@ -411,7 +411,7 @@ public class INodesInPath { // 一个路径各级目录组成的inode数组
    * @return a new INodesInPath instance that only contains exisitng INodes.
    * Note that this method only handles non-snapshot paths.
    */
-  public INodesInPath getExistingINodes() {
+  public INodesInPath getExistingINodes() { // 返回当前path，已经存在的(非空)inode
     Preconditions.checkState(!isSnapshot());
     int i = 0;
     for (; i < inodes.length; i++) {
