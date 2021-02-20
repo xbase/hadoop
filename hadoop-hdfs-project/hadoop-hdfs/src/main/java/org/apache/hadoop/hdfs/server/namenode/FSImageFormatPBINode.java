@@ -249,6 +249,7 @@ public final class FSImageFormatPBINode {
       }
     }
 
+    // 从image文件中，加载INode，并放到INodeMap中，但还没有组织目录树（parent的children为null）
     void loadINodeSection(InputStream in) throws IOException {
       INodeSection s = INodeSection.parseDelimitedFrom(in);
       fsn.dir.resetLastInodeId(s.getLastInodeId());

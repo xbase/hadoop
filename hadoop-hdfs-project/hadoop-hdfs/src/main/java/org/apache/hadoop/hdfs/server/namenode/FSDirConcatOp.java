@@ -113,6 +113,7 @@ class FSDirConcatOp {
   // 4、src不能正在构建中或没有block
   // 5、src的期望block size不能大于target
   // 6、srcs中不能有相同的文件
+  // 7、srcs必须全部存在
   private static INodeFile[] verifySrcFiles(FSDirectory fsd, String[] srcs,
       INodesInPath targetIIP, FSPermissionChecker pc) throws IOException {
     // to make sure no two files are the same

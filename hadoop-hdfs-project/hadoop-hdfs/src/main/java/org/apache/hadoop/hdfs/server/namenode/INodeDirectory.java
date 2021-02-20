@@ -141,6 +141,8 @@ public class INodeDirectory extends INodeWithAdditionalFields
 
   void setQuota(BlockStoragePolicySuite bsps, long nsQuota, long ssQuota, StorageType type) {
     DirectoryWithQuotaFeature quota = getDirectoryWithQuotaFeature();
+    // 如果已经添加了quota feature，则直接设置新的quota值
+    // 否则添加一个新的quota feature
     if (quota != null) {
       // already has quota; so set the quota to the new values
       if (type != null) {
@@ -174,6 +176,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
   public void addSpaceConsumed(QuotaCounts counts, boolean verify)
     throws QuotaExceededException {
     final DirectoryWithQuotaFeature q = getDirectoryWithQuotaFeature();
+    // 当前inode如果开启了quota特性，则更新当前inode的quota usage，否则更新parent的
     if (q != null) {
       q.addSpaceConsumed(this, counts, verify);
     } else {
@@ -480,6 +483,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
   /**
    * Remove the specified child from this directory.
    */
+  // 只是把child从parent的children列表中移除，并没有把child的parent字段设置为null
   public boolean removeChild(INode child, int latestSnapshotId) {
     if (isInLatestSnapshot(latestSnapshotId)) {
       // create snapshot feature if necessary
@@ -561,7 +565,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
     if (children == null) {
       children = new ArrayList<INode>(DEFAULT_FILES_PER_DIRECTORY);
     }
-    node.setParent(this);
+    node.setParent(this); // 修改parent
     children.add(-insertionPoint - 1, node);
 
     if (node.getGroupName() == null) {
@@ -579,7 +583,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
     // computation only includes files/directories that exist at the time of the
     // given snapshot
     if (sf != null && lastSnapshotId != Snapshot.CURRENT_STATE_ID
-        && !(useCache && isQuotaSet())) {
+        && !(useCache && isQuotaSet())) { // snapshot相关
       ReadOnlyList<INode> childrenList = getChildrenList(lastSnapshotId);
       for (INode child : childrenList) {
         final byte childPolicyId = child.getStoragePolicyIDForQuota(blockStoragePolicyId);
@@ -631,7 +635,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
   public ContentSummaryComputationContext computeContentSummary(
       ContentSummaryComputationContext summary) {
     final DirectoryWithSnapshotFeature sf = getDirectoryWithSnapshotFeature();
-    if (sf != null) {
+    if (sf != null) { // snapshot相关
       sf.computeContentSummary4Snapshot(summary.getBlockStoragePolicySuite(),
           summary.getCounts());
     }
@@ -646,7 +650,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
   }
 
   protected ContentSummaryComputationContext computeDirectoryContentSummary(
-      ContentSummaryComputationContext summary, int snapshotId) { // 计算目录所占用的存储空间、文件数量、目录数量
+      ContentSummaryComputationContext summary, int snapshotId) { // 计算目录所占用的存储空间、文件数量、目录数量，并add到summary
     ReadOnlyList<INode> childrenList = getChildrenList(snapshotId);
     // Explicit traversing is done to enable repositioning after relinquishing
     // and reacquiring locks.

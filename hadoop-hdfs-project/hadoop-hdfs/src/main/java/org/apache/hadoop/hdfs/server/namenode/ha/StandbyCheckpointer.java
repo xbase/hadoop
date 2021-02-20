@@ -156,7 +156,7 @@ public class StandbyCheckpointer {
     // Acquire cpLock to make sure no one is modifying the name system.
     // It does not need the full namesystem write lock, since the only thing
     // that modifies namesystem on standby node is edit log replaying.
-    namesystem.cpLockInterruptibly();
+    namesystem.cpLockInterruptibly(); // 通过获取cpLock，可以保证ckpt期间namespace不会被修改
     try {
       assert namesystem.getEditLog().isOpenForRead() :
         "Standby Checkpointer should only attempt a checkpoint when " +

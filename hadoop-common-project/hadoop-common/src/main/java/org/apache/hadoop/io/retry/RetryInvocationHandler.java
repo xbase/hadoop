@@ -44,6 +44,7 @@ import com.google.common.annotations.VisibleForTesting;
  * This class implements RpcInvocationHandler and supports retry on the client 
  * side.
  */
+// rpc 重试策略
 @InterfaceAudience.Private
 public class RetryInvocationHandler<T> implements RpcInvocationHandler {
   public static final Log LOG = LogFactory.getLog(RetryInvocationHandler.class);

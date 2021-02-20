@@ -256,6 +256,7 @@ public interface ClientProtocol {
    * @throws SnapshotAccessControlException if path is in RO snapshot
    * @throws IOException If an I/O error occurred
    */
+  // 只能修改file的副本数
   @Idempotent
   public boolean setReplication(String src, short replication)
       throws AccessControlException, DSQuotaExceededException,
@@ -278,6 +279,7 @@ public interface ClientProtocol {
    * @throws FileNotFoundException If file/dir <code>src</code> is not found
    * @throws QuotaExceededException If changes violate the quota restriction
    */
+  // 只是修改lastINode的存储策略
   @Idempotent
   public void setStoragePolicy(String src, String policyName)
       throws SnapshotAccessControlException, UnresolvedLinkException,
@@ -293,6 +295,7 @@ public interface ClientProtocol {
    * @throws SnapshotAccessControlException if path is in RO snapshot
    * @throws IOException If an I/O error occurred
    */
+  // 只是修改lastINode的permission
   @Idempotent
   public void setPermission(String src, FsPermission permission)
       throws AccessControlException, FileNotFoundException, SafeModeException,
@@ -312,6 +315,7 @@ public interface ClientProtocol {
    * @throws SnapshotAccessControlException if path is in RO snapshot
    * @throws IOException If an I/O error occurred
    */
+  // 只是修改lastINode的owner
   @Idempotent
   public void setOwner(String src, String username, String groupname)
       throws AccessControlException, FileNotFoundException, SafeModeException,
@@ -630,7 +634,7 @@ public interface ClientProtocol {
    * @throws UnresolvedLinkException If <code>src</code> contains a symlink
    * @throws IOException If an I/O error occurred
    */
-  // 获取目录下的文件信息（ls）
+  // 获取当前目录下的文件信息（ls），并不会遍历子目录
   @Idempotent
   public DirectoryListing getListing(String src,
                                      byte[] startAfter,
@@ -907,6 +911,7 @@ public interface ClientProtocol {
    * @throws UnresolvedLinkException if the path contains a symlink. 
    * @throws IOException If an I/O error occurred        
    */
+  // 只是获取lastINode的信息
   @Idempotent
   public HdfsFileStatus getFileInfo(String src) throws AccessControlException,
       FileNotFoundException, UnresolvedLinkException, IOException;
@@ -950,7 +955,7 @@ public interface ClientProtocol {
    * @throws UnresolvedLinkException if <code>path</code> contains a symlink. 
    * @throws IOException If an I/O error occurred
    */
-  // count 命令
+  // count 命令，会遍历子目录
   @Idempotent
   public ContentSummary getContentSummary(String path)
       throws AccessControlException, FileNotFoundException,

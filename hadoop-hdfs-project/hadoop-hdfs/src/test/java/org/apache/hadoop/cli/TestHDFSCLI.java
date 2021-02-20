@@ -32,6 +32,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+// hadoop client 单元测试
 public class TestHDFSCLI extends CLITestHelperDFS {
 
   protected MiniDFSCluster dfsCluster = null;

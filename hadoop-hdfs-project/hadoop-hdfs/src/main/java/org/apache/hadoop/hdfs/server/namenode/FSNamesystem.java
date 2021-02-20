@@ -906,10 +906,10 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     if (enable) {
       float heapPercent = conf.getFloat(
           DFS_NAMENODE_RETRY_CACHE_HEAP_PERCENT_KEY,
-          DFS_NAMENODE_RETRY_CACHE_HEAP_PERCENT_DEFAULT);
+          DFS_NAMENODE_RETRY_CACHE_HEAP_PERCENT_DEFAULT); // 占用的内存比例
       long entryExpiryMillis = conf.getLong(
           DFS_NAMENODE_RETRY_CACHE_EXPIRYTIME_MILLIS_KEY,
-          DFS_NAMENODE_RETRY_CACHE_EXPIRYTIME_MILLIS_DEFAULT);
+          DFS_NAMENODE_RETRY_CACHE_EXPIRYTIME_MILLIS_DEFAULT); // 过期时间
       LOG.info("Retry cache will use " + heapPercent
           + " of total heap and retry cache entry expiry time is "
           + entryExpiryMillis + " millis");
@@ -2885,11 +2885,11 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       // If the file is under construction , then it must be in our
       // leases. Find the appropriate lease record.
       //
-      Lease lease = leaseManager.getLease(holder);
+      Lease lease = leaseManager.getLease(holder); // 此holder（client）对应的lease
 
       if (!force && lease != null) {
-        Lease leaseFile = leaseManager.getLeaseByPath(src);
-        if (leaseFile != null && leaseFile.equals(lease)) {
+        Lease leaseFile = leaseManager.getLeaseByPath(src); // 此src（file）对应的lease
+        if (leaseFile != null && leaseFile.equals(lease)) { // 如果此client已经获取了此file的lease，抛异常
           // We found the lease for this file but the original
           // holder is trying to obtain it again.
           throw new AlreadyBeingCreatedException(
@@ -2901,14 +2901,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       // Find the original holder.
       //
       FileUnderConstructionFeature uc = file.getFileUnderConstructionFeature();
-      String clientName = uc.getClientName();
-      lease = leaseManager.getLease(clientName);
-      if (lease == null) {
+      String clientName = uc.getClientName(); // 持有此file lease的client
+      lease = leaseManager.getLease(clientName); // 此file真正的lease
+      if (lease == null) { // 如果程序没bug，不应该发生
         throw new AlreadyBeingCreatedException(
             op.getExceptionMessage(src, holder, clientMachine,
                 "the file is under construction but no leases found."));
       }
-      if (force) {
+      if (force) { // 强制recovery lease
         // close now: no need to wait for soft lease expiration and 
         // close only the file src
         LOG.info("recoverLease: " + lease + ", src=" + src +
@@ -2922,7 +2922,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         // If the original holder has not renewed in the last SOFTLIMIT 
         // period, then start lease recovery.
         //
-        if (lease.expiredSoftLimit()) {
+        if (lease.expiredSoftLimit()) { // 租约过期
           LOG.info("startFile: recover " + lease + ", src=" + src + " client "
               + clientName);
           if (internalReleaseLease(lease, src, iip, null)) {
@@ -2935,12 +2935,12 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         } else {
           final BlockInfoContiguous lastBlock = file.getLastBlock();
           if (lastBlock != null
-              && lastBlock.getBlockUCState() == BlockUCState.UNDER_RECOVERY) {
+              && lastBlock.getBlockUCState() == BlockUCState.UNDER_RECOVERY) { // lastBlock正在recovery
             throw new RecoveryInProgressException(
                 op.getExceptionMessage(src, holder, clientMachine,
                     "another recovery is in progress by "
                         + clientName + " on " + uc.getClientMachine()));
-          } else {
+          } else { // lease没有过期，则抛异常
             throw new AlreadyBeingCreatedException(
                 op.getExceptionMessage(src, holder, clientMachine,
                     "this file lease is currently owned by "
@@ -3368,7 +3368,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         inode = dir.getInode(fileId);
         if (inode != null) src = inode.getFullPathName();
       }
-      final INodeFile file = checkLease(src, clientName, inode, fileId);
+      final INodeFile file = checkLease(src, clientName, inode, fileId); // 检查租约
       clientMachine = file.getFileUnderConstructionFeature().getClientMachine();
       clientnode = blockManager.getDatanodeManager().getDatanodeByHost(clientMachine);
       preferredblocksize = file.getPreferredBlockSize();
@@ -3376,7 +3376,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
       //find datanode storages
       final DatanodeManager dm = blockManager.getDatanodeManager();
-      chosen = Arrays.asList(dm.getDatanodeStorageInfos(existings, storageIDs));
+      chosen = Arrays.asList(dm.getDatanodeStorageInfos(existings, storageIDs)); // 通过id，获取DatanodeStorageInfo对象
     } finally {
       readUnlock();
     }
@@ -3389,7 +3389,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     final DatanodeStorageInfo[] targets = blockManager.chooseTarget4AdditionalDatanode(
         src, numAdditionalNodes, clientnode, chosen, 
         excludes, preferredblocksize, storagePolicyID);
-    final LocatedBlock lb = new LocatedBlock(blk, targets);
+    final LocatedBlock lb = new LocatedBlock(blk, targets); // 选择numAdditionalNodes个存储位置
     blockManager.setBlockToken(lb, AccessMode.COPY);
     return lb;
   }
@@ -3426,7 +3426,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
           src = iip.getPath();
         }
       }
-      final INodeFile file = checkLease(src, holder, inode, fileId);
+      final INodeFile file = checkLease(src, holder, inode, fileId); // 检查租约
 
       // Remove the block from the pending creates list
       boolean removed = dir.removeBlock(src, iip, file,
@@ -6237,7 +6237,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
     // look at the path hierarchy to see if one parent is deleted by recursive deletion
     // delete目录也是一个原子操作，为何需要向上递归检查一遍？HDFS-6825，没太看懂
-    // snapshot功能，导致inode还在inodeMap中，但这个file当前已经被删除了
+    // snapshot功能，导致inode还在inodeMap中，但这个file当前已经被删除了（这个file的上级目录被删除）
     INode tmpChild = file;
     INodeDirectory tmpParent = file.getParent();
     while (true) { // 向上递归检查，父目录是否被删除

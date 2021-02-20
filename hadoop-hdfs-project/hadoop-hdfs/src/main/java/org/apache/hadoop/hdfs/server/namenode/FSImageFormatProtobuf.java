@@ -248,7 +248,7 @@ public final class FSImageFormatProtobuf {
         case STRING_TABLE:
           loadStringTableSection(in);
           break;
-        case INODE: {
+        case INODE: { // 从image文件中，加载INode，并放到INodeMap中，但还没有组织目录树（parent的children为null）
           currentStep = new Step(StepType.INODES);
           prog.beginStep(Phase.LOADING_FSIMAGE, currentStep);
           inodeLoader.loadINodeSection(in);
@@ -257,7 +257,7 @@ public final class FSImageFormatProtobuf {
         case INODE_REFERENCE:
           snapshotLoader.loadINodeReferenceSection(in);
           break;
-        case INODE_DIR:
+        case INODE_DIR: // 组织目录树，为dir设置children、file设置parent
           inodeLoader.loadINodeDirectorySection(in);
           break;
         case FILES_UNDERCONSTRUCTION:

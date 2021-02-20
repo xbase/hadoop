@@ -260,7 +260,7 @@ public class INodeFile extends INodeWithAdditionalFields
       return false;
     }
     int size_1 = blocks.length - 1;
-    if (!blocks[size_1].equals(oldblock)) {
+    if (!blocks[size_1].equals(oldblock)) { // oldblock 是否是最后一个block
       return false;
     }
 
@@ -601,7 +601,7 @@ public class INodeFile extends INodeWithAdditionalFields
 
   @Override
   public final ContentSummaryComputationContext computeContentSummary(
-      final ContentSummaryComputationContext summary) { // 计算文件所占用的空间和文件数
+      final ContentSummaryComputationContext summary) { // 计算文件所占用的空间和文件数，并add到summary
     final ContentCounts counts = summary.getCounts();
     FileWithSnapshotFeature sf = getFileWithSnapshotFeature();
     long fileLen = 0;

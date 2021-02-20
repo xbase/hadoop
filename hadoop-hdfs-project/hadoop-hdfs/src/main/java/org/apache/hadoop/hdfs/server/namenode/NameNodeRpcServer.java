@@ -751,7 +751,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
     Set<Node> excludeSet = null;
     if (excludes != null) {
       excludeSet = new HashSet<Node>(excludes.length);
-      for (Node node : excludes) {
+      for (Node node : excludes) { // client想排除掉的DN
         excludeSet.add(node);
       }
     }
@@ -1469,6 +1469,9 @@ class NameNodeRpcServer implements NamenodeProtocols {
     return UserGroupInformation.createRemoteUser(user).getGroupNames();
   }
 
+  // monitorHealth方法，虽然没有获取fsLock，但如果某个rpc请求处理的太慢，
+  // 可能会把queue堵满，导致handler处理不到monitorHealth请求，
+  // 进而导致zkfc healthChecks失败，然后触发主备切换。
   @Override // HAServiceProtocol
   public synchronized void monitorHealth() throws HealthCheckFailedException,
       AccessControlException, IOException {

@@ -41,6 +41,7 @@ import org.apache.hadoop.fs.permission.FsPermission;
  * {@link FileSystem} instance variable.
  * </p>
  */
+// HDFS fs接口单元测试
 public abstract class FileSystemContractBaseTest extends TestCase {
   private static final Log LOG =
     LogFactory.getLog(FileSystemContractBaseTest.class);

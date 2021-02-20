@@ -315,7 +315,7 @@ public class FSEditLog implements LogsPurgeable {
     List<EditLogInputStream> streams = new ArrayList<EditLogInputStream>();
     // 检查是否有包含segmentTxId的segment文件
     journalSet.selectInputStreams(streams, segmentTxId, true);
-    if (!streams.isEmpty()) {
+    if (!streams.isEmpty()) { // 预期所有的JN都不应该有segmentTxId的segment文件，因为这是最新的transactionId
       String error = String.format("Cannot start writing at txid %s " +
         "when there is a stream available for read: %s",
         segmentTxId, streams.get(0));

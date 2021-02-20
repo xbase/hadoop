@@ -26,6 +26,7 @@ import org.apache.hadoop.fs.FileSystemContractBaseTest;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.security.UserGroupInformation;
 
+// HDFS fs接口单元测试
 public class TestHDFSFileSystemContract extends FileSystemContractBaseTest {
   
   private MiniDFSCluster cluster;

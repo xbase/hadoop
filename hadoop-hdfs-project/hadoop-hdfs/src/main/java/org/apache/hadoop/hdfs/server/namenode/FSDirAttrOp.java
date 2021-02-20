@@ -423,7 +423,7 @@ public class FSDirAttrOp {
           + iip.getPath());
     }
     final int snapshotId = iip.getLatestSnapshotId();
-    if (inode.isFile()) {
+    if (inode.isFile()) { // 目录的存储策略，存储在header字段中
       BlockStoragePolicy newPolicy = bm.getStoragePolicy(policyId);
       if (newPolicy.isCopyOnCreateFile()) {
         throw new HadoopIllegalArgumentException(
@@ -439,7 +439,7 @@ public class FSDirAttrOp {
                 " cannot be changed after file creation.");
       }
       inode.asFile().setStoragePolicyID(policyId, snapshotId);
-    } else if (inode.isDirectory()) {
+    } else if (inode.isDirectory()) { // 目录的存储策略，存储在扩展属性中
       setDirStoragePolicy(fsd, inode.asDirectory(), policyId, snapshotId);
     } else {
       throw new FileNotFoundException(iip.getPath()

@@ -534,11 +534,11 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
       INodeFile fileNode, Block block) throws IOException {
     // modify file-> block and blocksMap
     // fileNode should be under construction
-    boolean removed = fileNode.removeLastBlock(block);
+    boolean removed = fileNode.removeLastBlock(block); // 移除最后一个block
     if (!removed) {
       return false;
     }
-    getBlockManager().removeBlockFromMap(block);
+    getBlockManager().removeBlockFromMap(block); // 内存中删除block
 
     if(NameNode.stateChangeLog.isDebugEnabled()) {
       NameNode.stateChangeLog.debug("DIR* FSDirectory.removeBlock: "
@@ -548,7 +548,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
 
     // update space consumed
     updateCount(iip, 0, -fileNode.getPreferredBlockSize(),
-        fileNode.getBlockReplication(), true);
+        fileNode.getBlockReplication(), true); // 检查并更新quota
     return true;
   }
 
@@ -661,7 +661,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    * Update usage count without replication factor change
    */
   // 通过指定delta，更新quota
-  // 使用的场景有：addBlock
+  // 使用的场景有：addBlock, abandonBlock
   void updateCount(INodesInPath iip, long nsDelta, long ssDelta, short replication,
       boolean checkQuota) throws QuotaExceededException { // 检查并更新quota
     final INodeFile fileINode = iip.getLastINode().asFile();
@@ -954,7 +954,7 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
    */
   @VisibleForTesting
   public INodesInPath addLastINode(INodesInPath existing, INode inode,
-      boolean checkQuota) throws QuotaExceededException { // 添加到父目录的child列表
+      boolean checkQuota) throws QuotaExceededException { // 添加到父目录的child列表，并修改child的parent字段
     assert existing.getLastINode() != null &&
         existing.getLastINode().isDirectory();
 

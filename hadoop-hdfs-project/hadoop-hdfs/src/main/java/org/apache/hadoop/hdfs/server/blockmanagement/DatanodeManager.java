@@ -503,7 +503,7 @@ public class DatanodeManager {
 
   public DatanodeStorageInfo[] getDatanodeStorageInfos(
       DatanodeID[] datanodeID, String[] storageIDs)
-          throws UnregisteredNodeException {
+          throws UnregisteredNodeException { // 通过id，获取DatanodeStorageInfo对象
     if (datanodeID.length == 0) {
       return null;
     }

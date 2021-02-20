@@ -2422,7 +2422,7 @@ public class BlockManager {
       case UNDER_CONSTRUCTION:
         if (storedBlock.getGenerationStamp() > reported.getGenerationStamp()) {
           // 块在UC状态时，副本 reported.GS > storedBlock.GS 是正常的？
-          // 可能的一种情况是：pipeline recovery 成功之后，才会向NN更像GS
+          // 可能的一种情况是：pipeline recovery 成功之后，才会向NN更新GS
           final long reportedGS = reported.getGenerationStamp();
           return new BlockToMarkCorrupt(storedBlock, reportedGS, "block is "
               + ucState + " and reported state " + reportedState

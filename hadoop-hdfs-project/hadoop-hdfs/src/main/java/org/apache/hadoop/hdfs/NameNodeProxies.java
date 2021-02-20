@@ -180,7 +180,7 @@ public class NameNodeProxies {
       // HA case
       Conf config = new Conf(conf);
       T proxy = (T) RetryProxy.create(xface, failoverProxyProvider,
-          RetryPolicies.failoverOnNetworkException(
+          RetryPolicies.failoverOnNetworkException( // 设置重试策略
               RetryPolicies.TRY_ONCE_THEN_FAIL, config.maxFailoverAttempts,
               config.maxRetryAttempts, config.failoverSleepBaseMillis,
               config.failoverSleepMaxMillis));

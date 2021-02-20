@@ -189,8 +189,8 @@ public class RetryCache { // 如果发现非幂等RPC的重试请求，将把之
   /**
    * Constructor
    * @param cacheName name to identify the cache by
-   * @param percentage percentage of total java heap space used by this cache
-   * @param expirationTime time for an entry to expire in nanoseconds
+   * @param percentage percentage of total java heap space used by this cache 占用的内存比例
+   * @param expirationTime time for an entry to expire in nanoseconds 过期时间
    */
   public RetryCache(String cacheName, double percentage, long expirationTime) {
     int capacity = LightWeightGSet.computeCapacity(percentage, cacheName);

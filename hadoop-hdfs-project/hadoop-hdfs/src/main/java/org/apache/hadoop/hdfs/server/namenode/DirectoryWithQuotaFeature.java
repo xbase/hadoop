@@ -36,7 +36,7 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
   private QuotaCounts quota; // quota值（上限）
   private QuotaCounts usage; // 已使用的值
 
-  public static class Builder {
+  public static class Builder { // quota构造器，最后调用build方法返回设置好的DirectoryWithQuotaFeature
     private QuotaCounts quota;
     private QuotaCounts usage;
 
@@ -78,7 +78,7 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
   }
 
   /** @return the quota set or -1 if it is not set. */
-  QuotaCounts getQuota() {
+  QuotaCounts getQuota() { // 返回一个quota快照
     return new QuotaCounts.Builder().quotaCount(this.quota).build();
   }
 
@@ -89,7 +89,7 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
    * @param type Storage type of the storage space quota to be set.
    *             To set storagespace/namespace quota, type must be null.
    */
-  void setQuota(long nsQuota, long ssQuota, StorageType type) {
+  void setQuota(long nsQuota, long ssQuota, StorageType type) { // 直接设置quota值
     if (type != null) {
       this.quota.setTypeSpace(type, ssQuota);
     } else {
@@ -97,12 +97,12 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
     }
   }
 
-  void setQuota(long nsQuota, long ssQuota) {
+  void setQuota(long nsQuota, long ssQuota) { // 直接设置quota值
     this.quota.setNameSpace(nsQuota);
     this.quota.setStorageSpace(ssQuota);
   }
 
-  void setQuota(long quota, StorageType type) {
+  void setQuota(long quota, StorageType type) { // 直接设置quota值
     this.quota.setTypeSpace(type, quota);
   }
 
@@ -110,7 +110,7 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
    *
    * @param tsQuotas type space counts for all storage types supporting quota
    */
-  void setQuota(EnumCounters<StorageType> tsQuotas) {
+  void setQuota(EnumCounters<StorageType> tsQuotas) { // 直接设置quota值
     this.quota.setTypeSpaces(tsQuotas);
   }
 
@@ -119,13 +119,13 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
    * @param counts counts to be added with current quota usage
    * @return counts that have been added with the current qutoa usage
    */
-  QuotaCounts AddCurrentSpaceUsage(QuotaCounts counts) {
+  QuotaCounts AddCurrentSpaceUsage(QuotaCounts counts) {  // 增量更新usage
     counts.add(this.usage);
     return counts;
   }
 
   ContentSummaryComputationContext computeContentSummary(final INodeDirectory dir,
-      final ContentSummaryComputationContext summary) {
+      final ContentSummaryComputationContext summary) { // 计算目录所占用的存储空间、文件数量、目录数量，并add到summary
     final long original = summary.getCounts().getStoragespace();
     long oldYieldCount = summary.getYieldCount();
     dir.computeDirectoryContentSummary(summary, Snapshot.CURRENT_STATE_ID); // 计算目录所占用的存储空间、文件数量、目录数量
@@ -146,13 +146,14 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
 
   void addSpaceConsumed(final INodeDirectory dir, final QuotaCounts counts,
       boolean verify) throws QuotaExceededException {
+    // 当前inode如果开启了quota特性，则更新当前inode和parent的quota usage，否则只更新parent的
     if (dir.isQuotaSet()) {
       // The following steps are important:
       // check quotas in this inode and all ancestors before changing counts
       // so that no change is made if there is any quota violation.
       // (1) verify quota in this inode
       if (verify) {
-        verifyQuota(counts);
+        verifyQuota(counts); // 检查quota是否超了
       }
       // (2) verify quota and then add count in ancestors
       dir.addSpaceConsumed2Parent(counts, verify);
@@ -181,20 +182,20 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
    * @param typespaces counters of storage type usage
    */
   void setSpaceConsumed(long namespace, long storagespace,
-      EnumCounters<StorageType> typespaces) {
+      EnumCounters<StorageType> typespaces) { // 直接设置quota usage
     usage.setNameSpace(namespace);
     usage.setStorageSpace(storagespace);
     usage.setTypeSpaces(typespaces);
   }
 
-  void setSpaceConsumed(QuotaCounts c) {
+  void setSpaceConsumed(QuotaCounts c) { // 直接设置quota usage
     usage.setNameSpace(c.getNameSpace());
     usage.setStorageSpace(c.getStorageSpace());
     usage.setTypeSpaces(c.getTypeSpaces());
   }
 
   /** @return the namespace and storagespace and typespace consumed. */
-  public QuotaCounts getSpaceConsumed() { // 返回一个已使用quota快照
+  public QuotaCounts getSpaceConsumed() { // 返回一个quota usage快照
     return new QuotaCounts.Builder().quotaCount(usage).build();
   }
 
@@ -240,16 +241,16 @@ public final class DirectoryWithQuotaFeature implements INode.Feature {
     verifyQuotaByStorageType(counts.getTypeSpaces()); // 是否超 存储类型ss quota
   }
 
-  boolean isQuotaSet() {
+  boolean isQuotaSet() { // 是否设置了quota，并且设置的值大于0
     return quota.anyNsSsCountGreaterOrEqual(0) ||
         quota.anyTypeSpaceCountGreaterOrEqual(0);
   }
 
-  boolean isQuotaByStorageTypeSet() {
+  boolean isQuotaByStorageTypeSet() { // 是否设置了存储类型quota
     return quota.anyTypeSpaceCountGreaterOrEqual(0);
   }
 
-  boolean isQuotaByStorageTypeSet(StorageType t) {
+  boolean isQuotaByStorageTypeSet(StorageType t) { // 是否设置了指定存储类型quota
     return quota.getTypeSpace(t) >= 0;
   }
 

@@ -40,11 +40,11 @@ import org.apache.commons.logging.LogFactory;
  * 
  * @param <K> name to be added to the cache
  */
-class NameCache<K> {
+class NameCache<K> { // 相同的String只保存一个，减少jvm heap大小和
   /**
    * Class for tracking use count of a name
    */
-  private class UseCount {
+  private class UseCount { // 跟踪value被使用的次数
     int count;
     final K value;  // Internal value for the name
 
@@ -71,7 +71,7 @@ class NameCache<K> {
   private final int useThreshold;
 
   /** of times a cache look up was successful */
-  private int lookups = 0;
+  private int lookups = 0; // 统计命中cache的次数
 
   /** Cached names */
   final HashMap<K, K> cache = new HashMap<K, K>();
@@ -95,14 +95,18 @@ class NameCache<K> {
    * @param name name to be looked up
    * @return internal value for the name if found; otherwise null
    */
+  // 只有加载image期间，才会加入到cache中，其余时候都是读cache操作
+  // 加载image拿了fs写锁
   K put(final K name) {
     K internal = cache.get(name);
-    if (internal != null) {
+    if (internal != null) { // 命中cache
       lookups++;
       return internal;
     }
 
     // Track the usage count only during initialization
+    // 未初始化完成之前，先放到transientMap中
+    // 当达到useThreshold后，再放到cache中
     if (!initialized) {
       UseCount useCount = transientMap.get(name);
       if (useCount != null) {
@@ -139,7 +143,7 @@ class NameCache<K> {
    * and the transient map used for initializing the cache is discarded to
    * save heap space.
    */
-  void initialized() {
+  void initialized() { // image加载完成后，标记初始化完成
     LOG.info("initialized with " + size() + " entries " + lookups + " lookups");
     this.initialized = true;
     transientMap.clear();
@@ -147,13 +151,13 @@ class NameCache<K> {
   }
   
   /** Promote a frequently used name to the cache */
-  private void promote(final K name) {
+  private void promote(final K name) { // 从transientMap晋升到cache中
     transientMap.remove(name);
     cache.put(name, name);
     lookups += useThreshold;
   }
 
-  public void reset() {
+  public void reset() { // 重置，清空cache
     initialized = false;
     cache.clear();
     if (transientMap == null) {

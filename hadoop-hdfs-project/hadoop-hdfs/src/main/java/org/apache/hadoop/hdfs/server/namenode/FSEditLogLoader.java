@@ -349,15 +349,15 @@ public class FSEditLogLoader {
 
       // See if the file already exists (persistBlocks call)
       INodesInPath iip = fsDir.getINodesInPath(path, true);
-      INodeFile oldFile = INodeFile.valueOf(iip.getLastINode(), path, true);
-      if (oldFile != null && addCloseOp.overwrite) {
+      INodeFile oldFile = INodeFile.valueOf(iip.getLastINode(), path, true); // path对应的最后一级inode
+      if (oldFile != null && addCloseOp.overwrite) { // 最后一级inode已经存在，并且有overwrite标记
         // This is OP_ADD with overwrite
         FSDirDeleteOp.deleteForEditLog(fsDir, path, addCloseOp.mtime);
-        iip = INodesInPath.replace(iip, iip.length() - 1, null);
+        iip = INodesInPath.replace(iip, iip.length() - 1, null); // 把iip中的最后一个inode设置为null
         oldFile = null;
       }
       INodeFile newFile = oldFile;
-      if (oldFile == null) { // this is OP_ADD on a new file (case 1)
+      if (oldFile == null) { // this is OP_ADD on a new file (case 1)  // create file逻辑
         // versions > 0 support per file replication
         // get name and replication
         final short replication = fsNamesys.getBlockManager()
@@ -376,8 +376,8 @@ public class FSEditLogLoader {
             addCloseOp.clientName,
             addCloseOp.clientMachine,
             addCloseOp.storagePolicyId);
-        iip = INodesInPath.replace(iip, iip.length() - 1, newFile);
-        fsNamesys.leaseManager.addLease(addCloseOp.clientName, path);
+        iip = INodesInPath.replace(iip, iip.length() - 1, newFile); // 把iip中的最后一个inode设置为新创建的inode
+        fsNamesys.leaseManager.addLease(addCloseOp.clientName, path); // 添加租约
 
         // add the op into retry cache if necessary
         if (toAddRetryCache) {
@@ -389,7 +389,7 @@ public class FSEditLogLoader {
               addCloseOp.rpcCallId, stat);
         }
       } else { // This is OP_ADD on an existing file (old append)
-        if (!oldFile.isUnderConstruction()) {
+        if (!oldFile.isUnderConstruction()) { // append逻辑
           // This is case 3: a call to append() on an already-closed file.
           if (FSNamesystem.LOG.isDebugEnabled()) {
             FSNamesystem.LOG.debug("Reopening an already-closed file " +
@@ -1011,26 +1011,27 @@ public class FSEditLogLoader {
             path);
       }
       
-      oldBlock.setNumBytes(newBlock.getNumBytes());
+      oldBlock.setNumBytes(newBlock.getNumBytes()); // 更新block的length
       boolean changeMade =
         oldBlock.getGenerationStamp() != newBlock.getGenerationStamp();
-      oldBlock.setGenerationStamp(newBlock.getGenerationStamp());
+      oldBlock.setGenerationStamp(newBlock.getGenerationStamp()); // 更新block的GS
       
       if (oldBlock instanceof BlockInfoContiguousUnderConstruction &&
           (!isLastBlock || op.shouldCompleteLastBlock())) {
         changeMade = true;
         fsNamesys.getBlockManager().forceCompleteBlock(file,
-            (BlockInfoContiguousUnderConstruction) oldBlock);
+            (BlockInfoContiguousUnderConstruction) oldBlock); // complete block
       }
       if (changeMade) {
         // The state or gen-stamp of the block has changed. So, we may be
         // able to process some messages from datanodes that we previously
         // were unable to process.
+        // 回放edit的时候，会判断是否有延迟处理的副本信息，并处理
         fsNamesys.getBlockManager().processQueuedMessagesForBlock(newBlock);
       }
     }
     
-    if (newBlocks.length < oldBlocks.length) {
+    if (newBlocks.length < oldBlocks.length) { // abandonBlock逻辑
       // We're removing a block from the file, e.g. abandonBlock(...)
       if (!file.isUnderConstruction()) {
         throw new IOException("Trying to remove a block from file " +
@@ -1045,7 +1046,7 @@ public class FSEditLogLoader {
       if (!removed && !(op instanceof UpdateBlocksOp)) {
         throw new IOException("Trying to delete non-existant block " + oldBlock);
       }
-    } else if (newBlocks.length > oldBlocks.length) {
+    } else if (newBlocks.length > oldBlocks.length) { // addBlock逻辑
       // We're adding blocks
       for (int i = oldBlocks.length; i < newBlocks.length; i++) {
         Block newBlock = newBlocks[i];
