@@ -371,7 +371,7 @@ class HeartbeatManager implements DatanodeStatistics {
             heartbeatCheck();
             lastHeartbeatCheck = now;
           }
-          if (blockManager.shouldUpdateBlockKey(now - lastBlockKeyUpdate)) {
+          if (blockManager.shouldUpdateBlockKey(now - lastBlockKeyUpdate)) { // 是否需要更新block token
             synchronized(HeartbeatManager.this) {
               for(DatanodeDescriptor d : datanodes) {
                 d.needKeyUpdate = true;

@@ -152,7 +152,7 @@ class BlocksMap {
    * 
    * @param state DatanodeStorage state by which to filter the returned Iterable
    */
-  Iterable<DatanodeStorageInfo> getStorages(Block b, final DatanodeStorage.State state) {
+  Iterable<DatanodeStorageInfo> getStorages(Block b, final DatanodeStorage.State state) {// 获取此block副本的存储位置（指定storage状态）
     return Iterables.filter(getStorages(blocks.get(b)), new Predicate<DatanodeStorageInfo>() {
       @Override
       public boolean apply(DatanodeStorageInfo storage) {

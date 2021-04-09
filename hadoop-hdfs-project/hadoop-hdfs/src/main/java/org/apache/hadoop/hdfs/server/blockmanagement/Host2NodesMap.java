@@ -30,10 +30,10 @@ import org.apache.hadoop.hdfs.DFSUtil;
 /** A map from host names to datanode descriptors. */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
-class Host2NodesMap {
+class Host2NodesMap { // 通过IP获取DN
   private HashMap<String, String> mapHost = new HashMap<String, String>();
   private final HashMap<String, DatanodeDescriptor[]> map
-    = new HashMap<String, DatanodeDescriptor[]>();
+    = new HashMap<String, DatanodeDescriptor[]>(); // 一个IP对应多个DN
   private final ReadWriteLock hostmapLock = new ReentrantReadWriteLock();
 
   /** Check if node is already in the map. */

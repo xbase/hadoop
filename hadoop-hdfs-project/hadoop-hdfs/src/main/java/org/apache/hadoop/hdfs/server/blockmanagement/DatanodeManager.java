@@ -533,7 +533,7 @@ public class DatanodeManager {
   private void removeDatanode(DatanodeDescriptor nodeInfo) {
     assert namesystem.hasWriteLock();
     heartbeatManager.removeDatanode(nodeInfo);
-    blockManager.removeBlocksAssociatedTo(nodeInfo); // 移除该DN相关的数据快
+    blockManager.removeBlocksAssociatedTo(nodeInfo); // 移除该DN相关的数据块
     networktopology.remove(nodeInfo);
     decrementVersionCount(nodeInfo.getSoftwareVersion());
 
@@ -731,7 +731,7 @@ public class DatanodeManager {
    */
   public List<String> resolveNetworkLocation(List<String> names) {
     // resolve its network location
-    List<String> rName = dnsToSwitchMapping.resolve(names);
+    List<String> rName = dnsToSwitchMapping.resolve(names); // 获取机架信息
     return rName;
   }
 

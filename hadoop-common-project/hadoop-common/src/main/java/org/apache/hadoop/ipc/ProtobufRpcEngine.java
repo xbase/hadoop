@@ -586,7 +586,7 @@ public class ProtobufRpcEngine implements RpcEngine {
           Writable writableRequest, long receiveTime) throws Exception {
         RpcRequestWrapper request = (RpcRequestWrapper) writableRequest;
         RequestHeaderProto rpcRequest = request.requestHeader;
-        String methodName = rpcRequest.getMethodName();
+        String methodName = rpcRequest.getMethodName(); // 调用的方法名
         String protoName = rpcRequest.getDeclaringClassProtocolName();
         long clientVersion = rpcRequest.getClientProtocolVersion();
         if (server.verbose)

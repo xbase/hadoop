@@ -238,7 +238,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
   private EnumCounters<StorageType> prevApproxBlocksScheduled
       = new EnumCounters<StorageType>(StorageType.class);
   private long lastBlocksScheduledRollTime = 0;
-  private static final int BLOCKS_SCHEDULED_ROLL_INTERVAL = 600*1000; //10min
+  private static final int BLOCKS_SCHEDULED_ROLL_INTERVAL = 600*1000; // 10min
   private int volumeFailures = 0;
   private VolumeFailureSummary volumeFailureSummary = null;
   
@@ -340,7 +340,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
    * Remove block from the list of blocks belonging to the data-node. Remove
    * data-node from the block.
    */
-  boolean removeBlock(BlockInfoContiguous b) {
+  boolean removeBlock(BlockInfoContiguous b) { // 从storage中移除此block的一个副本
     final DatanodeStorageInfo s = b.findStorageInfo(this); // block所在DN目录
     // if block exists on this datanode
     if (s != null) {
@@ -453,7 +453,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
       LOG.info("Number of failed storage changes from "
           + this.volumeFailures + " to " + volFailures);
       failedStorageInfos = new HashSet<DatanodeStorageInfo>(
-          storageMap.values());
+          storageMap.values()); // 心跳时，没有汇报的storage，即认为是failed storage
     }
 
     setCacheCapacity(cacheCapacity);
@@ -544,7 +544,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
     
     private BlockIterator(final DatanodeStorageInfo... storages) {
       List<Iterator<BlockInfoContiguous>> iterators = new ArrayList<Iterator<BlockInfoContiguous>>();
-      for (DatanodeStorageInfo e : storages) {
+      for (DatanodeStorageInfo e : storages) { // 此DN上的storage
         iterators.add(e.getBlockIterator());
       }
       this.iterators = Collections.unmodifiableList(iterators);

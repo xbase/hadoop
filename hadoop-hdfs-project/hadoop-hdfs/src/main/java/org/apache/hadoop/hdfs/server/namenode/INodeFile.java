@@ -530,7 +530,7 @@ public class INodeFile extends INodeWithAdditionalFields
     if (blocks != null && collectedBlocks != null) {
       for (BlockInfoContiguous blk : blocks) { // 把此inode的blocks添加到collectedBlocks
         collectedBlocks.addDeleteBlock(blk);
-        blk.setBlockCollection(null);
+        blk.setBlockCollection(null); // 设置block的bc为null
       }
     }
     setBlocks(null);

@@ -479,7 +479,7 @@ public class NetworkTopology {
    * Update node counter and rack counter if necessary
    * @param node node to be removed; can be null
    */ 
-  public void remove(Node node) {
+  public void remove(Node node) { // 从topology中移除一个DN（addBlock时，是从topology中选择一个DN）
     if (node==null) return;
     if( node instanceof InnerNode ) {
       throw new IllegalArgumentException(

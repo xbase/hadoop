@@ -213,7 +213,7 @@ public class FSEditLog implements LogsPurgeable {
   }
 
   // stores the most current transactionId of this thread.
-  private static final ThreadLocal<TransactionId> myTransactionId = new ThreadLocal<TransactionId>() {
+  private static final ThreadLocal<TransactionId> myTransactionId = new ThreadLocal<TransactionId>() { // 保存当前线程的transactionId
     @Override
     protected synchronized TransactionId initialValue() {
       return new TransactionId(Long.MAX_VALUE);

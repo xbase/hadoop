@@ -3106,24 +3106,24 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
             + maxBlocksPerFile);
       }
       blockSize = pendingFile.getPreferredBlockSize();
-      clientMachine = pendingFile.getFileUnderConstructionFeature() // client主机名
+      clientMachine = pendingFile.getFileUnderConstructionFeature() // client IP
           .getClientMachine();
       clientNode = blockManager.getDatanodeManager().getDatanodeByHost(
-          clientMachine);
+          clientMachine); // 通过IP获取DN
       replication = pendingFile.getFileReplication();
       storagePolicyID = pendingFile.getStoragePolicyID();
     } finally {
       readUnlock();
     }
 
-    if (clientNode == null) {
+    if (clientNode == null) { // 如果通过IP没有获取到DN，则通过IP构造一个Node
       clientNode = getClientNode(clientMachine);
     }
 
     // choose targets for the new block to be allocated.
     return getBlockManager().chooseTarget4NewBlock( 
         src, replication, clientNode, excludedNodes, blockSize, favoredNodes,
-        storagePolicyID); // 选择副本存储位置，并没有获取fsLock？
+        storagePolicyID); // 选择副本存储位置，并没有获取fsLock
   }
 
   /**
@@ -3198,7 +3198,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     List<String> hosts = new ArrayList<String>(1);
     hosts.add(clientMachine);
     List<String> rName = getBlockManager().getDatanodeManager()
-        .resolveNetworkLocation(hosts);
+        .resolveNetworkLocation(hosts); // 获取机架信息
     Node clientNode = null;
     if (rName != null) {
       // Able to resolve clientMachine mapping.
@@ -4059,7 +4059,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       curBlock = blocks[nrCompleteBlocks];
       if(!curBlock.isComplete())
         break;
-      assert blockManager.checkMinReplication(curBlock) :
+      assert blockManager.checkMinReplication(curBlock) : // 如果此文件有一个missing block，将会抛AssertionError
               "A COMPLETE block is not minimally replicated in " + src;
     }
 
@@ -4076,7 +4076,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
     // Only the last and the penultimate blocks may be in non COMPLETE state.
     // If the penultimate block is not COMPLETE, then it must be COMMITTED.
-    if(nrCompleteBlocks < nrBlocks - 2 || // 倒数第一个block未complete
+    if(nrCompleteBlocks < nrBlocks - 2 || // 倒数第二个之前的block未complete
        nrCompleteBlocks == nrBlocks - 2 && // 倒数第二个block未complete，但它必须是COMMITTED状态
          curBlock != null &&
          curBlock.getBlockUCState() != BlockUCState.COMMITTED) {

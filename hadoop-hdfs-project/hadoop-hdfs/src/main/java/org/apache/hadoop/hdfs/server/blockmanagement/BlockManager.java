@@ -105,7 +105,7 @@ public class BlockManager {
   private final BlockTokenSecretManager blockTokenSecretManager;
 
   private final PendingDataNodeMessages pendingDNMessages =
-    new PendingDataNodeMessages(); //Standby节点在没有收到edit信息之前，先收到了DN的块汇报，把这些块存到此集合中
+    new PendingDataNodeMessages(); // Standby节点在没有收到edit信息之前，先收到了DN的块汇报，把这些块存到此集合中
 
   private volatile long pendingReplicationBlocksCount = 0L;
   private volatile long corruptReplicaBlocksCount = 0L;
@@ -1064,7 +1064,7 @@ public class BlockManager {
   /** Remove the blocks associated to the given datanode. */
   void removeBlocksAssociatedTo(final DatanodeDescriptor node) { // 从NN内存中，移除此DN的所有block信息
     final Iterator<? extends Block> it = node.getBlockIterator();
-    while(it.hasNext()) {
+    while(it.hasNext()) { // 移除此DN的所有block信息
       removeStoredBlock(it.next(), node);
     }
     // Remove all pending DN messages referencing this DN.
@@ -1079,7 +1079,7 @@ public class BlockManager {
     assert namesystem.hasWriteLock();
     final Iterator<? extends Block> it = storageInfo.getBlockIterator();
     DatanodeDescriptor node = storageInfo.getDatanodeDescriptor();
-    while(it.hasNext()) {
+    while(it.hasNext()) { // 移除此Storage的所有block信息
       Block block = it.next();
       removeStoredBlock(block, node);
       invalidateBlocks.remove(node, block);
@@ -2955,7 +2955,7 @@ public class BlockManager {
     Collection<DatanodeDescriptor> corruptNodes = corruptReplicas
         .getNodes(block);
     // 选出符合条件的DN节点目录
-    for(DatanodeStorageInfo storage : blocksMap.getStorages(block, State.NORMAL)) {
+    for(DatanodeStorageInfo storage : blocksMap.getStorages(block, State.NORMAL)) { // 此block的所有副本位置信息
       final DatanodeDescriptor cur = storage.getDatanodeDescriptor();
       if (storage.areBlockContentsStale()) {
         LOG.trace("BLOCK* processOverReplicatedBlock: Postponing {}"
@@ -2967,9 +2967,9 @@ public class BlockManager {
       LightWeightLinkedSet<Block> excessBlocks = excessReplicateMap.get(cur
           .getDatanodeUuid());
       if (excessBlocks == null || !excessBlocks.contains(block)) {
-        if (!cur.isDecommissionInProgress() && !cur.isDecommissioned()) {
+        if (!cur.isDecommissionInProgress() && !cur.isDecommissioned()) { // 此副本所在的DN没有decommission
           // exclude corrupt replicas
-          if (corruptNodes == null || !corruptNodes.contains(cur)) {
+          if (corruptNodes == null || !corruptNodes.contains(cur)) { // 此副本没有损坏
             nonExcess.add(storage);
           }
         }
@@ -3462,7 +3462,7 @@ public class BlockManager {
     // No need to ACK blocks that are being removed entirely
     // from the namespace, since the removal of the associated
     // file already removes them from the block map below.
-    block.setNumBytes(BlockCommand.NO_ACK);
+    block.setNumBytes(BlockCommand.NO_ACK); // 告诉DN不需要增量块汇报，这个删除的block
     addToInvalidates(block); // 添加到invalidate队列
     removeBlockFromMap(block); // 内存中删除block
     // Remove the block from pendingReplications and neededReplications

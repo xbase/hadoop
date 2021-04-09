@@ -124,7 +124,7 @@ public class CorruptReplicasMap{ // 保存损坏的数据块副本
     }
 
     if (datanodes.remove(datanode) != null) { // remove the replicas
-      if (datanodes.isEmpty()) {
+      if (datanodes.isEmpty()) { // 此block所有损坏的副本都已经移除
         // remove the block if there is no more corrupted replicas
         corruptReplicasMap.remove(blk);
       }
@@ -183,7 +183,7 @@ public class CorruptReplicasMap{ // 保存损坏的数据块副本
    *
    */
   long[] getCorruptReplicaBlockIds(int numExpectedBlocks,
-                                   Long startingBlockId) {
+                                   Long startingBlockId) { // 从startingBlockId位置开始，获取numExpectedBlocks个blockId
     if (numExpectedBlocks < 0 || numExpectedBlocks > 100) {
       return null;
     }
@@ -195,7 +195,7 @@ public class CorruptReplicasMap{ // 保存损坏的数据块副本
     // to leave the iterator on the next block after the specified block. 
     if (startingBlockId != null) {
       boolean isBlockFound = false;
-      while (blockIt.hasNext()) {
+      while (blockIt.hasNext()) { // 遍历查找startingBlockId所在的位置
         Block b = blockIt.next();
         if (b.getBlockId() == startingBlockId) {
           isBlockFound = true;
@@ -211,7 +211,7 @@ public class CorruptReplicasMap{ // 保存损坏的数据块副本
     ArrayList<Long> corruptReplicaBlockIds = new ArrayList<Long>();
 
     // append up to numExpectedBlocks blockIds to our list
-    for(int i=0; i<numExpectedBlocks && blockIt.hasNext(); i++) {
+    for(int i=0; i<numExpectedBlocks && blockIt.hasNext(); i++) { // 从startingBlockId位置开始，获取numExpectedBlocks个blockId
       corruptReplicaBlockIds.add(blockIt.next().getBlockId());
     }
     
