@@ -528,6 +528,11 @@ public interface ClientProtocol {
    * @throws SnapshotAccessControlException if path is in RO snapshot
    * @throws IOException If an I/O error occurred
    */
+  /**
+   * rename 和 rename2 的区别：
+   * 1、如果dst存在，并且dst是个目录：rename会把src移动到dst目录内；rename2会报错
+   * 2、rename2可以设置overwrite选项，如果dst是个空目录或者文件，可以被overwrite掉
+   */
   @AtMostOnce
   public void rename2(String src, String dst, Options.Rename... options)
       throws AccessControlException, DSQuotaExceededException,

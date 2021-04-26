@@ -605,7 +605,7 @@ public class SecurityUtil {
   }
 
   public static AuthenticationMethod getAuthenticationMethod(Configuration conf) {
-    String value = conf.get(HADOOP_SECURITY_AUTHENTICATION, "simple");
+    String value = conf.get(HADOOP_SECURITY_AUTHENTICATION, "simple"); // 默认的认证方式
     try {
       return Enum.valueOf(AuthenticationMethod.class,
           StringUtils.toUpperCase(value));

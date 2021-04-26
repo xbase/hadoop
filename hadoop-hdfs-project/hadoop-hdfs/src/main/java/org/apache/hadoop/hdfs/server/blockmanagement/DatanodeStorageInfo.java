@@ -121,7 +121,7 @@ public class DatanodeStorageInfo {
   private long lastBlockReportId = 0;
 
   /** The number of block reports received */
-  private int blockReportCount = 0;
+  private int blockReportCount = 0; // blockReportCount=0，说明此DN还未做过全量块汇报
 
   /**
    * Set to false on any NN failover, and reset to true
@@ -344,7 +344,7 @@ public class DatanodeStorageInfo {
   }
 
   static Iterable<StorageType> toStorageTypes(
-      final Iterable<DatanodeStorageInfo> infos) {
+      final Iterable<DatanodeStorageInfo> infos) { // 获取每个副本的存储策略
     return new Iterable<StorageType>() {
         @Override
         public Iterator<StorageType> iterator() {

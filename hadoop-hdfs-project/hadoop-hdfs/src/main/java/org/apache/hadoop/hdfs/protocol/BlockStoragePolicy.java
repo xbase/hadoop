@@ -175,14 +175,18 @@ public class BlockStoragePolicy {
    * Compute the difference between two lists t and c so that after the diff
    * computation we have: t = t - c;
    * Further, if e is not null, set e = e + c - t;
+   *
+   * @param t input：期望的存储类型列表 output：期望有，但是没有的存储类型
+   * @param c 当前的存储类型列表
+   * @param e output：有，但是不符合期望的存储类型
    */
   private static void diff(List<StorageType> t, Iterable<StorageType> c,
       List<StorageType> e) {
     for(StorageType storagetype : c) {
-      final int i = t.indexOf(storagetype);
-      if (i >= 0) {
+      final int i = t.indexOf(storagetype); // 当前和期望的存储类型，是否匹配
+      if (i >= 0) { // 匹配
         t.remove(i);
-      } else if (e != null) {
+      } else if (e != null) { // 不匹配
         e.add(storagetype);
       }
     }
@@ -197,8 +201,8 @@ public class BlockStoragePolicy {
    * @return a list of {@link StorageType}s for deletion.
    */
   public List<StorageType> chooseExcess(final short replication,
-      final Iterable<StorageType> chosen) {
-    final List<StorageType> types = chooseStorageTypes(replication);
+      final Iterable<StorageType> chosen) { // 获取不符合期望的存储类型
+    final List<StorageType> types = chooseStorageTypes(replication); // 期望的存储类型
     final List<StorageType> excess = new LinkedList<StorageType>();
     diff(types, chosen, excess);
     return excess;

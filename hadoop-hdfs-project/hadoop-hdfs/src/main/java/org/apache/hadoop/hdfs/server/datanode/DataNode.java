@@ -1187,7 +1187,7 @@ public class DataNode extends ReconfigurableBase
    *
    * @throws IOException
    */
-  private synchronized void checkDatanodeUuid() throws IOException {
+  private synchronized void checkDatanodeUuid() throws IOException { // 如果之前没有设置dn uuid，则生成一个dn uuid并保存到VERSION文件里
     if (storage.getDatanodeUuid() == null) {
       storage.setDatanodeUuid(generateUuid());
       storage.writeAll();
@@ -1365,7 +1365,7 @@ public class DataNode extends ReconfigurableBase
     }
 
     // If this is a newly formatted DataNode then assign a new DatanodeUuid.
-    checkDatanodeUuid();
+    checkDatanodeUuid(); // 检查并设置dn uuid
 
     synchronized(this)  {
       if (data == null) {

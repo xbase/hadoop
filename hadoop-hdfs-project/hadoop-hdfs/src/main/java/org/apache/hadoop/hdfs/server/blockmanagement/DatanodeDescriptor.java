@@ -223,7 +223,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
   /** A queue of blocks to be replicated by this datanode */
   private final BlockQueue<BlockTargetPair> replicateBlocks = new BlockQueue<BlockTargetPair>(); // 需要向其他节点复制的Block
   /** A queue of blocks to be recovered by this datanode */
-  private final BlockQueue<BlockInfoContiguousUnderConstruction> recoverBlocks = // 此Replica所在的DN将主导Block的recover过程
+  private final BlockQueue<BlockInfoContiguousUnderConstruction> recoverBlocks = // 待recovery的block列表
                                 new BlockQueue<BlockInfoContiguousUnderConstruction>();
   /** A set of blocks to be invalidated by this datanode */
   private final LightWeightHashSet<Block> invalidateBlocks = new LightWeightHashSet<Block>(); // 需要从此节点删除的Block
@@ -252,7 +252,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
   private int PendingReplicationWithoutTargets = 0;
 
   // HB processing can use it to tell if it is the first HB since DN restarted
-  private boolean heartbeatedSinceRegistration = false;
+  private boolean heartbeatedSinceRegistration = false; // 此DN注册之后，是否汇报过心跳
 
   /**
    * DatanodeDescriptor constructor
@@ -413,7 +413,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
    */
   public void updateHeartbeatState(StorageReport[] reports, long cacheCapacity,
       long cacheUsed, int xceiverCount, int volFailures,
-      VolumeFailureSummary volumeFailureSummary) {
+      VolumeFailureSummary volumeFailureSummary) { // 更新统计信息
     long totalCapacity = 0;
     long totalRemaining = 0;
     long totalBlockPoolUsed = 0;
@@ -822,11 +822,11 @@ public class DatanodeDescriptor extends DatanodeInfo {
    */
   @Override
   public void updateRegInfo(DatanodeID nodeReg) {
-    super.updateRegInfo(nodeReg);
+    super.updateRegInfo(nodeReg); // 更新此DN基本信息
     
     // must re-process IBR after re-registration
     for(DatanodeStorageInfo storage : getStorageInfos()) {
-      storage.setBlockReportCount(0);
+      storage.setBlockReportCount(0); // 设置为0，FBR的时候走processFirstBlockReport，加快FBR速度
     }
     heartbeatedSinceRegistration = false;
   }

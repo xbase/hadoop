@@ -188,7 +188,7 @@ class HeartbeatManager implements DatanodeStatistics {
     return stats.expiredHeartbeats;
   }
 
-  synchronized void register(final DatanodeDescriptor d) {
+  synchronized void register(final DatanodeDescriptor d) { // 添加到HeartbeatManager，并更新统计信息
     if (!d.isAlive) {
       addDatanode(d);
 
@@ -393,25 +393,25 @@ class HeartbeatManager implements DatanodeStatistics {
   /** Datanode statistics.
    * For decommissioning/decommissioned nodes, only used capacity is counted.
    */
-  private static class Stats {
-    private long capacityTotal = 0L;
-    private long capacityUsed = 0L;
-    private long capacityRemaining = 0L;
-    private long blockPoolUsed = 0L;
-    private int xceiverCount = 0;
-    private long cacheCapacity = 0L;
-    private long cacheUsed = 0L;
+  private static class Stats { // 整个集群关于DN的统计信息
+    private long capacityTotal = 0L; // 容量一共多少
+    private long capacityUsed = 0L; // 已使用容量
+    private long capacityRemaining = 0L; // 剩余容量
+    private long blockPoolUsed = 0L; // 此BP使用的容量
+    private int xceiverCount = 0; // xceiver数量
+    private long cacheCapacity = 0L; // cache的容量一共多少
+    private long cacheUsed = 0L; // 已使用的cache容量
 
-    private int nodesInService = 0;
-    private int nodesInServiceXceiverCount = 0;
+    private int nodesInService = 0; // 正常运行的DN数量（除去dead和decommission）
+    private int nodesInServiceXceiverCount = 0; // 正常运行DN的xceiver数量
 
-    private int expiredHeartbeats = 0;
+    private int expiredHeartbeats = 0; // 超时没有心跳的DN数量（挂掉的DN数量）
 
-    private void add(final DatanodeDescriptor node) {
+    private void add(final DatanodeDescriptor node) {  // 加上此DN的统计信息
       capacityUsed += node.getDfsUsed();
       blockPoolUsed += node.getBlockPoolUsed();
       xceiverCount += node.getXceiverCount();
-      if (!(node.isDecommissionInProgress() || node.isDecommissioned())) {
+      if (!(node.isDecommissionInProgress() || node.isDecommissioned())) { // decommission特殊处理
         nodesInService++;
         nodesInServiceXceiverCount += node.getXceiverCount();
         capacityTotal += node.getCapacity();
@@ -423,11 +423,11 @@ class HeartbeatManager implements DatanodeStatistics {
       cacheUsed += node.getCacheUsed();
     }
 
-    private void subtract(final DatanodeDescriptor node) {
+    private void subtract(final DatanodeDescriptor node) { // 减去此DN的统计信息
       capacityUsed -= node.getDfsUsed();
       blockPoolUsed -= node.getBlockPoolUsed();
       xceiverCount -= node.getXceiverCount();
-      if (!(node.isDecommissionInProgress() || node.isDecommissioned())) {
+      if (!(node.isDecommissionInProgress() || node.isDecommissioned())) { // decommission特殊处理
         nodesInService--;
         nodesInServiceXceiverCount -= node.getXceiverCount();
         capacityTotal -= node.getCapacity();

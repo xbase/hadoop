@@ -40,14 +40,18 @@ import com.google.common.annotations.VisibleForTesting;
 public class DatanodeID implements Comparable<DatanodeID> {
   public static final DatanodeID[] EMPTY_ARRAY = {};
 
+  // DN的IP地址
   private String ipAddr;     // IP address
+  // DN的hostname，DN传过来的
   private String hostName;   // hostname claimed by datanode
+  // DN的hostname，NN端自己解析出来的
   private String peerHostName; // hostname from the actual connection
+  // DN读写数据的端口
   private int xferPort;      // data streaming port
   private int infoPort;      // info server port
   private int infoSecurePort; // info server port
   private int ipcPort;       // IPC server port
-  private String xferAddr;
+  private String xferAddr; // ipAddr:xferPort
 
   /**
    * UUID identifying a given datanode. For upgraded Datanodes this is the

@@ -119,7 +119,7 @@ class InvalidateBlocks { // 等待删除副本集合
   }
 
   /** Remove a storage from the invalidatesSet */
-  synchronized void remove(final DatanodeInfo dn) {
+  synchronized void remove(final DatanodeInfo dn) { // 移除此DN所有的invalidate block
     final LightWeightHashSet<Block> blocks = node2blocks.remove(dn);
     if (blocks != null) {
       numBlocks -= blocks.size();
@@ -127,7 +127,7 @@ class InvalidateBlocks { // 等待删除副本集合
   }
 
   /** Remove the block from the specified storage. */
-  synchronized void remove(final DatanodeInfo dn, final Block block) {
+  synchronized void remove(final DatanodeInfo dn, final Block block) { // 移除此DN指定的invalidate block
     final LightWeightHashSet<Block> v = node2blocks.get(dn);
     if (v != null && v.remove(block)) {
       numBlocks--;

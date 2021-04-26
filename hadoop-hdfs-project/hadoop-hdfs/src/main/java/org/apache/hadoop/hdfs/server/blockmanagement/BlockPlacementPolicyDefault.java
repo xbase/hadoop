@@ -912,6 +912,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
     return new BlockPlacementStatusDefault(racks.size(), minRacks);
   }
 
+  // 选择一个副本删除，优先选择可能已经挂了的DN所在的副本，否则选择存储空间最小的DN所在的副本
   @Override
   public DatanodeStorageInfo chooseReplicaToDelete(BlockCollection bc,
       Block block, short replicationFactor,

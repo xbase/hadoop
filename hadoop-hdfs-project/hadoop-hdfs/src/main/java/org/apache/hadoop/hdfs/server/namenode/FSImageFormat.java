@@ -679,11 +679,11 @@ public class FSImageFormat {
     namesystem.dir.cacheName(child);
 
     if (child.isFile()) {
-      updateBlocksMap(child.asFile());
+      updateBlocksMap(child.asFile()); // file的block都添加到blocksMap，并且设置bc
     }
   }
 
-    public void updateBlocksMap(INodeFile file) {
+    public void updateBlocksMap(INodeFile file) { // file的block都添加到blocksMap，并且设置bc
       // Add file->block mapping
       final BlockInfoContiguous[] blocks = file.getBlocks();
       if (blocks != null) {

@@ -273,6 +273,8 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    * @param block - contains client reported block length and generation 
    * @throws IOException if block ids are inconsistent.
    */
+  // 可以commit block的操作有：addBlock、complete、commitBlockSynchronization、回放edit（通过forceCompleteBlock）
+  // addBlock和complete会要求上一个block已经complete，才能commit当前block
   void commitBlock(Block block) throws IOException { // commit一个Block
     if(getBlockId() != block.getBlockId())
       throw new IOException("Trying to commit inconsistent block: id = "
@@ -291,10 +293,10 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
   // block recovery初始化：
   // 1、设置block的状态为UNDER_RECOVERY
   // 2、设置blockRecoveryId
-  // 3、选以哪个Replica为主（标准）
+  // 3、选以哪个Replica为主（最近和NN通信的DN那个副本）
   public void initializeBlockRecovery(long recoveryId) {
     setBlockUCState(BlockUCState.UNDER_RECOVERY);
-    blockRecoveryId = recoveryId;
+    blockRecoveryId = recoveryId; // 新生成的GS
     if (replicas.size() == 0) {
       NameNode.blockStateChangeLog.warn("BLOCK*"
         + " BlockInfoUnderConstruction.initLeaseRecovery:"
@@ -335,8 +337,8 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
       }
     }
     if (primary != null) {
-      primary.getExpectedStorageLocation().getDatanodeDescriptor().addBlockToBeRecovered(this);
-      primary.setChosenAsPrimary(true);
+      primary.getExpectedStorageLocation().getDatanodeDescriptor().addBlockToBeRecovered(this); // 添加到DN的recovery列表，等待心跳下发给DN
+      primary.setChosenAsPrimary(true); // 此Replica将主导Block的recover过程
       NameNode.blockStateChangeLog.info(
           "BLOCK* {} recovery started, primary={}", this, primary);
     }

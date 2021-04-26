@@ -587,7 +587,7 @@ public class DatanodeManager {
   }
 
   /** Add a datanode. */
-  void addDatanode(final DatanodeDescriptor node) {
+  void addDatanode(final DatanodeDescriptor node) { // 把DN添加到相关的容器中
     // To keep host2DatanodeMap consistent with datanodeMap,
     // remove  from host2DatanodeMap the datanodeDescriptor removed
     // from datanodeMap before adding node to host2DatanodeMap.
@@ -703,7 +703,7 @@ public class DatanodeManager {
    *    to resolve network location.
    */
   private String resolveNetworkLocation (DatanodeID node) 
-      throws UnresolvedTopologyException {
+      throws UnresolvedTopologyException { // 获取机架信息
     List<String> names = new ArrayList<String>(1);
     if (dnsToSwitchMapping instanceof CachedDNSToSwitchMapping) {
       names.add(node.getIpAddr());
@@ -762,7 +762,7 @@ public class DatanodeManager {
    * @throws UnresolvedTopologyException if the DNS to switch mapping fails
    */
   private List<String> getNetworkDependencies(DatanodeInfo node)
-      throws UnresolvedTopologyException {
+      throws UnresolvedTopologyException { // 获取扩展机架信息
     List<String> dependencies = Collections.emptyList();
 
     if (dnsToSwitchMapping instanceof DNSToSwitchMappingWithDependency) {
@@ -830,7 +830,7 @@ public class DatanodeManager {
    *
    * @param nodeReg datanode
    */
-  void startDecommissioningIfExcluded(DatanodeDescriptor nodeReg) {
+  void startDecommissioningIfExcluded(DatanodeDescriptor nodeReg) { // 如果在decommission列表中，则开始decommission
     // If the registered node is in exclude list, then decommission it
     if (getHostFileManager().isExcluded(nodeReg)) {
       decomManager.startDecommission(nodeReg);
@@ -849,7 +849,7 @@ public class DatanodeManager {
    *
    * DN注册有三种情况：
    * 1、该DN没有注册过
-   * 2、该DN注册过，但这次使用了新storageId，说明该DN的数据被清空了
+   * 2、该DN注册过，但dn uuid和之前的不一样，说明该DN的数据被清空了
    * 3、该DN注册过，这次是重复注册
    */
   public void registerDatanode(DatanodeRegistration nodeReg)
@@ -859,7 +859,7 @@ public class DatanodeManager {
       // Mostly called inside an RPC, update ip and peer hostname
       String hostname = dnAddress.getHostName();
       String ip = dnAddress.getHostAddress();
-      if (checkIpHostnameInRegistration && !isNameResolved(dnAddress)) {
+      if (checkIpHostnameInRegistration && !isNameResolved(dnAddress)) { // 判断ip是否可以解析为hostname
         // Reject registration of unresolved datanode to prevent performance
         // impact of repetitive DNS lookups later.
         final String message = "hostname cannot be resolved (ip="
@@ -884,8 +884,8 @@ public class DatanodeManager {
       NameNode.stateChangeLog.info("BLOCK* registerDatanode: from "
           + nodeReg + " storage " + nodeReg.getDatanodeUuid());
   
-      DatanodeDescriptor nodeS = getDatanode(nodeReg.getDatanodeUuid());
-      DatanodeDescriptor nodeN = host2DatanodeMap.getDatanodeByXferAddr(
+      DatanodeDescriptor nodeS = getDatanode(nodeReg.getDatanodeUuid()); // 是否有指定uuid的DN
+      DatanodeDescriptor nodeN = host2DatanodeMap.getDatanodeByXferAddr( // 对应的IP和端口，是否有DN
           nodeReg.getIpAddr(), nodeReg.getXferPort());
         
       if (nodeN != null && nodeN != nodeS) { // 对应情况2，NN这边也删除此DN相关的副本信息
@@ -929,30 +929,30 @@ public class DatanodeManager {
           if(shouldCountVersion(nodeS)) {
             decrementVersionCount(nodeS.getSoftwareVersion());
           }
-          nodeS.updateRegInfo(nodeReg);
+          nodeS.updateRegInfo(nodeReg); // 更新此DN基本信息
 
           nodeS.setSoftwareVersion(nodeReg.getSoftwareVersion());
           nodeS.setDisallowed(false); // Node is in the include list
 
           // resolve network location
           if(this.rejectUnresolvedTopologyDN) {
-            nodeS.setNetworkLocation(resolveNetworkLocation(nodeS));
-            nodeS.setDependentHostNames(getNetworkDependencies(nodeS));
+            nodeS.setNetworkLocation(resolveNetworkLocation(nodeS)); // 设置机架信息
+            nodeS.setDependentHostNames(getNetworkDependencies(nodeS)); // 设置扩展机架信息
           } else {
             nodeS.setNetworkLocation(
                 resolveNetworkLocationWithFallBackToDefaultLocation(nodeS));
             nodeS.setDependentHostNames(
                 getNetworkDependenciesWithDefault(nodeS));
           }
-          getNetworkTopology().add(nodeS);
+          getNetworkTopology().add(nodeS); // 添加到网络拓扑中
             
           // also treat the registration message as a heartbeat
-          heartbeatManager.register(nodeS);
+          heartbeatManager.register(nodeS); // 添加到HeartbeatManager，并更新统计信息
           incrementVersionCount(nodeS.getSoftwareVersion());
-          startDecommissioningIfExcluded(nodeS);
+          startDecommissioningIfExcluded(nodeS); // 如果在decommission列表中，则开始decommission
           success = true;
         } finally {
-          if (!success) {
+          if (!success) { // 如果重复注册失败，则删除此DN的信息
             removeDatanode(nodeS);
             wipeDatanode(nodeS);
             countSoftwareVersions();
@@ -980,16 +980,16 @@ public class DatanodeManager {
         nodeDescr.setSoftwareVersion(nodeReg.getSoftwareVersion());
   
         // register new datanode
-        addDatanode(nodeDescr);
+        addDatanode(nodeDescr); // 把DN添加到相关的容器中
         // also treat the registration message as a heartbeat
         // no need to update its timestamp
         // because its is done when the descriptor is created
         heartbeatManager.addDatanode(nodeDescr);
         incrementVersionCount(nodeReg.getSoftwareVersion());
-        startDecommissioningIfExcluded(nodeDescr);
+        startDecommissioningIfExcluded(nodeDescr); // 如果在decommission列表中，则开始decommission
         success = true;
       } finally {
-        if (!success) {
+        if (!success) { // 如果注册失败，则删除此DN的信息
           removeDatanode(nodeDescr);
           wipeDatanode(nodeDescr);
           countSoftwareVersions();
@@ -1334,7 +1334,9 @@ public class DatanodeManager {
    * @param address InetAddress to check
    * @return boolean true if name resolution successful or address is local
    */
-  private static boolean isNameResolved(InetAddress address) {
+  // IP如果和hostname不一样，说明hostname解析成功
+  // 如果是本地ip（127.0.0.1），也返回true，因为在Windows上，127.0.0.1不能解析为localhost
+  private static boolean isNameResolved(InetAddress address) { // 判断ip是否可以解析为hostname
     String hostname = address.getHostName();
     String ip = address.getHostAddress();
     return !hostname.equals(ip) || NetUtils.isLocalAddress(address);

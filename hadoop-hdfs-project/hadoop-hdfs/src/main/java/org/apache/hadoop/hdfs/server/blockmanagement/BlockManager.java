@@ -353,7 +353,7 @@ public class BlockManager {
 
   private static BlockTokenSecretManager createBlockTokenSecretManager(
       final Configuration conf) {
-    final boolean isEnabled = conf.getBoolean(
+    final boolean isEnabled = conf.getBoolean( // 默认情况下，BlockTokenSecretManager是关闭的
         DFSConfigKeys.DFS_BLOCK_ACCESS_TOKEN_ENABLE_KEY, 
         DFSConfigKeys.DFS_BLOCK_ACCESS_TOKEN_ENABLE_DEFAULT);
     LOG.info(DFSConfigKeys.DFS_BLOCK_ACCESS_TOKEN_ENABLE_KEY + "=" + isEnabled);
@@ -641,7 +641,7 @@ public class BlockManager {
    * @throws IOException if the block does not have at least a minimal number
    * of replicas reported from data-nodes.
    */
-  // complete 一个 block
+  // complete下标为blkIndex的block
   // 只有complete的时候，才会把block从UC状态转为正常状态
   // addBlock、complete file、block report、commitBlockSynchronization(block recovery之后)，都会判断是否可以complete block
   private BlockInfoContiguous completeBlock(final BlockCollection bc,
@@ -696,6 +696,7 @@ public class BlockManager {
    * regardless of whether enough replicas are present. This is necessary
    * when tailing edit logs as a Standby.
    */
+  // 强制commit、complete一个block
   public BlockInfoContiguous forceCompleteBlock(final BlockCollection bc,
       final BlockInfoContiguousUnderConstruction block) throws IOException {
     block.commitBlock(block);
@@ -1815,8 +1816,7 @@ public class BlockManager {
     try {
       node = datanodeManager.getDatanode(nodeID); // NN端描述一个DN
       if (node == null || !node.isAlive) {
-        throw new IOException(
-            "ProcessReport from dead or unregistered node: " + nodeID);
+        throw new IOException("ProcessReport from dead or unregistered node: " + nodeID);
       }
 
       // To minimize startup time, we discard any second (or later) block reports
@@ -2001,12 +2001,13 @@ public class BlockManager {
     // between the old and new block report.
     //
     Collection<BlockInfoContiguous> toAdd = new LinkedList<BlockInfoContiguous>(); // DN和NN一致，添加到NN
-    Collection<Block> toRemove = new TreeSet<Block>(); // NN有，DN没有，从NN中删除
-    Collection<Block> toInvalidate = new LinkedList<Block>(); // NN没有，DN有，从DN中删除
+    Collection<Block> toRemove = new TreeSet<Block>(); // 这个replica，NN有，DN没有，从NN中删除
+    Collection<Block> toInvalidate = new LinkedList<Block>(); // 这个block，NN没有，DN有，从DN中删除
     Collection<BlockToMarkCorrupt> toCorrupt = new LinkedList<BlockToMarkCorrupt>(); // DN和NN不一致，先补副本，再从DN中删除
     Collection<StatefulBlockInfo> toUC = new LinkedList<StatefulBlockInfo>(); // 正在构建中的副本，更新NN（UC block replicas字段）
-    reportDiff(storageInfo, report,
-        toAdd, toRemove, toInvalidate, toCorrupt, toUC); // Step 1: 判断副本状态
+
+    // Step 1: 判断副本状态
+    reportDiff(storageInfo, report, toAdd, toRemove, toInvalidate, toCorrupt, toUC);
    
     DatanodeDescriptor node = storageInfo.getDatanodeDescriptor();
     // Process the blocks on each queue
@@ -2015,7 +2016,7 @@ public class BlockManager {
       addStoredBlockUnderConstruction(b, storageInfo);
     }
     for (Block b : toRemove) {
-      removeStoredBlock(b, node);
+      removeStoredBlock(b, node); // 从NN内存中移除此副本信息，并且维护相应集合
     }
     int numBlocksLogged = 0;
     for (BlockInfoContiguous b : toAdd) {
@@ -2098,10 +2099,8 @@ public class BlockManager {
       ReplicaState reportedState = iblk.getState();
 
       // 如果当前为standby节点，可能出现standby接收块汇报时，并没有完全更新edits的情况
-      if (shouldPostponeBlocksFromFuture &&
-          namesystem.isGenStampInFuture(iblk)) {
-        queueReportedBlock(storageInfo, iblk, reportedState,
-            QUEUE_REASON_FUTURE_GENSTAMP);
+      if (shouldPostponeBlocksFromFuture && namesystem.isGenStampInFuture(iblk)) {
+        queueReportedBlock(storageInfo, iblk, reportedState, QUEUE_REASON_FUTURE_GENSTAMP);
         continue;
       }
       
@@ -2274,8 +2273,7 @@ public class BlockManager {
       return storedBlock;
     }
 
-    BlockToMarkCorrupt c = checkReplicaCorrupt(
-        block, reportedState, storedBlock, ucState, dn); // 根据GS和长度，判断此副本是否损坏
+    BlockToMarkCorrupt c = checkReplicaCorrupt(block, reportedState, storedBlock, ucState, dn); // 根据GS和长度，判断此副本是否损坏
     if (c != null) {
       if (shouldPostponeBlocksFromFuture) {
         // If the block is an out-of-date generation stamp or state,
@@ -2294,8 +2292,7 @@ public class BlockManager {
 
     // 判断此Block，是否处于UC状态
     if (isBlockUnderConstruction(storedBlock, ucState, reportedState)) {
-      toUC.add(new StatefulBlockInfo(
-          (BlockInfoContiguousUnderConstruction) storedBlock,
+      toUC.add(new StatefulBlockInfo((BlockInfoContiguousUnderConstruction) storedBlock,
           new Block(block), reportedState)); // 添加到toUC中
       return storedBlock;
     }
@@ -2578,6 +2575,7 @@ public class BlockManager {
     assert bc != null : "Block must belong to a file";
 
     // add block to the datanode
+    // finalize的副本，才会调用此方法，添加到block的triplets和dn的storage中
     AddBlockResult result = storageInfo.addBlock(storedBlock); // 添加此副本信息到block和DN中
 
     int curReplicaDelta;
@@ -2951,9 +2949,8 @@ public class BlockManager {
     if (addedNode == delNodeHint) {
       delNodeHint = null;
     }
-    Collection<DatanodeStorageInfo> nonExcess = new ArrayList<DatanodeStorageInfo>();
-    Collection<DatanodeDescriptor> corruptNodes = corruptReplicas
-        .getNodes(block);
+    Collection<DatanodeStorageInfo> nonExcess = new ArrayList<DatanodeStorageInfo>(); // 正常的副本（排除掉正在decommission和损坏的副本）
+    Collection<DatanodeDescriptor> corruptNodes = corruptReplicas.getNodes(block);
     // 选出符合条件的DN节点目录
     for(DatanodeStorageInfo storage : blocksMap.getStorages(block, State.NORMAL)) { // 此block的所有副本位置信息
       final DatanodeDescriptor cur = storage.getDatanodeDescriptor();
@@ -2964,8 +2961,7 @@ public class BlockManager {
         postponeBlock(block);
         return;
       }
-      LightWeightLinkedSet<Block> excessBlocks = excessReplicateMap.get(cur
-          .getDatanodeUuid());
+      LightWeightLinkedSet<Block> excessBlocks = excessReplicateMap.get(cur.getDatanodeUuid());
       if (excessBlocks == null || !excessBlocks.contains(block)) {
         if (!cur.isDecommissionInProgress() && !cur.isDecommissioned()) { // 此副本所在的DN没有decommission
           // exclude corrupt replicas
@@ -2975,8 +2971,7 @@ public class BlockManager {
         }
       }
     }
-    chooseExcessReplicates(nonExcess, block, replication, 
-        addedNode, delNodeHint, blockplacement);
+    chooseExcessReplicates(nonExcess, block, replication, addedNode, delNodeHint, blockplacement);
   }
 
 
@@ -3002,8 +2997,8 @@ public class BlockManager {
     assert namesystem.hasWriteLock();
     // first form a rack to datanodes map and
     BlockCollection bc = getBlockCollection(b);
-    final BlockStoragePolicy storagePolicy = storagePolicySuite.getPolicy(bc.getStoragePolicyID());
-    final List<StorageType> excessTypes = storagePolicy.chooseExcess(
+    final BlockStoragePolicy storagePolicy = storagePolicySuite.getPolicy(bc.getStoragePolicyID()); // 此file的存储策略
+    final List<StorageType> excessTypes = storagePolicy.chooseExcess( // 获取不符合期望的存储类型
         replication, DatanodeStorageInfo.toStorageTypes(nonExcess));
 
 
@@ -3021,24 +3016,20 @@ public class BlockManager {
     // otherwise pick one with least space from priSet if it is not empty
     // otherwise one node with least space from remains
     boolean firstOne = true;
-    final DatanodeStorageInfo delNodeHintStorage
-        = DatanodeStorageInfo.getDatanodeStorageInfo(nonExcess, delNodeHint);
-    final DatanodeStorageInfo addedNodeStorage
-        = DatanodeStorageInfo.getDatanodeStorageInfo(nonExcess, addedNode);
-    while (nonExcess.size() - replication > 0) {
+    final DatanodeStorageInfo delNodeHintStorage = DatanodeStorageInfo.getDatanodeStorageInfo(nonExcess, delNodeHint); //
+    final DatanodeStorageInfo addedNodeStorage = DatanodeStorageInfo.getDatanodeStorageInfo(nonExcess, addedNode); // addedNode汇报的此副本
+    while (nonExcess.size() - replication > 0) { // 当前正常的副本数多余期望的副本数
       final DatanodeStorageInfo cur;
-      if (useDelHint(firstOne, delNodeHintStorage, addedNodeStorage,
-          moreThanOne, excessTypes)) {
+      if (useDelHint(firstOne, delNodeHintStorage, addedNodeStorage, moreThanOne, excessTypes)) {
         cur = delNodeHintStorage;
       } else { // regular excessive replica removal
-        cur = replicator.chooseReplicaToDelete(bc, b, replication,
-            moreThanOne, exactlyOne, excessTypes);
+        // 选择一个副本删除，优先选择可能已经挂了的DN所在的副本，否则选择存储空间最小的DN所在的副本
+        cur = replicator.chooseReplicaToDelete(bc, b, replication, moreThanOne, exactlyOne, excessTypes);
       }
       firstOne = false;
 
       // adjust rackmap, moreThanOne, and exactlyOne
-      replicator.adjustSetsWithChosenReplica(rackMap, moreThanOne,
-          exactlyOne, cur);
+      replicator.adjustSetsWithChosenReplica(rackMap, moreThanOne, exactlyOne, cur);
 
       nonExcess.remove(cur);
       addToExcessReplicate(cur.getDatanodeDescriptor(), b);
@@ -3207,8 +3198,7 @@ public class BlockManager {
     // Modify the blocks->datanode map and node's map.
     //
     pendingReplications.decrement(block, node); // 移除复制请求
-    processAndHandleReportedBlock(storageInfo, block, ReplicaState.FINALIZED,
-        delHintNode);
+    processAndHandleReportedBlock(storageInfo, block, ReplicaState.FINALIZED, delHintNode);
   }
   
   private void processAndHandleReportedBlock(
@@ -3488,7 +3478,7 @@ public class BlockManager {
       }
       NumberReplicas repl = countNodes(block);
       int curExpectedReplicas = getReplication(block);
-      if (isNeededReplication(block, curExpectedReplicas, repl.liveReplicas())) {
+      if (isNeededReplication(block, curExpectedReplicas, repl.liveReplicas())) { // 副本数不足
         neededReplications.update(block, repl.liveReplicas(), repl
             .decommissionedReplicas(), curExpectedReplicas, curReplicasDelta,
             expectedReplicasDelta);

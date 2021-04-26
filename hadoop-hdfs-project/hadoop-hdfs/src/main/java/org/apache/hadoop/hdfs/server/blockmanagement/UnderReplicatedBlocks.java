@@ -397,13 +397,13 @@ class UnderReplicatedBlocks implements Iterable<Block> {
   }
 
   /** returns an iterator of all blocks in a given priority queue */
-  synchronized BlockIterator iterator(int level) {
+  synchronized BlockIterator iterator(int level) { // 迭代指定level
     return new BlockIterator(level);
   }
 
   /** return an iterator of all the under replication blocks */
   @Override
-  public synchronized BlockIterator iterator() {
+  public synchronized BlockIterator iterator() { // 迭代所有level
     return new BlockIterator();
   }
 

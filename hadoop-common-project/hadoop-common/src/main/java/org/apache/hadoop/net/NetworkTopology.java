@@ -392,7 +392,7 @@ public class NetworkTopology {
    * @exception IllegalArgumentException if add a node to a leave 
                                          or node to be added is not a leaf
    */
-  public void add(Node node) {
+  public void add(Node node) { // 添加到网络拓扑中
     if (node==null) return;
     int newDepth = NodeBase.locationToDepth(node.getNetworkLocation()) + 1;
     netlock.writeLock().lock();

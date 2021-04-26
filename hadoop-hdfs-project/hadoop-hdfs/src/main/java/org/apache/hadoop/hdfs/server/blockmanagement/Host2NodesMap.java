@@ -32,8 +32,8 @@ import org.apache.hadoop.hdfs.DFSUtil;
 @InterfaceStability.Evolving
 class Host2NodesMap { // 通过IP获取DN
   private HashMap<String, String> mapHost = new HashMap<String, String>();
-  private final HashMap<String, DatanodeDescriptor[]> map
-    = new HashMap<String, DatanodeDescriptor[]>(); // 一个IP对应多个DN
+  private final HashMap<String, DatanodeDescriptor[]> map // 一个IP可能对应多个DN（一台机器可能部署了多个DN）
+    = new HashMap<String, DatanodeDescriptor[]>();
   private final ReadWriteLock hostmapLock = new ReentrantReadWriteLock();
 
   /** Check if node is already in the map. */
@@ -173,7 +173,7 @@ class Host2NodesMap { // 通过IP获取DN
    * @return DatanodeDescriptor if found or null otherwise
    */
   public DatanodeDescriptor getDatanodeByXferAddr(String ipAddr,
-      int xferPort) {
+      int xferPort) { // 对应的IP和端口，是否有DN
     if (ipAddr==null) {
       return null;
     }

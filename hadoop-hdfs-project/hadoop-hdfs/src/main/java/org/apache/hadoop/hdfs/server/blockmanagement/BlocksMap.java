@@ -105,7 +105,7 @@ class BlocksMap {
   /**
    * Add block b belonging to the specified block collection to the map.
    */
-  BlockInfoContiguous addBlockCollection(BlockInfoContiguous b, BlockCollection bc) {
+  BlockInfoContiguous addBlockCollection(BlockInfoContiguous b, BlockCollection bc) { // 添加到blocksMap，并且设置bc
     BlockInfoContiguous info = blocks.get(b);
     if (info != b) {
       info = b;
@@ -120,7 +120,7 @@ class BlocksMap {
    * remove it from all data-node lists it belongs to;
    * and remove all data-node locations associated with the block.
    */
-  void removeBlock(Block block) {
+  void removeBlock(Block block) { // 删除一个block，并且bc设置为null
     BlockInfoContiguous blockInfo = blocks.remove(block); // 从blocksMap中删除
     if (blockInfo == null)
       return;
@@ -185,7 +185,7 @@ class BlocksMap {
    * Remove the block from the block map
    * only if it does not belong to any file and data-nodes.
    */
-  boolean removeNode(Block b, DatanodeDescriptor node) {
+  boolean removeNode(Block b, DatanodeDescriptor node) { // 删除指定DN上的副本
     BlockInfoContiguous info = blocks.get(b);
     if (info == null)
       return false;
@@ -193,7 +193,7 @@ class BlocksMap {
     // remove block from the data-node list and the node from the block info
     boolean removed = node.removeBlock(info); // 移除此副本信息（DN的blockList和block的triplets）
 
-    // 所有的副本都被移除，直接移除这个Block
+    // 所有的副本都被移除，并且bc==null，直接移除这个Block
     if (info.getDatanode(0) == null     // no datanodes left
               && info.getBlockCollection() == null) {  // does not belong to a file
       blocks.remove(b);  // remove block from the map
@@ -226,10 +226,10 @@ class BlocksMap {
   // 2、Block副本信息
   // 3、DN block list
   BlockInfoContiguous replaceBlock(BlockInfoContiguous newBlock) {
-    BlockInfoContiguous currentBlock = blocks.get(newBlock);
+    BlockInfoContiguous currentBlock = blocks.get(newBlock); // 当前blocksMap中保存的还是UC状态的block对象（BlockInfoContiguousUnderConstruction）
     assert currentBlock != null : "the block if not in blocksMap";
     // replace block in data-node lists
-    for (int i = currentBlock.numNodes() - 1; i >= 0; i--) {
+    for (int i = currentBlock.numNodes() - 1; i >= 0; i--) { // triplets中的副本数，也就是如果DN没有汇报过的副本，并不会处理
       final DatanodeDescriptor dn = currentBlock.getDatanode(i);
       final DatanodeStorageInfo storage = currentBlock.findStorageInfo(dn);
       // 移除old block

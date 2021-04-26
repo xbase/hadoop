@@ -1395,7 +1395,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
   public NamespaceInfo versionRequest() throws IOException {
     checkNNStartup();
     namesystem.checkSuperuserPrivilege();
-    return namesystem.getNamespaceInfo(); // namespace信息
+    return namesystem.getNamespaceInfo(); // namespace信息，对于每个NS来说基本不会变
   }
 
   /** 

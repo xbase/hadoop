@@ -85,7 +85,7 @@ public interface DatanodeProtocol {
    * @return the given {@link org.apache.hadoop.hdfs.server.protocol.DatanodeRegistration} with
    *  updated registration information
    */
-  // DN启动时，注册自己
+  // DN启动时，先请求一下namespace信息（versionRequest），再注册自己（registerDatanode）
   @Idempotent
   public DatanodeRegistration registerDatanode(DatanodeRegistration registration
       ) throws IOException;
@@ -193,7 +193,7 @@ public interface DatanodeProtocol {
                           int errorCode, 
                           String msg) throws IOException;
 
-  // DN启动时，请求一下namespace信息
+  // DN启动时，先请求一下namespace信息（versionRequest），再注册自己（registerDatanode）
   @Idempotent
   public NamespaceInfo versionRequest() throws IOException;
 

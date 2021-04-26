@@ -533,7 +533,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * Notify that loading of this FSDirectory is complete, and
    * it is imageLoaded for use
    */
-  void imageLoadComplete() {
+  void imageLoadComplete() { // 标记image加载完成
     Preconditions.checkState(!imageLoaded, "FSDirectory already loaded");
     setImageLoaded();
   }
@@ -557,6 +557,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   }
 
   // exposed for unit tests
+  // 标记image加载完成
+  // HA模式（Active、Standby）应该只有NN启动的时候，会加载image
   protected void setImageLoaded(boolean flag) {
     imageLoaded = flag;
   }
@@ -4126,10 +4128,11 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     case UNDER_RECOVERY:
       final BlockInfoContiguousUnderConstruction uc = (BlockInfoContiguousUnderConstruction)lastBlock;
       // determine if last block was intended to be truncated
-      Block recoveryBlock = uc.getTruncateBlock();
-      boolean truncateRecovery = recoveryBlock != null; // 最后一个block是否已经触发了租约恢复
-      boolean copyOnTruncate = truncateRecovery &&
+      Block recoveryBlock = uc.getTruncateBlock(); // 正在truncate的block（client调用truncate RPC）
+      boolean truncateRecovery = recoveryBlock != null; // 是否要使用truncate block进行租约恢复
+      boolean copyOnTruncate = truncateRecovery && // 如果此block没在truncate，copyOnTruncate一直是false？
           recoveryBlock.getBlockId() != uc.getBlockId();
+      // 这里没看懂 !copyOnTruncate == true，不就触发assert了？
       assert !copyOnTruncate || // 如果已经触发了租约恢复，那么下面的条件需要满足
           recoveryBlock.getBlockId() < uc.getBlockId() &&
           recoveryBlock.getGenerationStamp() < uc.getGenerationStamp() &&
@@ -4230,6 +4233,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     // since we just remove the uc feature from pendingFile
     pendingFile.toCompleteFile(now()); // 检查所有的block是否complete，并把inode转为正常状态
 
+    // 外层已经获取了fsLock，这个方法并不能完全释放锁，使imageLoad线程获取到锁，并且有可能会发生死锁
+    // 3.x版本已经去掉了此行代码
     waitForLoadingFSImage();
     // close file and persist block allocations for this file
     closeFile(src, pendingFile); // 记录到edit log
@@ -4337,7 +4342,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
             + " removal");
       }
       if ((!iFile.isUnderConstruction() || storedBlock.isComplete()) &&
-          iFile.getLastBlock().isComplete()) {
+          iFile.getLastBlock().isComplete()) { // 判断block是否已经complete
         if (LOG.isDebugEnabled()) {
           LOG.debug("Unexpected block (=" + oldBlock
                     + ") since the file (=" + iFile.getLocalName()
@@ -4348,10 +4353,10 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
       BlockInfoContiguousUnderConstruction truncatedBlock =
           (BlockInfoContiguousUnderConstruction) iFile.getLastBlock();
-      long recoveryId = truncatedBlock.getBlockRecoveryId();
+      long recoveryId = truncatedBlock.getBlockRecoveryId(); // 获取recovery id
       boolean copyTruncate =
           truncatedBlock.getBlockId() != storedBlock.getBlockId();
-      if(recoveryId != newgenerationstamp) {
+      if(recoveryId != newgenerationstamp) { // recovery id应该和new GS相等
         throw new IOException("The recovery id " + newgenerationstamp
                               + " does not match current recovery id "
                               + recoveryId + " for block " + oldBlock);
@@ -4366,7 +4371,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       }
       else {
         // update last block
-        if(!copyTruncate) {
+        if(!copyTruncate) { // 更新最后一个block的GS和长度
           storedBlock.setGenerationStamp(newgenerationstamp);
           storedBlock.setNumBytes(newlength);
         }
@@ -4393,7 +4398,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
           // the file is getting closed. Insert block locations into blockManager.
           // Otherwise fsck will report these blocks as MISSING, especially if the
           // blocksReceived from Datanodes take a long time to arrive.
-          for (int i = 0; i < trimmedTargets.size(); i++) {
+          for (int i = 0; i < trimmedTargets.size(); i++) { // 添加副本信息到NN内存
             DatanodeStorageInfo storageInfo =
                 trimmedTargets.get(i).getStorageInfo(trimmedStorages.get(i));
             if (storageInfo != null) {
@@ -4407,6 +4412,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         }
 
         // add pipeline locations into the INodeUnderConstruction
+        // 更新last block的副本信息
         DatanodeStorageInfo[] trimmedStorageInfos =
             blockManager.getDatanodeManager().getDatanodeStorageInfos(
                 trimmedTargets.toArray(new DatanodeID[trimmedTargets.size()]),
@@ -4422,7 +4428,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         }
       }
 
-      if (closeFile) {
+      if (closeFile) { // 是否要close file
         if(copyTruncate) {
           src = closeFileCommitBlocks(iFile, truncatedBlock);
           if(!iFile.isBlockInLatestSnapshot(storedBlock)) {
@@ -4431,7 +4437,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         } else {
           src = closeFileCommitBlocks(iFile, storedBlock);
         }
-      } else {
+      } else { // 不close file，则只记录一下block的edit log
         // If this commit does not want to close the file, persist blocks
         src = iFile.getFullPathName();
         persistBlocks(src, iFile, false);
@@ -4457,6 +4463,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * @return Path of the file that was closed.
    * @throws IOException on error
    */
+  // commit一个block（并没有要求上一个block已经complete），如果可以的话complete这个block，并且close文件
   @VisibleForTesting
   String closeFileCommitBlocks(INodeFile pendingFile, BlockInfoContiguous storedBlock)
       throws IOException {
@@ -4644,6 +4651,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    */
   private void closeFile(String path, INodeFile file) { // 记录到edit log
     assert hasWriteLock();
+    // 外层已经获取了fsLock，这个方法并不能完全释放锁，使imageLoad线程获取到锁，并且有可能会发生死锁
+    // 3.x版本已经去掉了此行代码
     waitForLoadingFSImage();
     // file is closed
     getEditLog().logCloseFile(path, file);
