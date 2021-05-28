@@ -70,7 +70,7 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
    */
   // 正在构建中的Replica
   static class ReplicaUnderConstruction extends Block {
-    private final DatanodeStorageInfo expectedLocation; // 期望的存储位置（NN分配的，但DN可能不遵守？）
+    private final DatanodeStorageInfo expectedLocation; // 期望的存储位置（NN分配的，但DN可能不遵守）
     private ReplicaState state; // 副本状态
     private boolean chosenAsPrimary; // block recovery时，是否以此Replica为主
 

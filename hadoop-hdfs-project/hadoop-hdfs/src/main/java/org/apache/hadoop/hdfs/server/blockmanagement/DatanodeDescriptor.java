@@ -319,6 +319,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
         Map.Entry<String, DatanodeStorageInfo> entry = iter.next();
         DatanodeStorageInfo storageInfo = entry.getValue();
         // 此storage记录的lastBlockReportId，不是本次的blockReportId，则说明DN上此磁盘有问题了
+        // 如果同一个DN的两个FBR在同时运行，这里有可能误判（DN发了一次FBR，然后快速重启又发了一次FBR）
         if (storageInfo.getLastBlockReportId() != curBlockReportId) {
           LOG.info(storageInfo.getStorageID() + " had lastBlockReportId 0x" +
               Long.toHexString(storageInfo.getLastBlockReportId()) +
@@ -445,15 +446,12 @@ public class DatanodeDescriptor extends DatanodeInfo {
       checkFailedStorages = volumeFailureSummary.getLastVolumeFailureDate() >
           this.volumeFailureSummary.getLastVolumeFailureDate();
     } else {
-      checkFailedStorages = (volFailures > this.volumeFailures) ||
-          !heartbeatedSinceRegistration;
+      checkFailedStorages = (volFailures > this.volumeFailures) || !heartbeatedSinceRegistration;
     }
 
     if (checkFailedStorages) {
-      LOG.info("Number of failed storage changes from "
-          + this.volumeFailures + " to " + volFailures);
-      failedStorageInfos = new HashSet<DatanodeStorageInfo>(
-          storageMap.values()); // 心跳时，没有汇报的storage，即认为是failed storage
+      LOG.info("Number of failed storage changes from " + this.volumeFailures + " to " + volFailures);
+      failedStorageInfos = new HashSet<DatanodeStorageInfo>(storageMap.values()); // 心跳时，没有汇报的storage，即认为是failed storage
     }
 
     setCacheCapacity(cacheCapacity);
@@ -483,7 +481,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
     setBlockPoolUsed(totalBlockPoolUsed);
     setDfsUsed(totalDfsUsed);
     if (checkFailedStorages) {
-      updateFailedStorage(failedStorageInfos);
+      updateFailedStorage(failedStorageInfos); // 心跳没汇报的storage设置为Failed
     }
 
     if (storageMap.size() != reports.length) {
@@ -505,17 +503,17 @@ public class DatanodeDescriptor extends DatanodeInfo {
 
     synchronized (storageMap) {
       // Init excessStorages with all known storages.
-      excessStorages = new HashMap<String, DatanodeStorageInfo>(storageMap);
+      excessStorages = new HashMap<String, DatanodeStorageInfo>(storageMap); // 复制一份此DN的storage列表
 
       // Remove storages that the DN reported in the heartbeat.
       for (final StorageReport report : reports) {
-        excessStorages.remove(report.getStorage().getStorageID());
+        excessStorages.remove(report.getStorage().getStorageID()); // 移除心跳汇报的storage，剩下的就是有问题的storage
       }
 
       // For each remaining storage, remove it if there are no associated
       // blocks.
       for (final DatanodeStorageInfo storageInfo : excessStorages.values()) {
-        if (storageInfo.numBlocks() == 0) {
+        if (storageInfo.numBlocks() == 0) { // 如果此storage的block为0，则直接移除此storage
           storageMap.remove(storageInfo.getStorageID());
           LOG.info("Removed storage " + storageInfo + " from DataNode" + this);
         } else if (LOG.isDebugEnabled()) {
@@ -527,8 +525,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
     }
   }
 
-  private void updateFailedStorage(
-      Set<DatanodeStorageInfo> failedStorageInfos) {
+  private void updateFailedStorage(Set<DatanodeStorageInfo> failedStorageInfos) {
     for (DatanodeStorageInfo storageInfo : failedStorageInfos) {
       if (storageInfo.getState() != DatanodeStorage.State.FAILED) {
         LOG.info(storageInfo + " failed.");

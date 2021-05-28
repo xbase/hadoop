@@ -84,7 +84,7 @@ public class DatanodeManager {
    * <p>
    * Mapping: StorageID -> DatanodeDescriptor
    */
-  private final NavigableMap<String, DatanodeDescriptor> datanodeMap // storageId(datanodeUuid) -> DatanodeDescriptor 的关系
+  private final NavigableMap<String, DatanodeDescriptor> datanodeMap // datanodeUuid -> DatanodeDescriptor 的关系
       = new TreeMap<String, DatanodeDescriptor>();
 
   /** Cluster network topology */

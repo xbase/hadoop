@@ -27,6 +27,7 @@ package org.apache.hadoop.hdfs.server.protocol;
  * of RPCs which this block report is split into, and the index into that
  * total for the current RPC.
  */
+// 如果DN的block大于1000万（可配置），则一次FBR只汇报一个目录
 public class BlockReportContext {
   private final int totalRpcs;
   private final int curRpc;

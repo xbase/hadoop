@@ -1848,7 +1848,7 @@ public class BlockManager {
         storageInfo.setLastBlockReportId(context.getReportId());
         if (lastStorageInRpc) { // 本次汇报的最后一个storage
           int rpcsSeen = node.updateBlockReportContext(context);
-          if (rpcsSeen >= context.getTotalRpcs()) {
+          if (rpcsSeen >= context.getTotalRpcs()) { // 判断此DN所有的storage，是否都已经处理过
             List<DatanodeStorageInfo> zombies = node.removeZombieStorages(); // 移除有问题的磁盘
             if (zombies.isEmpty()) {
               LOG.debug("processReport 0x{}: no zombie storages found.",
