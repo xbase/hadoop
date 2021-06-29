@@ -183,7 +183,7 @@ public abstract class BlockPlacementPolicy {
       final Map<String, List<DatanodeStorageInfo>> rackMap,
       final List<DatanodeStorageInfo> moreThanOne,
       final List<DatanodeStorageInfo> exactlyOne,
-      final DatanodeStorageInfo cur) {
+      final DatanodeStorageInfo cur) { // 从rackMap、moreThanOne、exactlyOne中移除cur
     
     final String rack = getRack(cur.getDatanodeDescriptor());
     final List<DatanodeStorageInfo> storages = rackMap.get(rack);

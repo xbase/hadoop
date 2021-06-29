@@ -104,7 +104,7 @@ public class BlockIdManager {
    * Sets the maximum allocated block ID for this filesystem. This is
    * the basis for allocating new block IDs.
    */
-  public void setLastAllocatedBlockId(long blockId) { // 从此id开始递增block id
+  public void setLastAllocatedBlockId(long blockId) { // 设置当前最大的block id，从此id开始递增block id
     blockIdGenerator.skipTo(blockId);
   }
 

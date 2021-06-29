@@ -1183,7 +1183,7 @@ public class DatanodeManager {
    * @return true if this cluster has ever consisted of multiple racks, even if
    *         it is not now a multi-rack cluster.
    */
-  boolean hasClusterEverBeenMultiRack() {
+  boolean hasClusterEverBeenMultiRack() { // 是否有多个机架
     return hasClusterEverBeenMultiRack;
   }
 

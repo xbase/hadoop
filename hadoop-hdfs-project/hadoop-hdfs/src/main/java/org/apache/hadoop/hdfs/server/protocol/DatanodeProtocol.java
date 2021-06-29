@@ -136,6 +136,7 @@ public interface DatanodeProtocol {
    * @throws IOException
    */
   // 全量块汇报
+  // 默认情况下，如果DN的block数量低于100万，则一次全发给NN，否则一次发一个目录
   @Idempotent
   public DatanodeCommand blockReport(DatanodeRegistration registration,
             String poolId, StorageBlockReport[] reports,

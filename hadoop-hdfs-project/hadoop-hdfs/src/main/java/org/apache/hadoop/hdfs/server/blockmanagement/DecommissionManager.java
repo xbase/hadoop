@@ -393,6 +393,7 @@ public class DecommissionManager {
       namesystem.writeLock();
       try {
         processPendingNodes();
+        // 检查block副本数是否充足，并添加到neededReplications中
         check();
       } finally {
         namesystem.writeUnlock();
@@ -577,7 +578,7 @@ public class DecommissionManager {
             liveReplicas)) {
           if (!blockManager.neededReplications.contains(block) && // 不包含在少副本集合
               blockManager.pendingReplications.getNumReplicas(block) == 0 && // 没有生成复制任务
-              namesystem.isPopulatingReplQueues()) {
+              namesystem.isPopulatingReplQueues()) { // 是否是Active
             // Process these blocks only when active NN is out of safe mode.
             blockManager.neededReplications.add(block, // 添加到少副本集合
                 curReplicas,

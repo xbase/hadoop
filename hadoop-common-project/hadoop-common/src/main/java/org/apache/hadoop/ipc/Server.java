@@ -374,7 +374,7 @@ public abstract class Server {
   private final boolean tcpNoDelay; // if T then disable Nagle's Algorithm
 
   volatile private boolean running = true;         // true while server runs
-  private CallQueueManager<Call> callQueue;
+  private CallQueueManager<Call> callQueue; // 默认大小为: handler size * 100，所有handler共用一个callQueue
 
   // maintains the set of client connections and handles idle timeouts
   private ConnectionManager connectionManager;

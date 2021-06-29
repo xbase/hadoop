@@ -466,7 +466,7 @@ class BPServiceActor implements Runnable {
     long brSendStartTime = monotonicNow();
     long reportId = generateUniqueBlockReportId();
     try {
-      if (totalBlockCount < dnConf.blockReportSplitThreshold) { // 如果少于1000万，则一次全部汇报
+      if (totalBlockCount < dnConf.blockReportSplitThreshold) { // 如果少于100万，则一次全部汇报
         // Below split threshold, send all reports in a single message.
         DatanodeCommand cmd = bpNamenode.blockReport(
             bpRegistration, bpos.getBlockPoolId(), reports,

@@ -508,6 +508,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   private final boolean haEnabled;
 
   /** flag indicating whether replication queues have been initialized */
+  // true有两种情况：
+  // 1、离开安全模式后
+  // 2、切换为Active后
   boolean initializedReplQueues = false;
 
   /**
@@ -565,6 +568,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
   /**
    * Block until the object is imageLoaded to be used.
+   *
+   * 可以移除，具体：https://issues.apache.org/jira/browse/HDFS-9430
    */
   void waitForLoadingFSImage() { // 等待image加载完成
     if (!imageLoaded) {
@@ -5702,16 +5707,16 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   /**
    * Check if replication queues are to be populated
    * @return true when node is HAState.Active and not in the very first safemode
-   *
-   * 返回true有两种情况：
-   * 1、离开安全模式后
-   * 2、切换为Active后
    */
+  // Active执行过initializeReplQueues()后，才会返回true
   @Override
   public boolean isPopulatingReplQueues() {
-    if (!shouldPopulateReplQueues()) {
+    if (!shouldPopulateReplQueues()) { // 只有Active才会返回true
       return false;
     }
+    // true有两种情况：
+    // 1、离开安全模式后
+    // 2、切换为Active后
     return initializedReplQueues; // 是否已经初始化过了
   }
 

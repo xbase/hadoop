@@ -1428,7 +1428,7 @@ public class BlockManager {
       rw.chooseTargets(blockplacement, storagePolicySuite, excludedNodes);
     }
 
-    // step 1: 将副本加入DN复制队列，下次心跳，发出复制命令
+    // step 3: 将副本加入DN复制队列，下次心跳，发出复制命令
     namesystem.writeLock();
     try {
       for(ReplicationWork rw : work){
@@ -2962,7 +2962,7 @@ public class BlockManager {
         return;
       }
       LightWeightLinkedSet<Block> excessBlocks = excessReplicateMap.get(cur.getDatanodeUuid());
-      if (excessBlocks == null || !excessBlocks.contains(block)) {
+      if (excessBlocks == null || !excessBlocks.contains(block)) { // 此副本没有添加到多副本集合
         if (!cur.isDecommissionInProgress() && !cur.isDecommissioned()) { // 此副本所在的DN没有decommission
           // exclude corrupt replicas
           if (corruptNodes == null || !corruptNodes.contains(cur)) { // 此副本没有损坏
@@ -3004,8 +3004,8 @@ public class BlockManager {
 
     final Map<String, List<DatanodeStorageInfo>> rackMap
         = new HashMap<String, List<DatanodeStorageInfo>>();
-    final List<DatanodeStorageInfo> moreThanOne = new ArrayList<DatanodeStorageInfo>();
-    final List<DatanodeStorageInfo> exactlyOne = new ArrayList<DatanodeStorageInfo>();
+    final List<DatanodeStorageInfo> moreThanOne = new ArrayList<DatanodeStorageInfo>(); // 机架上有多于一个副本的DN列表
+    final List<DatanodeStorageInfo> exactlyOne = new ArrayList<DatanodeStorageInfo>(); // 机架上只有一个副本的DN列表
     
     // split nodes into two sets
     // moreThanOne contains nodes on rack with more than one replica
@@ -3016,7 +3016,7 @@ public class BlockManager {
     // otherwise pick one with least space from priSet if it is not empty
     // otherwise one node with least space from remains
     boolean firstOne = true;
-    final DatanodeStorageInfo delNodeHintStorage = DatanodeStorageInfo.getDatanodeStorageInfo(nonExcess, delNodeHint); //
+    final DatanodeStorageInfo delNodeHintStorage = DatanodeStorageInfo.getDatanodeStorageInfo(nonExcess, delNodeHint); // DN标记的删除副本线索
     final DatanodeStorageInfo addedNodeStorage = DatanodeStorageInfo.getDatanodeStorageInfo(nonExcess, addedNode); // addedNode汇报的此副本
     while (nonExcess.size() - replication > 0) { // 当前正常的副本数多余期望的副本数
       final DatanodeStorageInfo cur;
@@ -3029,21 +3029,27 @@ public class BlockManager {
       firstOne = false;
 
       // adjust rackmap, moreThanOne, and exactlyOne
-      replicator.adjustSetsWithChosenReplica(rackMap, moreThanOne, exactlyOne, cur);
+      replicator.adjustSetsWithChosenReplica(rackMap, moreThanOne, exactlyOne, cur); // 从rackMap、moreThanOne、exactlyOne中移除cur
 
       nonExcess.remove(cur);
-      addToExcessReplicate(cur.getDatanodeDescriptor(), b);
-
       //
       // The 'excessblocks' tracks blocks until we get confirmation
       // that the datanode has deleted them; the only way we remove them
-      // is when we get a "removeBlock" message.  
+      // is when we get a "removeBlock" message.
       //
-      // The 'invalidate' list is used to inform the datanode the block 
+      // The 'invalidate' list is used to inform the datanode the block
       // should be deleted.  Items are removed from the invalidate list
       // upon giving instructions to the namenode.
       //
-      addToInvalidates(b, cur.getDatanodeDescriptor());
+
+      // 删除多余副本流程：
+      // 1、添加到invalidateBlocks和excessReplicateMap
+      // 2、ReplicationMonitor.computeInvalidateWork从invalidateBlocks取出添加到DatanodeDescriptor.invalidateBlocks
+      // 3、通过heartbeat下发给datanode
+      // 4、datanode删除成功，发送IBR DELETED_BLOCK
+      // 5、从excessReplicateMap中删除
+      addToExcessReplicate(cur.getDatanodeDescriptor(), b); // 添加到多副本集合
+      addToInvalidates(b, cur.getDatanodeDescriptor()); // 添加到待删除集合
       blockLog.info("BLOCK* chooseExcessReplicates: "
                 +"({}, {}) is added to invalidated blocks set", cur, b);
     }
@@ -3052,7 +3058,7 @@ public class BlockManager {
   /** Check if we can use delHint */
   static boolean useDelHint(boolean isFirst, DatanodeStorageInfo delHint,
       DatanodeStorageInfo added, List<DatanodeStorageInfo> moreThan1Racks,
-      List<StorageType> excessTypes) {
+      List<StorageType> excessTypes) { // 是否从delHint节点
     if (!isFirst) {
       return false; // only consider delHint for the first case
     } else if (delHint == null) {
@@ -3061,7 +3067,7 @@ public class BlockManager {
       return false; // delHint storage type is not an excess type
     } else {
       // check if removing delHint reduces the number of racks
-      if (moreThan1Racks.contains(delHint)) {
+      if (moreThan1Racks.contains(delHint)) { //
         return true; // delHint and some other nodes are under the same rack 
       } else if (added != null && !moreThan1Racks.contains(added)) {
         return true; // the added node adds a new rack
@@ -3854,7 +3860,7 @@ public class BlockManager {
     final int numlive = heartbeatManager.getLiveDatanodeCount();
     // 每次复制的副本数量
     final int blocksToProcess = numlive
-        * this.blocksReplWorkMultiplier;
+        * this.blocksReplWorkMultiplier; // 默认2
     // 每次执行删除的副本操作的DN数量
     final int nodesToProcess = (int) Math.ceil(numlive
         * this.blocksInvalidateWorkPct);
