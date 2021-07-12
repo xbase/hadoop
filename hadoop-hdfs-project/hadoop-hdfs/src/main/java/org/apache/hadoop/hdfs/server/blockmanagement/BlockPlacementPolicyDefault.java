@@ -227,7 +227,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
     return getPipeline(
         (writer != null && writer instanceof DatanodeDescriptor) ? writer
             : localNode,
-        results.toArray(new DatanodeStorageInfo[results.size()])); // // 根据机架位置排序
+        results.toArray(new DatanodeStorageInfo[results.size()])); // 根据机架位置排序
   }
 
   /**
@@ -314,7 +314,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
                             final EnumSet<StorageType> unavailableStorages,
                             final boolean newBlock) {
     if (numOfReplicas == 0 || clusterMap.getNumOfLeaves()==0) { // 如果期望的副本数为0 或者 DN为0
-      return (writer instanceof DatanodeDescriptor) ? writer : null; // 返回本地DN？
+      return (writer instanceof DatanodeDescriptor) ? writer : null; // 返回本地DN
     }
     final int numOfResults = results.size(); // 已经分配的副本数
     final int totalReplicasExpected = numOfReplicas + numOfResults; // 期望的副本数

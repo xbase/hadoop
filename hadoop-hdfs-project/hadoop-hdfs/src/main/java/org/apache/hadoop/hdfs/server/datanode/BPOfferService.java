@@ -514,12 +514,11 @@ class BPOfferService {
     try {
       final long txid = nnHaState.getTxId();
 
-      final boolean nnClaimsActive =
-          nnHaState.getState() == HAServiceState.ACTIVE;
-      final boolean bposThinksActive = bpServiceToActive == actor;
+      final boolean nnClaimsActive = nnHaState.getState() == HAServiceState.ACTIVE; // NN认为自己是Active
+      final boolean bposThinksActive = bpServiceToActive == actor; // DN认为此NN是Active
       final boolean isMoreRecentClaim = txid > lastActiveClaimTxId; // txid需比之前接收的大
 
-      if (nnClaimsActive && !bposThinksActive) {
+      if (nnClaimsActive && !bposThinksActive) { // DN认为的Active，和当前实际的Active不一致
         LOG.info("Namenode " + actor + " trying to claim ACTIVE state with " +
             "txid=" + txid);
         if (!isMoreRecentClaim) {

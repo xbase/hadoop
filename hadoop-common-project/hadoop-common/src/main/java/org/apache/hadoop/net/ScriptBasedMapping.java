@@ -171,7 +171,7 @@ public class ScriptBasedMapping extends CachedDNSToSwitchMapping {
     public RawScriptBasedMapping() {}
 
     @Override
-    public List<String> resolve(List<String> names) {
+    public List<String> resolve(List<String> names) { // 通过hostname或者ip，获取机架信息
       List<String> m = new ArrayList<String>(names.size());
 
       if (names.isEmpty()) {

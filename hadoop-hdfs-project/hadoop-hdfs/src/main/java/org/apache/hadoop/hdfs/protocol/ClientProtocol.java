@@ -1014,6 +1014,8 @@ public interface ClientProtocol {
    * @throws UnresolvedLinkException if <code>src</code> contains a symlink. 
    * @throws IOException If an I/O error occurred
    */
+  // hflush: client buffer中的数据发送到了DN，确保DN收到了数据
+  // hsync: client buffer中的数据发送到了DN，确保DN一定把数据落盘了
   @Idempotent
   public void fsync(String src, long inodeId, String client,
                     long lastBlockLength)
