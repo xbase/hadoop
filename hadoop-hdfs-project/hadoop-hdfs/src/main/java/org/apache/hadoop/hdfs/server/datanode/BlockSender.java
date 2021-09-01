@@ -447,7 +447,7 @@ class BlockSender implements java.io.Closeable {
   }
   
   private static Replica getReplica(ExtendedBlock block, DataNode datanode)
-      throws ReplicaNotFoundException {
+      throws ReplicaNotFoundException { // 获取指定副本信息
     Replica replica = datanode.data.getReplica(block.getBlockPoolId(),
         block.getBlockId());
     if (replica == null) {
@@ -463,7 +463,7 @@ class BlockSender implements java.io.Closeable {
    * @throws IOException on failing to reach the len in given wait time
    */
   private static void waitForMinLength(ReplicaBeingWritten rbw, long len)
-      throws IOException {
+      throws IOException { // 等待此副本达到想读取的长度
     // Wait for 3 seconds for rbw replica to reach the minimum length
     for (int i = 0; i < 30 && rbw.getBytesOnDisk() < len; i++) {
       try {
@@ -547,7 +547,7 @@ class BlockSender implements java.io.Closeable {
     byte[] buf = pkt.array();
     
     if (checksumSize > 0 && checksumIn != null) {
-      readChecksum(buf, checksumOff, checksumDataLen); // 读取校验和
+      readChecksum(buf, checksumOff, checksumDataLen); // 读取校验和到buffer
 
       // write in progress that we need to use to get last checksum
       if (lastDataPacket && lastChunkChecksum != null) { // 正在写的块，填充最后一个chunk的校验和到buffer
@@ -562,7 +562,7 @@ class BlockSender implements java.io.Closeable {
     
     int dataOff = checksumOff + checksumDataLen; // 校验块偏移量
     if (!transferTo) { // normal transfer
-      IOUtils.readFully(blockIn, buf, dataOff, dataLen); // 读取校验块到buffer
+      IOUtils.readFully(blockIn, buf, dataOff, dataLen); // 读取数据块到buffer
 
       if (verifyChecksum) {
         verifyChecksum(buf, dataOff, dataLen, numChunks, checksumOff); // 验证校验和

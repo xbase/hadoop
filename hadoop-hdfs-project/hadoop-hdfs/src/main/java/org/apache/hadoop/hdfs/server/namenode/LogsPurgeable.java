@@ -46,6 +46,6 @@ interface LogsPurgeable {
    * inaccessible
    */
   void selectInputStreams(Collection<EditLogInputStream> streams,
-      long fromTxId, boolean inProgressOk) throws IOException;
+      long fromTxId, boolean inProgressOk) throws IOException; // 获取比fromTxId大的edit文件
   
 }

@@ -312,7 +312,7 @@ public class EditLogTailer {
           // read any more transactions since the last time a roll was
           // triggered.
           if (tooLongSinceLastLoad() &&
-              lastRollTriggerTxId < lastLoadedTxnId) {
+              lastRollTriggerTxId < lastLoadedTxnId) { // 默认：2分钟
             // 周期性触发Active NameNode roll editlog文件
             triggerActiveLogRoll();
           }

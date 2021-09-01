@@ -32,7 +32,8 @@ import java.util.*;
  * expected number of good replicas.
  * Mapping: Block -> TreeSet<DatanodeDescriptor> 
  */
-
+// 1、删除corrupt副本，是先补副本，再删除corrupt副本，中间需要有个地方记录corrupt副本的地方
+// 2、corrupt副本归因，类似于block missing了，管理员想知道为什么missing这种需求
 @InterfaceAudience.Private
 public class CorruptReplicasMap{ // 保存损坏的数据块副本
 

@@ -113,8 +113,8 @@ public class NNStorageRetentionManager {
         new FSImageTransactionalStorageInspector(EnumSet.of(nnf));
     storage.inspectStorageDirs(inspector);
 
-    long minImageTxId = getImageTxIdToRetain(inspector);
-    purgeCheckpointsOlderThan(inspector, minImageTxId);
+    long minImageTxId = getImageTxIdToRetain(inspector); // 获取image文件的txid
+    purgeCheckpointsOlderThan(inspector, minImageTxId); // 删除比minImageTxId小的image文件
     
     if (nnf == NameNodeFile.IMAGE_ROLLBACK) {
       // do not purge edits for IMAGE_ROLLBACK.
@@ -130,11 +130,11 @@ public class NNStorageRetentionManager {
     //
     // First, determine the target number of extra transactions to retain based
     // on the configured amount.
-    long minimumRequiredTxId = minImageTxId + 1;
-    long purgeLogsFrom = Math.max(0, minimumRequiredTxId - numExtraEditsToRetain);
+    long minimumRequiredTxId = minImageTxId + 1; // 必须要保留的edit，minimumRequiredTxId之后的edit可能还没有合并到image文件
+    long purgeLogsFrom = Math.max(0, minimumRequiredTxId - numExtraEditsToRetain); // numExtraEditsToRetain配置中指定的，额外需要保留的edit
     
     ArrayList<EditLogInputStream> editLogs = new ArrayList<EditLogInputStream>();
-    purgeableLogs.selectInputStreams(editLogs, purgeLogsFrom, false);
+    purgeableLogs.selectInputStreams(editLogs, purgeLogsFrom, false); // 获取比purgeLogsFrom大的edit文件
     Collections.sort(editLogs, new Comparator<EditLogInputStream>() {
       @Override
       public int compare(EditLogInputStream a, EditLogInputStream b) {
@@ -143,17 +143,17 @@ public class NNStorageRetentionManager {
             .compare(a.getLastTxId(), b.getLastTxId())
             .result();
       }
-    });
+    }); // 从小到大排序
 
     // Remove from consideration any edit logs that are in fact required.
     while (editLogs.size() > 0 &&
         editLogs.get(editLogs.size() - 1).getFirstTxId() >= minimumRequiredTxId) {
-      editLogs.remove(editLogs.size() - 1);
+      editLogs.remove(editLogs.size() - 1); // 删除比minimumRequiredTxId大的edit文件
     }
     
     // Next, adjust the number of transactions to retain if doing so would mean
     // keeping too many segments around.
-    while (editLogs.size() > maxExtraEditsSegmentsToRetain) {
+    while (editLogs.size() > maxExtraEditsSegmentsToRetain) { // 最多保留多少个edit文件
       purgeLogsFrom = editLogs.get(0).getLastTxId() + 1;
       editLogs.remove(0);
     }
@@ -166,7 +166,7 @@ public class NNStorageRetentionManager {
           + minimumRequiredTxId);
     }
     
-    purgeableLogs.purgeLogsOlderThan(purgeLogsFrom);
+    purgeableLogs.purgeLogsOlderThan(purgeLogsFrom); // 删除比purgeLogsFrom小的edit文件
   }
   
   private void purgeCheckpointsOlderThan(
@@ -184,9 +184,8 @@ public class NNStorageRetentionManager {
    * @return the transaction ID corresponding to the oldest checkpoint
    * that should be retained. 
    */
-  private long getImageTxIdToRetain(FSImageTransactionalStorageInspector inspector) {
-      
-    List<FSImageFile> images = inspector.getFoundImages();
+  private long getImageTxIdToRetain(FSImageTransactionalStorageInspector inspector) { // 获取被保留的image文件的txid
+    List<FSImageFile> images = inspector.getFoundImages();                            // 也就是此txid之前的edit，已经都包含在image文件中
     TreeSet<Long> imageTxIds = Sets.newTreeSet();
     for (FSImageFile image : images) {
       imageTxIds.add(image.getCheckpointTxId());
@@ -198,11 +197,11 @@ public class NNStorageRetentionManager {
     }
     
     Collections.reverse(imageTxIdsList);
-    int toRetain = Math.min(numCheckpointsToRetain, imageTxIdsList.size());    
+    int toRetain = Math.min(numCheckpointsToRetain, imageTxIdsList.size()); // 保留几个image文件
     long minTxId = imageTxIdsList.get(toRetain - 1);
     LOG.info("Going to retain " + toRetain + " images with txid >= " +
         minTxId);
-    return minTxId;
+    return minTxId; // 被保留的image文件的txid
   }
   
   /**

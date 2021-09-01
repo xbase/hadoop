@@ -159,15 +159,15 @@ public class FileJournalManager implements JournalManager {
   }
 
   @Override
-  public void purgeLogsOlderThan(long minTxIdToKeep)
+  public void purgeLogsOlderThan(long minTxIdToKeep) // 删除比minTxIdToKeep小的edit文件
       throws IOException {
     LOG.info("Purging logs older than " + minTxIdToKeep);
-    File[] files = FileUtil.listFiles(sd.getCurrentDir());
+    File[] files = FileUtil.listFiles(sd.getCurrentDir()); // 遍历此目录下的文件
     List<EditLogFile> editLogs = matchEditLogs(files, true);
     for (EditLogFile log : editLogs) {
-      if (log.getFirstTxId() < minTxIdToKeep &&
+      if (log.getFirstTxId() < minTxIdToKeep && // FirstTxId比minTxIdToKeep小
           log.getLastTxId() < minTxIdToKeep) {
-        purger.purgeLog(log);
+        purger.purgeLog(log); // 删除此edit文件
       }
     }
   }
@@ -265,7 +265,7 @@ public class FileJournalManager implements JournalManager {
     for (File f : filesInStorage) {
       String name = f.getName();
       // Check for edits
-      Matcher editsMatch = EDITS_REGEX.matcher(name);
+      Matcher editsMatch = EDITS_REGEX.matcher(name); // 已经完成的edit文件
       if (editsMatch.matches()) {
         try {
           long startTxId = Long.parseLong(editsMatch.group(1));
@@ -280,7 +280,7 @@ public class FileJournalManager implements JournalManager {
       }
       
       // Check for in-progress edits
-      Matcher inProgressEditsMatch = EDITS_INPROGRESS_REGEX.matcher(name);
+      Matcher inProgressEditsMatch = EDITS_INPROGRESS_REGEX.matcher(name); // 正在写的edit文件
       if (inProgressEditsMatch.matches()) {
         try {
           long startTxId = Long.parseLong(inProgressEditsMatch.group(1));

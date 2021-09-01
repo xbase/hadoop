@@ -161,11 +161,11 @@ public class DfsClientShmManager implements Closeable {
      *                        itself (or the network) is the problem.
      */
     private DfsClientShm requestNewShm(String clientName, DomainPeer peer)
-        throws IOException {
+        throws IOException { // 创建共享内存
       final DataOutputStream out = 
           new DataOutputStream(
               new BufferedOutputStream(peer.getOutputStream()));
-      new Sender(out).requestShortCircuitShm(clientName);
+      new Sender(out).requestShortCircuitShm(clientName); // 请求DN创建共享内存
       ShortCircuitShmResponseProto resp = 
           ShortCircuitShmResponseProto.parseFrom(
               PBHelper.vintPrefixed(peer.getInputStream()));
@@ -186,7 +186,7 @@ public class DfsClientShmManager implements Closeable {
         try {
           DfsClientShm shm = 
               new DfsClientShm(PBHelper.convert(resp.getId()),
-                  fis[0], this, peer);
+                  fis[0], this, peer); // client打开共享内存
           if (LOG.isTraceEnabled()) {
             LOG.trace(this + ": createNewShm: created " + shm);
           }
@@ -227,7 +227,7 @@ public class DfsClientShmManager implements Closeable {
      * @throws IOException  If there was an error communicating over the socket.
      */
     Slot allocSlot(DomainPeer peer, MutableBoolean usedPeer,
-        String clientName, ExtendedBlockId blockId) throws IOException {
+        String clientName, ExtendedBlockId blockId) throws IOException { // 创建共享内存
       while (true) {
         if (closed) {
           if (LOG.isTraceEnabled()) {
@@ -259,7 +259,7 @@ public class DfsClientShmManager implements Closeable {
           lock.unlock();
           DfsClientShm shm;
           try {
-            shm = requestNewShm(clientName, peer);
+            shm = requestNewShm(clientName, peer);// 创建共享内存
             if (shm == null) continue;
             // See #{DfsClientShmManager#domainSocketWatcher} for details
             // about why we do this before retaking the manager lock.
@@ -419,7 +419,7 @@ public class DfsClientShmManager implements Closeable {
   
   public Slot allocSlot(DatanodeInfo datanode, DomainPeer peer,
       MutableBoolean usedPeer, ExtendedBlockId blockId,
-      String clientName) throws IOException {
+      String clientName) throws IOException { // 创建共享内存
     lock.lock();
     try {
       if (closed) {

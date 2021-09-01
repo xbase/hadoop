@@ -378,7 +378,7 @@ class BlockReaderLocal implements BlockReader {
         // from transient storage on the DataNode side.
         return true;
       } else {
-        return replica.addNoChecksumAnchor();
+        return replica.addNoChecksumAnchor(); // replica已经被缓存在内存中
       }
     } else {
       return true;
@@ -395,7 +395,7 @@ class BlockReaderLocal implements BlockReader {
 
   @Override
   public synchronized int read(ByteBuffer buf) throws IOException {
-    boolean canSkipChecksum = createNoChecksumContext();
+    boolean canSkipChecksum = createNoChecksumContext(); // replica已经被缓存在内存中
     try {
       String traceString = null;
       if (LOG.isTraceEnabled()) {

@@ -480,7 +480,7 @@ public class ShortCircuitShm {
     this.shmId = shmId;
     this.mmappedLength = getUsableLength(stream);
     this.baseAddress = POSIX.mmap(stream.getFD(), 
-        POSIX.MMAP_PROT_READ | POSIX.MMAP_PROT_WRITE, true, mmappedLength);
+        POSIX.MMAP_PROT_READ | POSIX.MMAP_PROT_WRITE, true, mmappedLength); // 共享内存
     this.slots = new Slot[mmappedLength / BYTES_PER_SLOT];
     this.allocatedSlots = new BitSet(slots.length);
     if (LOG.isTraceEnabled()) {

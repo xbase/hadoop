@@ -1313,10 +1313,10 @@ public class FSEditLog implements LogsPurgeable {
    * effect.
    */
   @Override
-  public synchronized void purgeLogsOlderThan(final long minTxIdToKeep) {
+  public synchronized void purgeLogsOlderThan(final long minTxIdToKeep) { // 删除比minTxIdToKeep小的edit文件
     // Should not purge logs unless they are open for write.
     // This prevents the SBN from purging logs on shared storage, for example.
-    if (!isOpenForWrite()) {
+    if (!isOpenForWrite()) { // Standby不能调用这个方法？
       return;
     }
     

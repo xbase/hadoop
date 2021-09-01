@@ -130,7 +130,7 @@ public class DomainSocketFactory {
    *
    * @return             Information about the socket path.
    */
-  public PathInfo getPathInfo(InetSocketAddress addr, DFSClient.Conf conf) {
+  public PathInfo getPathInfo(InetSocketAddress addr, DFSClient.Conf conf) { // 获取域socket path信息
     // If there is no domain socket path configured, we can't use domain
     // sockets.
     if (conf.getDomainSocketPath().isEmpty()) return PathInfo.NOT_CONFIGURED;
@@ -156,7 +156,7 @@ public class DomainSocketFactory {
     }
   }
 
-  public DomainSocket createSocket(PathInfo info, int socketTimeout) {
+  public DomainSocket createSocket(PathInfo info, int socketTimeout) { // 创建一个域socket连接
     Preconditions.checkArgument(info.getPathState() != PathState.UNUSABLE);
     boolean success = false;
     DomainSocket sock = null;
