@@ -2074,13 +2074,13 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
     // Check if the file is already being truncated with the same length
     final BlockInfoContiguous last = file.getLastBlock();
-    if (last != null && last.getBlockUCState() == BlockUCState.UNDER_RECOVERY) {
+    if (last != null && last.getBlockUCState() == BlockUCState.UNDER_RECOVERY) { // 说明当前正在执行truncate操作
       final Block truncateBlock
           = ((BlockInfoContiguousUnderConstruction)last).getTruncateBlock();
       if (truncateBlock != null) {
         final long truncateLength = file.computeFileSize(false, false)
             + truncateBlock.getNumBytes();
-        if (newLength == truncateLength) {
+        if (newLength == truncateLength) { // 正在执行的truncate操作和本次操作一样
           return false;
         }
       }
@@ -2091,7 +2091,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         iip, src, clientName, clientMachine, false);
     // Truncate length check.
     long oldLength = file.computeFileSize();
-    if(oldLength == newLength) {
+    if(oldLength == newLength) { // 不需要truncate
       return true;
     }
     if(oldLength < newLength) {
@@ -2102,20 +2102,20 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     // Perform INodeFile truncation.
     final QuotaCounts delta = new QuotaCounts.Builder().build();
     boolean onBlockBoundary = dir.truncate(iip, newLength, toRemoveBlocks,
-        mtime, delta);
+        mtime, delta); // 通过删除多余的block，是否就能达到预期的truncate
     Block truncateBlock = null;
     if(!onBlockBoundary) {
       // Open file for write, but don't log into edits
-      long lastBlockDelta = file.computeFileSize() - newLength;
+      long lastBlockDelta = file.computeFileSize() - newLength; // 最后一个block需要删除的size
       assert lastBlockDelta > 0 : "delta is 0 only if on block bounday";
       truncateBlock = prepareFileForTruncate(iip, clientName, clientMachine,
-          lastBlockDelta, null);
+          lastBlockDelta, null); // 通过recovery删除最后一个block部分数据
     }
 
     // update the quota: use the preferred block size for UC block
     dir.writeLock();
     try {
-      dir.updateCountNoQuotaCheck(iip, iip.length() - 1, delta);
+      dir.updateCountNoQuotaCheck(iip, iip.length() - 1, delta); // 更新quota
     } finally {
       dir.writeUnlock();
     }
@@ -2143,17 +2143,17 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     INodeFile file = iip.getLastINode().asFile();
     String src = iip.getPath();
     file.recordModification(iip.getLatestSnapshotId());
-    file.toUnderConstruction(leaseHolder, clientMachine);
+    file.toUnderConstruction(leaseHolder, clientMachine); // 把文件转为构建状态
     assert file.isUnderConstruction() : "inode should be under construction.";
     leaseManager.addLease(
-        file.getFileUnderConstructionFeature().getClientName(), src);
+        file.getFileUnderConstructionFeature().getClientName(), src); // 添加lease
     boolean shouldRecoverNow = (newBlock == null);
     BlockInfoContiguous oldBlock = file.getLastBlock();
-    boolean shouldCopyOnTruncate = shouldCopyOnTruncate(file, oldBlock);
+    boolean shouldCopyOnTruncate = shouldCopyOnTruncate(file, oldBlock); // 如果没使用snapshot，应该是false
     if(newBlock == null) {
       newBlock = (shouldCopyOnTruncate) ? createNewBlock() :
-          new Block(oldBlock.getBlockId(), oldBlock.getNumBytes(),
-              nextGenerationStamp(blockIdManager.isLegacyBlock(oldBlock)));
+          new Block(oldBlock.getBlockId(), oldBlock.getNumBytes(), // 就算不需要copy，也新建了一个block对象
+              nextGenerationStamp(blockIdManager.isLegacyBlock(oldBlock))); // 新的GS
     }
 
     BlockInfoContiguousUnderConstruction truncatedBlockUC;
@@ -2173,11 +2173,11 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
           newBlock, truncatedBlockUC.getTruncateBlock());
     } else {
       // Use new generation stamp for in-place truncate recovery
-      blockManager.convertLastBlockToUnderConstruction(file, lastBlockDelta);
+      blockManager.convertLastBlockToUnderConstruction(file, lastBlockDelta); // 把最后一个block转为UC状态
       oldBlock = file.getLastBlock();
       assert !oldBlock.isComplete() : "oldBlock should be under construction";
       truncatedBlockUC = (BlockInfoContiguousUnderConstruction) oldBlock;
-      truncatedBlockUC.setTruncateBlock(new Block(oldBlock));
+      truncatedBlockUC.setTruncateBlock(new Block(oldBlock)); // 设置truncate block
       truncatedBlockUC.getTruncateBlock().setNumBytes(
           oldBlock.getNumBytes() - lastBlockDelta);
       truncatedBlockUC.getTruncateBlock().setGenerationStamp(
@@ -2189,7 +2189,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
           truncatedBlockUC.getTruncateBlock().getNumBytes(), truncatedBlockUC);
     }
     if (shouldRecoverNow) {
-      truncatedBlockUC.initializeBlockRecovery(newBlock.getGenerationStamp());
+      truncatedBlockUC.initializeBlockRecovery(newBlock.getGenerationStamp()); // 通过block recovery删除block的一部分数据
     }
 
     return newBlock;
@@ -2206,7 +2206,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     if (isRollingUpgrade()) {
       return true;
     }
-    return file.isBlockInLatestSnapshot(blk);
+    return file.isBlockInLatestSnapshot(blk); // 这个block是否属于某个snapshot
   }
 
   /**
@@ -3093,7 +3093,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       checkOperation(OperationCategory.READ);
       src = dir.resolvePath(pc, src, pathComponents);
       FileState fileState = analyzeFileState(
-          src, fileId, clientName, previous, onRetryBlock);  // 分析client上报和NN记录的block信息(id和GS)是否相同
+          src, fileId, clientName, previous, onRetryBlock);  // 检查租约，分析client上报和NN记录的block信息(id和GS)是否相同
       final INodeFile pendingFile = fileState.inode;
       // Check if the penultimate block is minimally replicated
       if (!checkFileProgress(src, pendingFile, false)) { // 检查倒数第二个block是否complete
@@ -3228,7 +3228,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     }
   }
 
-  // 分析client上报和NN记录的block信息(id和GS)是否相同
+  // 检查租约，分析client上报和NN记录的block信息(id和GS)是否相同
   FileState analyzeFileState(String src,
                                 long fileId,
                                 String clientName,
@@ -3855,7 +3855,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   /**
    * @see SafeModeInfo#shouldIncrementallyTrackBlocks
    */
-  private boolean isSafeModeTrackingBlocks() {
+  private boolean isSafeModeTrackingBlocks() { // 当加载完fsimage文件之后，需要以增量的方式维护block的数量
     if (!haEnabled) {
       // Never track blocks incrementally in non-HA code.
       return false;
@@ -4677,7 +4677,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     public void run () {
       try {
         while (fsRunning && shouldNNRmRun) {
-          checkAvailableResources();
+          checkAvailableResources(); // 检查edits等NN目录所在的磁盘空间是否充足
           if(!nameNodeHasResourcesAvailable()) {
             String lowResourcesMsg = "NameNode low on available disk space. ";
             if (!isInSafeMode()) {
@@ -5165,7 +5165,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
      * <br> 0 safe mode is on, and threshold is not reached yet 还没达到退出阈值
      * <br> >0 safe mode is on, but we are in extension period 达到退出阈值，但还没达到extension时间
      */
-    private long reached = -1; // 记录安全模式状态
+    private long reached = -1; // 记录安全模式状态，注意这个默认值，默认是退出安全模式状态
     private long reachedTimestamp = -1;
     /** Total number of blocks. */
     int blockTotal; // block总量
@@ -5228,7 +5228,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
      * set after the image has been loaded.
      */
     private boolean shouldIncrementallyTrackBlocks() {
-      return shouldIncrementallyTrackBlocks;
+      return shouldIncrementallyTrackBlocks; // HA模式，当通过image和edit初始过blockTotal后，应该以增量的方式，继续维护blockTotal字段
     }
 
     /**
@@ -5240,7 +5240,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
      * 
      * @see SafeModeInfo
      */
-    // 通过命令行或者DN空间不足，而进入安全模式
+    // 通过命令行或者NN磁盘不足，而进入安全模式
     private SafeModeInfo(boolean resourcesLow) {
       this.threshold = 1.5f;  // this threshold can never be reached
       this.datanodeThreshold = Integer.MAX_VALUE;
@@ -5411,7 +5411,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       this.blockThreshold = (int) (blockTotal * threshold); // block threshold 数量
       this.blockReplQueueThreshold = 
         (int) (blockTotal * replQueueThreshold); // 默认和block threshold一样
-      if (haEnabled) { // HA模式，当通过image和edit初始过blockTotal后，还应该继续维护blockTotal字段
+      if (haEnabled) { // HA模式，当通过image和edit初始过blockTotal后，应该以增量的方式，继续维护blockTotal字段
         // After we initialize the block count, any further namespace
         // modifications done while in safe mode need to keep track
         // of the number of total blocks in the system.

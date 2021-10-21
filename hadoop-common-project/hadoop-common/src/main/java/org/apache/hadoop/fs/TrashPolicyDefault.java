@@ -108,32 +108,32 @@ public class TrashPolicyDefault extends TrashPolicy {
     if (!isEnabled())
       return false;
 
-    if (!path.isAbsolute())                       // make path absolute
+    if (!path.isAbsolute())                       // make path absolute 是否是绝对路径
       path = new Path(fs.getWorkingDirectory(), path);
 
-    if (!fs.exists(path))                         // check that path exists
+    if (!fs.exists(path))                         // check that path exists path是否存在
       throw new FileNotFoundException(path.toString());
 
     String qpath = fs.makeQualified(path).toString();
 
-    if (qpath.startsWith(trash.toString())) {
+    if (qpath.startsWith(trash.toString())) { // 是否已经在当前用户的trash目录中
       return false;                               // already in trash
     }
 
-    if (trash.getParent().toString().startsWith(qpath)) {
+    if (trash.getParent().toString().startsWith(qpath)) { // 不能删除trash的上层目录，比如父目录
       throw new IOException("Cannot move \"" + path +
                             "\" to the trash, as it contains the trash");
     }
 
-    Path trashPath = makeTrashRelativePath(current, path);
-    Path baseTrashPath = makeTrashRelativePath(current, path.getParent());
+    Path trashPath = makeTrashRelativePath(current, path); // 待删除path在trash中的path
+    Path baseTrashPath = makeTrashRelativePath(current, path.getParent()); // 待删除path在trash中的父目录
     
     IOException cause = null;
 
     // try twice, in case checkpoint between the mkdirs() & rename()
     for (int i = 0; i < 2; i++) {
       try {
-        if (!fs.mkdirs(baseTrashPath, PERMISSION)) {      // create current
+        if (!fs.mkdirs(baseTrashPath, PERMISSION)) {      // create current 创建父目录
           LOG.warn("Can't create(mkdir) trash directory: " + baseTrashPath);
           return false;
         }
@@ -146,8 +146,8 @@ public class TrashPolicyDefault extends TrashPolicy {
         // if the target path in Trash already exists, then append with 
         // a current time in millisecs.
         String orig = trashPath.toString();
-        
-        while(fs.exists(trashPath)) {
+
+        while(fs.exists(trashPath)) { // 待删除的path，已经在trash中存在，则path后面加一个时间戳
           trashPath = new Path(orig + Time.now());
         }
         

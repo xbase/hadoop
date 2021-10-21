@@ -1472,6 +1472,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
   // monitorHealth方法，虽然没有获取fsLock，但如果某个rpc请求处理的太慢，
   // 可能会把queue堵满，导致handler处理不到monitorHealth请求，
   // 进而导致zkfc healthChecks失败，然后触发主备切换。
+  // 注意：如果NN在安全模式，也有可能正常返回
   @Override // HAServiceProtocol
   public synchronized void monitorHealth() throws HealthCheckFailedException,
       AccessControlException, IOException {

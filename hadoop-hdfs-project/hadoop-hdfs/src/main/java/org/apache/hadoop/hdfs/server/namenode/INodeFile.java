@@ -815,12 +815,12 @@ public class INodeFile extends INodeWithAdditionalFields
 
     // starting from block n, the data is beyond max.
     // resize the array.
-    truncateBlocksTo(n);
+    truncateBlocksTo(n); // 需要保留的block列表
 
     // collect the blocks beyond max
     if (collectedBlocks != null) {
       for(; n < oldBlocks.length; n++) {
-        collectedBlocks.addDeleteBlock(oldBlocks[n]);
+        collectedBlocks.addDeleteBlock(oldBlocks[n]); // 需要删除的block
       }
     }
     return size;
@@ -863,7 +863,7 @@ public class INodeFile extends INodeWithAdditionalFields
     return onBoundary ? -truncateSize : (getPreferredBlockSize() - truncateSize);
   }
 
-  void truncateBlocksTo(int n) {
+  void truncateBlocksTo(int n) { // 设置需要保留的block列表
     final BlockInfoContiguous[] newBlocks;
     if (n == 0) {
       newBlocks = BlockInfoContiguous.EMPTY_ARRAY;
@@ -915,7 +915,7 @@ public class INodeFile extends INodeWithAdditionalFields
   /**
    * @return true if the block is contained in a snapshot or false otherwise.
    */
-  boolean isBlockInLatestSnapshot(BlockInfoContiguous block) {
+  boolean isBlockInLatestSnapshot(BlockInfoContiguous block) { // 这个block是否属于某个snapshot
     FileWithSnapshotFeature sf = this.getFileWithSnapshotFeature();
     if (sf == null || sf.getDiffs() == null) {
       return false;

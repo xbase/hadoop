@@ -103,7 +103,7 @@ public class Sender implements DataTransferProtocol {
       final CachingStrategy cachingStrategy) throws IOException {
 
     OpReadBlockProto proto = OpReadBlockProto.newBuilder()
-      .setHeader(DataTransferProtoUtil.buildClientHeader(blk, clientName, blockToken))
+      .setHeader(DataTransferProtoUtil.buildClientHeader(blk, clientName, blockToken)) // 设置header
       .setOffset(blockOffset)
       .setLen(length)
       .setSendChecksums(sendChecksum)

@@ -102,7 +102,7 @@ class Delete {
       // etc), then the path will just be deleted because moveToTrash returns
       // false and it falls thru to fs.delete.  this doesn't seem right
       if (moveToTrash(item)) {
-        return;
+        return; // 移动到trash，并返回
       }
       if (!item.fs.delete(item.path, deleteDirs)) {
         throw new PathIOException(item.toString());

@@ -718,7 +718,7 @@ public class BlockManager {
    * @param bytesToRemove num of bytes to remove from block
    * @return the last block locations if the block is partial or null otherwise
    */
-  public LocatedBlock convertLastBlockToUnderConstruction(
+  public LocatedBlock convertLastBlockToUnderConstruction(         // 把最后一个block转为UC状态
       BlockCollection bc, long bytesToRemove) throws IOException { // 如果最后一个块没写满，则返回最后一个块，否则返回null
     BlockInfoContiguous oldBlock = bc.getLastBlock();
     if(oldBlock == null ||

@@ -178,7 +178,7 @@ public class NameNodeResourceChecker {
    *         least one redundant volume and all of the required volumes, false
    *         otherwise.
    */
-  public boolean hasAvailableDiskSpace() {
+  public boolean hasAvailableDiskSpace() { // 检查edits等NN目录所在的磁盘空间是否充足
     return NameNodeResourcePolicy.areResourcesAvailable(volumes.values(),
         minimumRedundantVolumes);
   }

@@ -1127,14 +1127,14 @@ public class FSDirectory implements Closeable { // 对目录树的增删改查�
     int latestSnapshot = iip.getLatestSnapshotId();
     file.recordModification(latestSnapshot, true);
 
-    verifyQuotaForTruncate(iip, file, newLength, delta);
+    verifyQuotaForTruncate(iip, file, newLength, delta); // 检查quota
 
     long remainingLength =
-        file.collectBlocksBeyondMax(newLength, collectedBlocks);
+        file.collectBlocksBeyondMax(newLength, collectedBlocks); // 先删除多余的block
     file.excludeSnapshotBlocks(latestSnapshot, collectedBlocks);
     file.setModificationTime(mtime);
     // return whether on a block boundary
-    return (remainingLength - newLength) == 0;
+    return (remainingLength - newLength) == 0; // 通过删除多余的block，是否就能达到预期的truncate
   }
 
   private void verifyQuotaForTruncate(INodesInPath iip, INodeFile file,

@@ -54,7 +54,7 @@ public class Trash extends Configured {
    */
   public Trash(FileSystem fs, Configuration conf) throws IOException {
     super(conf);
-    trashPolicy = TrashPolicy.getInstance(conf, fs, fs.getHomeDirectory());
+    trashPolicy = TrashPolicy.getInstance(conf, fs, fs.getHomeDirectory()); // 获取trash实现
   }
 
   /**
@@ -77,7 +77,7 @@ public class Trash extends Configured {
     // If the trash interval is configured server side then clobber this
     // configuration so that we always respect the server configuration.
     try {
-      long trashInterval = fullyResolvedFs.getServerDefaults(
+      long trashInterval = fullyResolvedFs.getServerDefaults(  // 从NN获取配置
           fullyResolvedPath).getTrashInterval();
       if (0 != trashInterval) {
         Configuration confCopy = new Configuration(conf);
@@ -92,7 +92,7 @@ public class Trash extends Configured {
       throw new IOException("Failed to get server trash configuration", e);
     }
     Trash trash = new Trash(fullyResolvedFs, conf);
-    boolean success = trash.moveToTrash(fullyResolvedPath);
+    boolean success = trash.moveToTrash(fullyResolvedPath); // 移动到trash
     if (success) {
       System.out.println("Moved: '" + p + "' to trash at: " +
           trash.getCurrentTrashDir() );

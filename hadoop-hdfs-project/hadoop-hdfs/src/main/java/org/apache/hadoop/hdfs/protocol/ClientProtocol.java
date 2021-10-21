@@ -580,7 +580,7 @@ public interface ClientProtocol {
    * @param recursive if true deletes a non empty directory recursively,
    * else throws an exception.
    * @return true only if the existing file or directory was actually removed 
-   * from the file system.   delete只有实际删除至少一个非空文件，才会返回true
+   * from the file system.
    * 
    * @throws AccessControlException If access is denied
    * @throws FileNotFoundException If file <code>src</code> is not found
@@ -588,6 +588,10 @@ public interface ClientProtocol {
    * @throws UnresolvedLinkException If <code>src</code> contains a symlink
    * @throws SnapshotAccessControlException if path is in RO snapshot
    * @throws IOException If an I/O error occurred
+   */
+  /**
+   * delete只有实际删除一个path，才会返回true
+   * 如果待删除path不存在，则返回false
    */
   @AtMostOnce
   public boolean delete(String src, boolean recursive)
