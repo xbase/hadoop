@@ -44,7 +44,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.google.common.base.Supplier;
+import java.util.function.Supplier;
 
 public class TestDataTransferKeepalive {
   final Configuration conf = new HdfsConfiguration();
@@ -227,7 +227,7 @@ public class TestDataTransferKeepalive {
         IOUtils.copyBytes(stm, new IOUtils.NullOutputStream(), 1024);
       }
     } finally {
-      IOUtils.cleanup(null, stms);
+      IOUtils.cleanupWithLogger(null, stms);
     }
     
     assertEquals(5, peerCache.size());

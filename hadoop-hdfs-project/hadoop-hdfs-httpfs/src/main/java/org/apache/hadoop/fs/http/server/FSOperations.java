@@ -18,6 +18,7 @@
 package org.apache.hadoop.fs.http.server;
 
 import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockStoragePolicySpi;
 import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.fs.FileChecksum;
@@ -33,6 +34,7 @@ import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.fs.XAttrCodec;
 import org.apache.hadoop.fs.XAttrSetFlag;
 import org.apache.hadoop.fs.http.client.HttpFSFileSystem;
+import org.apache.hadoop.fs.http.client.HttpFSFileSystem.FILE_TYPE;
 import org.apache.hadoop.fs.permission.AclEntry;
 import org.apache.hadoop.fs.permission.AclStatus;
 import org.apache.hadoop.fs.permission.FsAction;
@@ -43,9 +45,10 @@ import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicy;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.protocol.SnapshotDiffReport;
+import org.apache.hadoop.hdfs.protocol.SnapshotDiffReportListing;
 import org.apache.hadoop.hdfs.protocol.SnapshottableDirectoryStatus;
+import org.apache.hadoop.hdfs.protocol.SnapshotStatus;
 import org.apache.hadoop.hdfs.web.JsonUtil;
-import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.lib.service.FileSystemAccess;
 import org.apache.hadoop.util.StringUtils;
 import org.json.simple.JSONArray;
@@ -71,7 +74,22 @@ import static org.apache.hadoop.hdfs.DFSConfigKeys.HTTP_BUFFER_SIZE_DEFAULT;
  * FileSystem operation executors used by {@link HttpFSServer}.
  */
 @InterfaceAudience.Private
-public class FSOperations {
+public final class FSOperations {
+
+  private static int bufferSize = 4096;
+
+  private FSOperations() {
+    // not called
+  }
+  /**
+   * Set the buffer size. The size is set during the initialization of
+   * HttpFSServerWebApp.
+   * @param conf the configuration to get the bufferSize
+   */
+  public static void setBufferSize(Configuration conf) {
+    bufferSize = conf.getInt(HTTPFS_BUFFER_SIZE_KEY,
+        HTTP_BUFFER_SIZE_DEFAULT);
+  }
 
   /**
    * @param fileStatus a FileStatus object
@@ -110,8 +128,17 @@ public class FSOperations {
     Map<String, Object> json = new LinkedHashMap<String, Object>();
     json.put(HttpFSFileSystem.PATH_SUFFIX_JSON,
         (emptyPathSuffix) ? "" : fileStatus.getPath().getName());
-    json.put(HttpFSFileSystem.TYPE_JSON,
-        HttpFSFileSystem.FILE_TYPE.getType(fileStatus).toString());
+    FILE_TYPE fileType = HttpFSFileSystem.FILE_TYPE.getType(fileStatus);
+    json.put(HttpFSFileSystem.TYPE_JSON, fileType.toString());
+    if (fileType.equals(FILE_TYPE.SYMLINK)) {
+      // put the symlink into Json
+      try {
+        json.put(HttpFSFileSystem.SYMLINK_JSON,
+            fileStatus.getSymlink().getName());
+      } catch (IOException e) {
+        // Can't happen.
+      }
+    }
     json.put(HttpFSFileSystem.LENGTH_JSON, fileStatus.getLen());
     json.put(HttpFSFileSystem.OWNER_JSON, fileStatus.getOwner());
     json.put(HttpFSFileSystem.GROUP_JSON, fileStatus.getGroup());
@@ -425,10 +452,9 @@ public class FSOperations {
      */
     @Override
     public Void execute(FileSystem fs) throws IOException {
-      int bufferSize = fs.getConf().getInt("httpfs.buffer.size", 4096);
       OutputStream os = fs.append(path, bufferSize);
-      IOUtils.copyBytes(is, os, bufferSize, true);
-      os.close();
+      long bytes = copyBytes(is, os);
+      HttpFSServerWebApp.get().getMetrics().incrBytesWritten(bytes);
       return null;
     }
 
@@ -511,6 +537,7 @@ public class FSOperations {
     @Override
     public JSONObject execute(FileSystem fs) throws IOException {
       boolean result = fs.truncate(path, newLength);
+      HttpFSServerWebApp.get().getMetrics().incrOpsTruncate();
       return toJSON(
           StringUtils.toLowerCase(HttpFSFileSystem.TRUNCATE_JSON), result);
     }
@@ -627,14 +654,63 @@ public class FSOperations {
         fsPermission = FsCreateModes.create(fsPermission,
             new FsPermission(unmaskedPermission));
       }
-      int bufferSize = fs.getConf().getInt(HTTPFS_BUFFER_SIZE_KEY,
-          HTTP_BUFFER_SIZE_DEFAULT);
       OutputStream os = fs.create(path, fsPermission, override, bufferSize, replication, blockSize, null);
-      IOUtils.copyBytes(is, os, bufferSize, true);
-      os.close();
+      long bytes = copyBytes(is, os);
+      HttpFSServerWebApp.get().getMetrics().incrBytesWritten(bytes);
       return null;
     }
 
+  }
+
+  /**
+   * These copyBytes methods combines the two different flavors used originally.
+   * One with length and another one with buffer size.
+   * In this impl, buffer size is determined internally, which is a singleton
+   * normally set during initialization.
+   * @param in the inputStream
+   * @param out the outputStream
+   * @return the totalBytes
+   * @throws IOException the exception to be thrown.
+   */
+  public static long copyBytes(InputStream in, OutputStream out)
+      throws IOException {
+    return copyBytes(in, out, Long.MAX_VALUE);
+  }
+
+  public static long copyBytes(InputStream in, OutputStream out, long count)
+      throws IOException {
+    long totalBytes = 0;
+
+    // If bufferSize is not initialized use 4k. This will not happen
+    // if all callers check and set it.
+    byte[] buf = new byte[bufferSize];
+    long bytesRemaining = count;
+    int bytesRead;
+
+    try {
+      while (bytesRemaining > 0) {
+        int bytesToRead = (int)
+            (bytesRemaining < buf.length ? bytesRemaining : buf.length);
+
+        bytesRead = in.read(buf, 0, bytesToRead);
+        if (bytesRead == -1) {
+          break;
+        }
+
+        out.write(buf, 0, bytesRead);
+        bytesRemaining -= bytesRead;
+        totalBytes += bytesRead;
+      }
+      return totalBytes;
+    } finally {
+      // Originally IOUtils.copyBytes() were called with close=true. So we are
+      // implementing the same behavior here.
+      try {
+        in.close();
+      } finally {
+        out.close();
+      }
+    }
   }
 
   /**
@@ -669,6 +745,7 @@ public class FSOperations {
     @Override
     public JSONObject execute(FileSystem fs) throws IOException {
       boolean deleted = fs.delete(path, recursive);
+      HttpFSServerWebApp.get().getMetrics().incrOpsDelete();
       return toJSON(
           StringUtils.toLowerCase(HttpFSFileSystem.DELETE_JSON), deleted);
     }
@@ -737,6 +814,7 @@ public class FSOperations {
     @Override
     public Map execute(FileSystem fs) throws IOException {
       FileStatus status = fs.getFileStatus(path);
+      HttpFSServerWebApp.get().getMetrics().incrOpsStat();
       return toJson(status);
     }
 
@@ -765,7 +843,6 @@ public class FSOperations {
       json.put(HttpFSFileSystem.HOME_DIR_JSON, homeDir.toUri().getPath());
       return json;
     }
-
   }
 
   /**
@@ -803,6 +880,7 @@ public class FSOperations {
     @Override
     public Map execute(FileSystem fs) throws IOException {
       FileStatus[] fileStatuses = fs.listStatus(path, filter);
+      HttpFSServerWebApp.get().getMetrics().incrOpsListing();
       return toJson(fileStatuses, fs.getFileStatus(path).isFile());
     }
 
@@ -894,6 +972,7 @@ public class FSOperations {
             new FsPermission(unmaskedPermission));
       }
       boolean mkdirs = fs.mkdirs(path, fsPermission);
+      HttpFSServerWebApp.get().getMetrics().incrOpsMkdir();
       return toJSON(HttpFSFileSystem.MKDIRS_JSON, mkdirs);
     }
 
@@ -926,8 +1005,8 @@ public class FSOperations {
      */
     @Override
     public InputStream execute(FileSystem fs) throws IOException {
-      int bufferSize = HttpFSServerWebApp.get().getConfig().getInt(
-          HTTPFS_BUFFER_SIZE_KEY, HTTP_BUFFER_SIZE_DEFAULT);
+      // Only updating ops count. bytesRead is updated in InputStreamEntity
+      HttpFSServerWebApp.get().getMetrics().incrOpsOpen();
       return fs.open(path, bufferSize);
     }
 
@@ -965,6 +1044,7 @@ public class FSOperations {
     @Override
     public JSONObject execute(FileSystem fs) throws IOException {
       boolean renamed = fs.rename(path, toPath);
+      HttpFSServerWebApp.get().getMetrics().incrOpsRename();
       return toJSON(HttpFSFileSystem.RENAME_JSON, renamed);
     }
 
@@ -1801,6 +1881,65 @@ public class FSOperations {
   }
 
   /**
+   *  Executor that performs a getSnapshotDiffListing operation.
+   */
+  @InterfaceAudience.Private
+  public static class FSGetSnapshotDiffListing implements
+      FileSystemAccess.FileSystemExecutor<String> {
+
+    private final Path path;
+    private final String oldSnapshotName;
+    private final String snapshotName;
+    private final String snapshotDiffStartPath;
+    private final int snapshotDiffIndex;
+
+    /**
+     * Creates a getSnapshotDiffListing executor.
+     *
+     * @param path directory path of the snapshots to be examined.
+     * @param oldSnapshotName Older snapshot name.
+     * @param snapshotName Newer snapshot name.
+     * @param snapshotDiffStartPath snapshot diff start path.
+     * @param snapshotDiffIndex snapshot diff index.
+     */
+    public FSGetSnapshotDiffListing(String path, String oldSnapshotName,
+        String snapshotName, String snapshotDiffStartPath, int snapshotDiffIndex) {
+      this.path = new Path(path);
+      this.oldSnapshotName = oldSnapshotName;
+      this.snapshotName = snapshotName;
+      this.snapshotDiffStartPath = snapshotDiffStartPath;
+      this.snapshotDiffIndex = snapshotDiffIndex;
+    }
+
+    /**
+     * Executes the filesystem operation.
+     *
+     * @param fs filesystem instance to use.
+     * @return A serialized JSON string of snapshot diffs.
+     * @throws IOException thrown if an IO error occurred.
+     */
+    @Override
+    public String execute(FileSystem fs) throws IOException {
+      SnapshotDiffReportListing snapshotDiffReportListing = null;
+      if (fs instanceof DistributedFileSystem) {
+        DistributedFileSystem dfs = (DistributedFileSystem) fs;
+        snapshotDiffReportListing =
+            dfs.getSnapshotDiffReportListing(path, oldSnapshotName, snapshotName,
+                snapshotDiffStartPath, snapshotDiffIndex);
+      } else {
+        throw new UnsupportedOperationException("getSnapshotDiffListing is not "
+            + "supported for HttpFs on " + fs.getClass()
+            + ". Please check your fs.defaultFS configuration");
+      }
+      if (snapshotDiffReportListing != null) {
+        return JsonUtil.toJsonString(snapshotDiffReportListing);
+      } else {
+        return "";
+      }
+    }
+  }
+
+  /**
    *  Executor that performs a getSnapshottableDirListing operation.
    */
   @InterfaceAudience.Private
@@ -1827,6 +1966,43 @@ public class FSOperations {
         sds = dfs.getSnapshottableDirListing();
       } else {
         throw new UnsupportedOperationException("getSnapshottableDirListing is "
+            + "not supported for HttpFs on " + fs.getClass()
+            + ". Please check your fs.defaultFS configuration");
+      }
+      return JsonUtil.toJsonString(sds);
+    }
+  }
+
+  /**
+   *  Executor that performs a getSnapshotListing operation.
+   */
+  @InterfaceAudience.Private
+  public static class FSGetSnapshotListing implements
+      FileSystemAccess.FileSystemExecutor<String> {
+    private Path path;
+
+    /**
+     * Creates a getSnapshotDiff executor.
+     * @param path directory path of the snapshots to be examined.
+     */
+    public FSGetSnapshotListing(String path) {
+      this.path = new Path(path);
+    }
+
+    /**
+     * Executes the filesystem operation.
+     * @param fs filesystem instance to use.
+     * @return A JSON string of all snapshots for a snapshottable directory.
+     * @throws IOException thrown if an IO error occurred.
+     */
+    @Override
+    public String execute(FileSystem fs) throws IOException {
+      SnapshotStatus[] sds = null;
+      if (fs instanceof DistributedFileSystem) {
+        DistributedFileSystem dfs = (DistributedFileSystem) fs;
+        sds = dfs.getSnapshotListing(path);
+      } else {
+        throw new UnsupportedOperationException("getSnapshotListing is "
             + "not supported for HttpFs on " + fs.getClass()
             + ". Please check your fs.defaultFS configuration");
       }
@@ -1896,6 +2072,7 @@ public class FSOperations {
       if (fs instanceof DistributedFileSystem) {
         DistributedFileSystem dfs = (DistributedFileSystem) fs;
         dfs.access(path, mode);
+        HttpFSServerWebApp.get().getMetrics().incrOpsCheckAccess();
       } else {
         throw new UnsupportedOperationException("checkaccess is "
             + "not supported for HttpFs on " + fs.getClass()

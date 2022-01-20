@@ -100,6 +100,11 @@ public class RMNodeWrapper implements RMNode {
   }
 
   @Override
+  public Resource getAllocatedContainerResource() {
+    return node.getAllocatedContainerResource();
+  }
+
+  @Override
   public String getRackName() {
     return node.getRackName();
   }
@@ -230,5 +235,12 @@ public class RMNodeWrapper implements RMNode {
 
   @Override
   public void resetUpdatedCapability() {
+  }
+
+  @Override
+  public long calculateHeartBeatInterval(
+      long defaultInterval, long minInterval, long maxInterval,
+      float speedupFactor, float slowdownFactor) {
+    return defaultInterval;
   }
 }

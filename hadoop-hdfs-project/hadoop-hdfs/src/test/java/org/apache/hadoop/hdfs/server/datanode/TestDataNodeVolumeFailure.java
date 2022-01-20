@@ -91,7 +91,7 @@ import org.junit.rules.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Supplier;
+import java.util.function.Supplier;
 
 /**
  * Fine-grain testing of block files and locations after volume failure.
@@ -215,6 +215,10 @@ public class TestDataNodeVolumeFailure {
     BlockManagerTestUtil.checkHeartbeat(bm);
     // NN now should have latest volume failure
     assertEquals(1, cluster.getNamesystem().getVolumeFailuresTotal());
+    // assert failedStorageLocations
+    assertTrue(dn.getFSDataset().getVolumeFailureSummary()
+        .getFailedStorageLocations()[0]
+        .contains("[DISK]"));
 
     // verify number of blocks and files...
     verify(filename, filesize);

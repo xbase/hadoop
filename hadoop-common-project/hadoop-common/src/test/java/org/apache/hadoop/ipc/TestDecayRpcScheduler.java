@@ -20,9 +20,15 @@ package org.apache.hadoop.ipc;
 
 import static java.lang.Thread.sleep;
 
+import java.util.Map;
+import org.eclipse.jetty.util.ajax.JSON;
 import org.junit.Test;
 
-import static org.junit.Assert.*;
+import static org.apache.hadoop.ipc.DecayRpcScheduler.IPC_DECAYSCHEDULER_THRESHOLDS_KEY;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -42,12 +48,34 @@ import java.util.concurrent.TimeUnit;
 public class TestDecayRpcScheduler {
   private Schedulable mockCall(String id) {
     Schedulable mockCall = mock(Schedulable.class);
-    UserGroupInformation ugi = mock(UserGroupInformation.class);
+    UserGroupInformation ugi = UserGroupInformation.createRemoteUser(id);
 
-    when(ugi.getUserName()).thenReturn(id);
     when(mockCall.getUserGroupInformation()).thenReturn(ugi);
 
     return mockCall;
+  }
+
+  private static class TestIdentityProvider implements IdentityProvider {
+    public String makeIdentity(Schedulable obj) {
+      UserGroupInformation ugi = obj.getUserGroupInformation();
+      if (ugi == null) {
+        return null;
+      }
+      return ugi.getShortUserName();
+    }
+  }
+
+  private static class TestCostProvider implements CostProvider {
+
+    @Override
+    public void init(String namespace, Configuration conf) {
+      // No-op
+    }
+
+    @Override
+    public long getCost(ProcessingDetails details) {
+      return 1;
+    }
   }
 
   private DecayRpcScheduler scheduler;
@@ -75,6 +103,44 @@ public class TestDecayRpcScheduler {
     conf.setLong("ipc.2." + DecayRpcScheduler.IPC_FCQ_DECAYSCHEDULER_PERIOD_KEY,
       1058);
     scheduler = new DecayRpcScheduler(1, "ipc.2", conf);
+    assertEquals(1058L, scheduler.getDecayPeriodMillis());
+  }
+
+  @Test
+  @SuppressWarnings("deprecation")
+  public void testParsePeriodWithPortLessIdentityProvider() {
+    // By default
+    scheduler = new DecayRpcScheduler(1, "ipc.50", new Configuration());
+    assertEquals(DecayRpcScheduler.IPC_SCHEDULER_DECAYSCHEDULER_PERIOD_DEFAULT,
+        scheduler.getDecayPeriodMillis());
+
+    // Custom
+    Configuration conf = new Configuration();
+    conf.setLong("ipc.51." + DecayRpcScheduler.IPC_FCQ_DECAYSCHEDULER_PERIOD_KEY,
+        1058);
+    conf.unset("ipc.51." + CommonConfigurationKeys.IPC_IDENTITY_PROVIDER_KEY);
+    conf.set("ipc." + CommonConfigurationKeys.IPC_IDENTITY_PROVIDER_KEY,
+        "org.apache.hadoop.ipc.TestDecayRpcScheduler$TestIdentityProvider");
+    scheduler = new DecayRpcScheduler(1, "ipc.51", conf);
+    assertEquals(1058L, scheduler.getDecayPeriodMillis());
+  }
+
+  @Test
+  @SuppressWarnings("deprecation")
+  public void testParsePeriodWithPortLessCostProvider() {
+    // By default
+    scheduler = new DecayRpcScheduler(1, "ipc.52", new Configuration());
+    assertEquals(DecayRpcScheduler.IPC_SCHEDULER_DECAYSCHEDULER_PERIOD_DEFAULT,
+        scheduler.getDecayPeriodMillis());
+
+    // Custom
+    Configuration conf = new Configuration();
+    conf.setLong("ipc.52." + DecayRpcScheduler.IPC_FCQ_DECAYSCHEDULER_PERIOD_KEY,
+        1058);
+    conf.unset("ipc.52." + CommonConfigurationKeys.IPC_COST_PROVIDER_KEY);
+    conf.set("ipc." + CommonConfigurationKeys.IPC_COST_PROVIDER_KEY,
+        "org.apache.hadoop.ipc.TestDecayRpcScheduler$TestCostProvider");
+    scheduler = new DecayRpcScheduler(1, "ipc.52", conf);
     assertEquals(1058L, scheduler.getDecayPeriodMillis());
   }
 
@@ -382,5 +448,94 @@ public class TestDecayRpcScheduler {
         new ProcessingDetails(TimeUnit.MILLISECONDS);
     scheduler.addResponseTime("ignored", mockCall, emptyProcessingDetails);
     return priority;
+  }
+
+  /**
+   * Test computing priorities and priority cache of users and service-users.
+   */
+  @Test
+  public void testServiceUsersCase1() {
+    Configuration conf = new Configuration();
+    conf.setLong("ipc.19."
+        + DecayRpcScheduler.IPC_SCHEDULER_DECAYSCHEDULER_PERIOD_KEY, 999999);
+    conf.set("ipc.19." + DecayRpcScheduler.IPC_DECAYSCHEDULER_SERVICE_USERS_KEY,
+        "service1,service2");
+    scheduler = new DecayRpcScheduler(4, "ipc.19", conf);
+
+    assertTrue(scheduler.getServiceUserNames().contains("service1"));
+    assertTrue(scheduler.getServiceUserNames().contains("service2"));
+
+    for (int i = 0; i < 10; i++) {
+      getPriorityIncrementCallCount("user1");
+      getPriorityIncrementCallCount("service1");
+      getPriorityIncrementCallCount("service2");
+    }
+
+    assertNotEquals(0, scheduler.getPriorityLevel(mockCall("user1")));
+    // The priorities of service users should be always 0.
+    assertEquals(0, scheduler.getPriorityLevel(mockCall("service1")));
+    assertEquals(0, scheduler.getPriorityLevel(mockCall("service2")));
+
+    // DecayRpcScheduler caches priorities after decay
+    scheduler.forceDecay();
+    // Check priorities on cache
+    String summary = scheduler.getSchedulingDecisionSummary();
+    Map<String, Object> summaryMap = (Map<String, Object>) JSON.parse(summary);
+    assertNotEquals(0L, summaryMap.get("user1"));
+    assertEquals(0L, summaryMap.get("service1"));
+    assertEquals(0L, summaryMap.get("service2"));
+  }
+
+  /**
+   * Test the service users' calls are not included when computing user's call
+   * priority.
+   */
+  @Test
+  public void testServiceUsersCase2() {
+    final int level = 4;
+    Configuration conf = new Configuration();
+    conf.setLong("ipc.20."
+        + DecayRpcScheduler.IPC_SCHEDULER_DECAYSCHEDULER_PERIOD_KEY, 999999);
+    conf.set("ipc.20." + DecayRpcScheduler.IPC_DECAYSCHEDULER_SERVICE_USERS_KEY,
+        "service");
+    conf.set(IPC_DECAYSCHEDULER_THRESHOLDS_KEY, "0.125,0.25,0.5");
+    scheduler = new DecayRpcScheduler(level, "ipc.20", conf);
+
+    // test total costs.
+    for (int i = 0; i < 10; i++) {
+      getPriorityIncrementCallCount("user1");
+    }
+    for (int i = 0; i < 50; i++) {
+      getPriorityIncrementCallCount("service");
+    }
+    assertEquals(10, scheduler.getTotalCallVolume());
+    assertEquals(10, scheduler.getTotalRawCallVolume());
+    assertEquals(50, scheduler.getTotalServiceUserCallVolume());
+    assertEquals(50, scheduler.getTotalServiceUserRawCallVolume());
+    // test priority of normal user.
+    assertEquals(level - 1, scheduler.getPriorityLevel(mockCall("user1")));
+
+    // test total costs after decay.
+    scheduler.forceDecay();
+    assertEquals(5, scheduler.getTotalCallVolume());
+    assertEquals(10, scheduler.getTotalRawCallVolume());
+    assertEquals(25, scheduler.getTotalServiceUserCallVolume());
+    assertEquals(50, scheduler.getTotalServiceUserRawCallVolume());
+    // test priority of normal user.
+    assertEquals(level - 1, scheduler.getPriorityLevel(mockCall("user1")));
+
+    // test total costs again.
+    for (int i = 0; i < 10; i++) {
+      getPriorityIncrementCallCount("user1");
+    }
+    for (int i = 0; i < 50; i++) {
+      getPriorityIncrementCallCount("service");
+    }
+    assertEquals(15, scheduler.getTotalCallVolume());
+    assertEquals(20, scheduler.getTotalRawCallVolume());
+    assertEquals(75, scheduler.getTotalServiceUserCallVolume());
+    assertEquals(100, scheduler.getTotalServiceUserRawCallVolume());
+    // test priority of normal user.
+    assertEquals(level - 1, scheduler.getPriorityLevel(mockCall("user1")));
   }
 }

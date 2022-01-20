@@ -132,8 +132,8 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import com.google.common.base.Supplier;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import java.util.function.Supplier;
+import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.sun.jersey.api.client.Client;
 import com.sun.jersey.api.client.ClientHandlerException;
 import com.sun.jersey.api.client.ClientResponse;
@@ -1203,10 +1203,10 @@ public class TestRouterWebServicesREST {
 
   /**
    * This test validates the correctness of
-   * {@link RMWebServiceProtocol#removeFromCluserNodeLabels()} inside Router.
+   * {@link RMWebServiceProtocol#removeFromClusterNodeLabels} inside Router.
    */
   @Test(timeout = 2000)
-  public void testRemoveFromCluserNodeLabelsXML()
+  public void testRemoveFromClusterNodeLabelsXML()
       throws Exception {
 
     // Test with a wrong HTTP method

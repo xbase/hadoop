@@ -96,8 +96,8 @@ import org.apache.hadoop.yarn.proto.YarnServiceProtos.ContainerUpdateTypeProto;
 import org.apache.hadoop.yarn.proto.YarnServiceProtos.LocalizationStateProto;
 import org.apache.hadoop.yarn.server.api.ContainerType;
 
-import com.google.common.collect.Interner;
-import com.google.common.collect.Interners;
+import org.apache.hadoop.thirdparty.com.google.common.collect.Interner;
+import org.apache.hadoop.thirdparty.com.google.common.collect.Interners;
 import org.apache.hadoop.thirdparty.protobuf.ByteString;
 
 /**
@@ -587,11 +587,40 @@ public class ProtoUtils {
     return ret;
   }
 
+  public static List<YarnProtos.StringFloatMapProto>
+      convertMapToStringFloatMapProtoList(
+      Map<String, Float> map) {
+    List<YarnProtos.StringFloatMapProto> ret = new ArrayList<>();
+    if (map != null) {
+      for (Map.Entry<String, Float> entry : map.entrySet()) {
+        YarnProtos.StringFloatMapProto.Builder tmp =
+            YarnProtos.StringFloatMapProto.newBuilder();
+        tmp.setKey(entry.getKey());
+        tmp.setValue(entry.getValue());
+        ret.add(tmp.build());
+      }
+    }
+    return ret;
+  }
+
   public static Map<String, String> convertStringStringMapProtoListToMap(
       List<StringStringMapProto> pList) {
     Map<String, String> ret = new HashMap<>();
     if (pList != null) {
       for (StringStringMapProto p : pList) {
+        if (p.hasKey()) {
+          ret.put(p.getKey(), p.getValue());
+        }
+      }
+    }
+    return ret;
+  }
+
+  public static Map<String, Float> convertStringFloatMapProtoListToMap(
+      List<YarnProtos.StringFloatMapProto> pList) {
+    Map<String, Float> ret = new HashMap<>();
+    if (pList != null) {
+      for (YarnProtos.StringFloatMapProto p : pList) {
         if (p.hasKey()) {
           ret.put(p.getKey(), p.getValue());
         }

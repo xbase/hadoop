@@ -56,7 +56,7 @@
   <!-- HTTP properties -->
   <property>
     <name>hadoop.http.idle_timeout.ms</name>
-    <value>1000</value>
+    <value>60000</value>
     <description>
       Httpfs Server connection timeout in milliseconds.
     </description>
@@ -158,8 +158,8 @@
       If multiple HttpFS servers are used in a load-balancer/round-robin fashion,
       they should share the secret file.
 
-      If the secret file specified here does not exist, random secret is
-      generated at startup time.
+      If the secret file specified here does not exist or it is empty, a random
+      secret is generated at startup time.
 
       httpfs.authentication.signature.secret.file is deprecated. Instead use
       hadoop.http.authentication.signature.secret.file.
@@ -323,4 +323,15 @@
     </description>
   </property>
 
+  <property>
+    <name>httpfs.access.mode</name>
+    <value>read-write</value>
+    <description>
+      Sets the access mode for HTTPFS. If access is not allowed the FORBIDDED (403) is returned.
+      Valid access modes are:
+       read-write   Full Access allowed
+       write-only   PUT POST and DELETE full Access. GET only allows GETFILESTATUS and LISTSTATUS
+       read-only    GET Full Access PUT POST and DELETE are FORBIDDEN
+    </description>
+  </property>
 </configuration>

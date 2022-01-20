@@ -184,6 +184,7 @@ import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.NodeToLabelsEntr
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.NodeToLabelsEntryList;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.NodeToLabelsInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.NodesInfo;
+import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.PartitionInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.RMQueueAclInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.ReservationDefinitionInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.ReservationDeleteRequestInfo;
@@ -197,6 +198,7 @@ import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.ReservationUpdat
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.ResourceInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.ResourceOptionInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.SchedulerInfo;
+import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.BulkActivitiesInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.SchedulerTypeInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.StatisticsItemInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.ConfigVersionInfo;
@@ -208,6 +210,7 @@ import org.apache.hadoop.yarn.server.webapp.dao.ContainersInfo;
 import org.apache.hadoop.yarn.util.AdHocLogDumper;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Times;
+import org.apache.hadoop.yarn.util.resource.Resources;
 import org.apache.hadoop.yarn.webapp.BadRequestException;
 import org.apache.hadoop.yarn.webapp.ForbiddenException;
 import org.apache.hadoop.yarn.webapp.NotFoundException;
@@ -217,7 +220,7 @@ import org.apache.hadoop.yarn.webapp.dao.SchedConfUpdateInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.annotations.VisibleForTesting;
+import org.apache.hadoop.classification.VisibleForTesting;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 
@@ -242,6 +245,9 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
   public static final String DEFAULT_END_TIME = "-1";
   public static final String DEFAULT_INCLUDE_RESOURCE = "false";
   public static final String DEFAULT_SUMMARIZE = "false";
+  public static final String DEFAULT_ACTIVITIES_COUNT = "10";
+  public static final int MAX_ACTIVITIES_COUNT = 500;
+  private static final String ERROR_MSG = "Not Capacity Scheduler";
 
   @VisibleForTesting
   boolean isCentralizedNodeLabelConfiguration = true;
@@ -697,76 +703,133 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
   public ActivitiesInfo getActivities(@Context HttpServletRequest hsr,
       @QueryParam(RMWSConsts.NODEID) String nodeId,
       @QueryParam(RMWSConsts.GROUP_BY) String groupBy) {
+
     initForReadableEndpoints();
 
-    YarnScheduler scheduler = rm.getRMContext().getScheduler();
-    if (scheduler instanceof AbstractYarnScheduler) {
-      String errMessage = "";
-
-      AbstractYarnScheduler abstractYarnScheduler =
-          (AbstractYarnScheduler) scheduler;
-
-      ActivitiesManager activitiesManager =
-          abstractYarnScheduler.getActivitiesManager();
-      if (null == activitiesManager) {
-        errMessage = "Not Capacity Scheduler";
-        return new ActivitiesInfo(errMessage, nodeId);
-      }
-
-      RMWSConsts.ActivitiesGroupBy activitiesGroupBy;
-      try {
-        activitiesGroupBy = parseActivitiesGroupBy(groupBy);
-      } catch (IllegalArgumentException e) {
-        return new ActivitiesInfo(e.getMessage(), nodeId);
-      }
-
-      List<FiCaSchedulerNode> nodeList =
-          abstractYarnScheduler.getNodeTracker().getAllNodes();
-
-      boolean illegalInput = false;
-
-      if (nodeList.size() == 0) {
-        illegalInput = true;
-        errMessage = "No node manager running in the cluster";
-      } else {
-        if (nodeId != null) {
-          String hostName = nodeId;
-          String portName = "";
-          if (nodeId.contains(":")) {
-            int index = nodeId.indexOf(":");
-            hostName = nodeId.substring(0, index);
-            portName = nodeId.substring(index + 1);
-          }
-
-          boolean correctNodeId = false;
-          for (FiCaSchedulerNode node : nodeList) {
-            if ((portName.equals("")
-                && node.getRMNode().getHostName().equals(hostName))
-                || (!portName.equals("")
-                    && node.getRMNode().getHostName().equals(hostName)
-                    && String.valueOf(node.getRMNode().getCommandPort())
-                        .equals(portName))) {
-              correctNodeId = true;
-              nodeId = node.getNodeID().toString();
-              break;
-            }
-          }
-          if (!correctNodeId) {
-            illegalInput = true;
-            errMessage = "Cannot find node manager with given node id";
-          }
-        }
-      }
-
-      if (!illegalInput) {
-        activitiesManager.recordNextNodeUpdateActivities(nodeId);
-        return activitiesManager.getActivitiesInfo(nodeId, activitiesGroupBy);
-      }
-
-      // Return a activities info with error message
-      return new ActivitiesInfo(errMessage, nodeId);
+    ActivitiesManager activitiesManager = getActivitiesManager();
+    if (null == activitiesManager) {
+      return new ActivitiesInfo(ERROR_MSG, nodeId);
     }
 
+    RMWSConsts.ActivitiesGroupBy activitiesGroupBy;
+    try {
+      activitiesGroupBy = parseActivitiesGroupBy(groupBy);
+    } catch (IllegalArgumentException e) {
+      return new ActivitiesInfo(e.getMessage(), nodeId);
+    }
+
+    AbstractYarnScheduler abstractYarnScheduler =
+        (AbstractYarnScheduler) rm.getRMContext().getScheduler();
+
+    List<FiCaSchedulerNode> nodeList =
+        abstractYarnScheduler.getNodeTracker().getAllNodes();
+
+    boolean illegalInput = false;
+    String errMessage = "";
+
+    if (nodeList.size() == 0) {
+      illegalInput = true;
+      errMessage = "No node manager running in the cluster";
+    } else {
+      if (nodeId != null) {
+        String hostName = nodeId;
+        String portName = "";
+        if (nodeId.contains(":")) {
+          int index = nodeId.indexOf(":");
+          hostName = nodeId.substring(0, index);
+          portName = nodeId.substring(index + 1);
+        }
+
+        boolean correctNodeId = false;
+        for (FiCaSchedulerNode node : nodeList) {
+          if ((portName.equals("")
+              && node.getRMNode().getHostName().equals(hostName))
+              || (!portName.equals("")
+                  && node.getRMNode().getHostName().equals(hostName)
+                  && String.valueOf(node.getRMNode().getCommandPort())
+                  .equals(portName))) {
+            correctNodeId = true;
+            nodeId = node.getNodeID().toString();
+            break;
+          }
+        }
+        if (!correctNodeId) {
+          illegalInput = true;
+          errMessage = "Cannot find node manager with given node id";
+        }
+      }
+    }
+
+    if (!illegalInput) {
+      activitiesManager.recordNextNodeUpdateActivities(nodeId);
+      return activitiesManager.getActivitiesInfo(nodeId, activitiesGroupBy);
+    }
+
+    // Return a activities info with error message
+    return new ActivitiesInfo(errMessage, nodeId);
+  }
+
+
+  @GET
+  @Path(RMWSConsts.SCHEDULER_BULK_ACTIVITIES)
+  @Produces({ MediaType.APPLICATION_JSON + "; " + JettyUtils.UTF_8,
+      MediaType.APPLICATION_XML + "; " + JettyUtils.UTF_8 })
+  @Override
+  public BulkActivitiesInfo getBulkActivities(
+      @Context HttpServletRequest hsr,
+      @QueryParam(RMWSConsts.GROUP_BY) String groupBy,
+      @QueryParam(RMWSConsts.ACTIVITIES_COUNT)
+      @DefaultValue(DEFAULT_ACTIVITIES_COUNT) int activitiesCount)
+      throws InterruptedException {
+
+    initForReadableEndpoints();
+
+    ActivitiesManager activitiesManager = getActivitiesManager();
+    if (null == activitiesManager) {
+      throw new BadRequestException(ERROR_MSG);
+    }
+
+    RMWSConsts.ActivitiesGroupBy activitiesGroupBy;
+    try {
+      activitiesGroupBy = parseActivitiesGroupBy(groupBy);
+    } catch (IllegalArgumentException e) {
+      throw new BadRequestException(e.getMessage());
+    }
+
+    AbstractYarnScheduler abstractYarnScheduler =
+        (AbstractYarnScheduler) rm.getRMContext().getScheduler();
+
+    List<FiCaSchedulerNode> nodeList =
+        abstractYarnScheduler.getNodeTracker().getAllNodes();
+    if (nodeList.size() == 0) {
+      throw new BadRequestException(
+          "No node manager running in the cluster");
+    }
+
+    if (activitiesCount <= 0) {
+      activitiesCount = Integer.parseInt(DEFAULT_ACTIVITIES_COUNT);
+    }
+    activitiesCount = Math.min(activitiesCount, MAX_ACTIVITIES_COUNT);
+
+    List<ActivitiesInfo> activitiesList = activitiesManager
+        .recordAndGetBulkActivitiesInfo(activitiesCount,
+        activitiesGroupBy);
+    BulkActivitiesInfo bulkActivitiesInfo = new
+        BulkActivitiesInfo();
+    bulkActivitiesInfo.addAll(activitiesList);
+
+    return bulkActivitiesInfo;
+  }
+
+  private ActivitiesManager getActivitiesManager() {
+    YarnScheduler scheduler = rm.getRMContext().getScheduler();
+    if (scheduler instanceof AbstractYarnScheduler) {
+      AbstractYarnScheduler abstractYarnScheduler =
+          (AbstractYarnScheduler) scheduler;
+      ActivitiesManager activitiesManager =
+          abstractYarnScheduler.getActivitiesManager();
+      return activitiesManager;
+    }
     return null;
   }
 
@@ -788,105 +851,95 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
           boolean summarize) {
     initForReadableEndpoints();
 
-    YarnScheduler scheduler = rm.getRMContext().getScheduler();
-    if (scheduler instanceof AbstractYarnScheduler) {
-      AbstractYarnScheduler abstractYarnScheduler =
-          (AbstractYarnScheduler) scheduler;
-
-      ActivitiesManager activitiesManager =
-          abstractYarnScheduler.getActivitiesManager();
-      if (null == activitiesManager) {
-        String errMessage = "Not Capacity Scheduler";
-        return new AppActivitiesInfo(errMessage, appId);
-      }
-
-      if (appId == null) {
-        String errMessage = "Must provide an application Id";
-        return new AppActivitiesInfo(errMessage, null);
-      }
-
-      RMWSConsts.ActivitiesGroupBy activitiesGroupBy;
-      try {
-        activitiesGroupBy = parseActivitiesGroupBy(groupBy);
-      } catch (IllegalArgumentException e) {
-        return new AppActivitiesInfo(e.getMessage(), appId);
-      }
-
-      Set<RMWSConsts.AppActivitiesRequiredAction> requiredActions;
-      try {
-        requiredActions =
-            parseAppActivitiesRequiredActions(getFlatSet(actions));
-      } catch (IllegalArgumentException e) {
-        return new AppActivitiesInfo(e.getMessage(), appId);
-      }
-
-      Set<Integer> parsedRequestPriorities;
-      try {
-        parsedRequestPriorities = getFlatSet(requestPriorities).stream()
-            .map(e -> Integer.valueOf(e)).collect(Collectors.toSet());
-      } catch (NumberFormatException e) {
-        return new AppActivitiesInfo("request priorities must be integers!",
-            appId);
-      }
-      Set<Long> parsedAllocationRequestIds;
-      try {
-        parsedAllocationRequestIds = getFlatSet(allocationRequestIds).stream()
-            .map(e -> Long.valueOf(e)).collect(Collectors.toSet());
-      } catch (NumberFormatException e) {
-        return new AppActivitiesInfo(
-            "allocation request Ids must be integers!", appId);
-      }
-
-      int limitNum = -1;
-      if (limit != null) {
-        try {
-          limitNum = Integer.parseInt(limit);
-          if (limitNum <= 0) {
-            return new AppActivitiesInfo(
-                "limit must be greater than 0!", appId);
-          }
-        } catch (NumberFormatException e) {
-          return new AppActivitiesInfo("limit must be integer!", appId);
-        }
-      }
-
-      double maxTime = 3.0;
-
-      if (time != null) {
-        if (time.contains(".")) {
-          maxTime = Double.parseDouble(time);
-        } else {
-          maxTime = Double.parseDouble(time + ".0");
-        }
-      }
-
-      ApplicationId applicationId;
-      try {
-        applicationId = ApplicationId.fromString(appId);
-        if (requiredActions
-            .contains(RMWSConsts.AppActivitiesRequiredAction.REFRESH)) {
-          activitiesManager
-              .turnOnAppActivitiesRecording(applicationId, maxTime);
-        }
-        if (requiredActions
-            .contains(RMWSConsts.AppActivitiesRequiredAction.GET)) {
-          AppActivitiesInfo appActivitiesInfo = activitiesManager
-              .getAppActivitiesInfo(applicationId, parsedRequestPriorities,
-                  parsedAllocationRequestIds, activitiesGroupBy, limitNum,
-                  summarize, maxTime);
-          return appActivitiesInfo;
-        }
-        return new AppActivitiesInfo("Successfully received "
-            + (actions.size() == 1 ? "action: " : "actions: ")
-            + StringUtils.join(',', actions), appId);
-      } catch (Exception e) {
-        String errMessage = "Cannot find application with given appId";
-        LOG.error(errMessage, e);
-        return new AppActivitiesInfo(errMessage, appId);
-      }
-
+    ActivitiesManager activitiesManager = getActivitiesManager();
+    if (null == activitiesManager) {
+      return new AppActivitiesInfo(ERROR_MSG, appId);
     }
-    return null;
+
+    if (appId == null) {
+      String errMessage = "Must provide an application Id";
+      return new AppActivitiesInfo(errMessage, null);
+    }
+
+    RMWSConsts.ActivitiesGroupBy activitiesGroupBy;
+    try {
+      activitiesGroupBy = parseActivitiesGroupBy(groupBy);
+    } catch (IllegalArgumentException e) {
+      return new AppActivitiesInfo(e.getMessage(), appId);
+    }
+
+    Set<RMWSConsts.AppActivitiesRequiredAction> requiredActions;
+    try {
+      requiredActions =
+          parseAppActivitiesRequiredActions(getFlatSet(actions));
+    } catch (IllegalArgumentException e) {
+      return new AppActivitiesInfo(e.getMessage(), appId);
+    }
+
+    Set<Integer> parsedRequestPriorities;
+    try {
+      parsedRequestPriorities = getFlatSet(requestPriorities).stream()
+          .map(e -> Integer.valueOf(e)).collect(Collectors.toSet());
+    } catch (NumberFormatException e) {
+      return new AppActivitiesInfo("request priorities must be integers!",
+          appId);
+    }
+    Set<Long> parsedAllocationRequestIds;
+    try {
+      parsedAllocationRequestIds = getFlatSet(allocationRequestIds).stream()
+          .map(e -> Long.valueOf(e)).collect(Collectors.toSet());
+    } catch (NumberFormatException e) {
+      return new AppActivitiesInfo(
+          "allocation request Ids must be integers!", appId);
+    }
+
+    int limitNum = -1;
+    if (limit != null) {
+      try {
+        limitNum = Integer.parseInt(limit);
+        if (limitNum <= 0) {
+          return new AppActivitiesInfo(
+              "limit must be greater than 0!", appId);
+        }
+      } catch (NumberFormatException e) {
+        return new AppActivitiesInfo("limit must be integer!", appId);
+      }
+    }
+
+    double maxTime = 3.0;
+
+    if (time != null) {
+      if (time.contains(".")) {
+        maxTime = Double.parseDouble(time);
+      } else {
+        maxTime = Double.parseDouble(time + ".0");
+      }
+    }
+
+    ApplicationId applicationId;
+    try {
+      applicationId = ApplicationId.fromString(appId);
+      if (requiredActions
+          .contains(RMWSConsts.AppActivitiesRequiredAction.REFRESH)) {
+        activitiesManager
+            .turnOnAppActivitiesRecording(applicationId, maxTime);
+      }
+      if (requiredActions
+          .contains(RMWSConsts.AppActivitiesRequiredAction.GET)) {
+        AppActivitiesInfo appActivitiesInfo = activitiesManager
+            .getAppActivitiesInfo(applicationId, parsedRequestPriorities,
+            parsedAllocationRequestIds, activitiesGroupBy, limitNum,
+            summarize, maxTime);
+        return appActivitiesInfo;
+      }
+      return new AppActivitiesInfo("Successfully received "
+          + (actions.size() == 1 ? "action: " : "actions: ")
+          + StringUtils.join(',', actions), appId);
+    } catch (Exception e) {
+      String errMessage = "Cannot find application with given appId";
+      LOG.error(errMessage, e);
+      return new AppActivitiesInfo(errMessage, appId);
+    }
   }
 
   private Set<String> getFlatSet(Set<String> set) {
@@ -1074,7 +1127,7 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
     AppAttemptsInfo appAttemptsInfo = new AppAttemptsInfo();
     for (RMAppAttempt attempt : app.getAppAttempts().values()) {
       AppAttemptInfo attemptInfo = new AppAttemptInfo(rm, attempt,
-          app.getUser(), hsr.getScheme() + "://");
+          hasAccess(app, hsr), app.getUser(), hsr.getScheme() + "://");
       appAttemptsInfo.add(attemptInfo);
     }
 
@@ -1245,8 +1298,10 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
       for (NodeId nodeId : entry.getValue()) {
         nodeIdStrList.add(nodeId.toString());
       }
+      Resource resource = rm.getRMContext().getNodeLabelManager()
+          .getResourceByLabel(entry.getKey().getName(), Resources.none());
       ltsMap.put(new NodeLabelInfo(entry.getKey()),
-          new NodeIDsInfo(nodeIdStrList));
+          new NodeIDsInfo(nodeIdStrList, resource));
     }
     return lts;
   }
@@ -1335,9 +1390,17 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
 
     List<NodeLabel> nodeLabels =
         rm.getRMContext().getNodeLabelManager().getClusterNodeLabels();
-    NodeLabelsInfo ret = new NodeLabelsInfo(nodeLabels);
 
-    return ret;
+    ArrayList<NodeLabelInfo> nodeLabelsInfo = new ArrayList<NodeLabelInfo>();
+    for (NodeLabel label: nodeLabels) {
+      Resource resource = rm.getRMContext().getNodeLabelManager()
+          .getResourceByLabel(label.getName(), Resources.none());
+      PartitionInfo partitionInfo =
+          new PartitionInfo(new ResourceInfo(resource));
+      nodeLabelsInfo.add(new NodeLabelInfo(label, partitionInfo));
+    }
+
+    return new NodeLabelsInfo(nodeLabelsInfo);
   }
 
   @POST
@@ -1372,7 +1435,7 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
   @Produces({ MediaType.APPLICATION_JSON + "; " + JettyUtils.UTF_8,
       MediaType.APPLICATION_XML + "; " + JettyUtils.UTF_8 })
   @Override
-  public Response removeFromCluserNodeLabels(
+  public Response removeFromClusterNodeLabels(
       @QueryParam(RMWSConsts.LABELS) Set<String> oldNodeLabels,
       @Context HttpServletRequest hsr) throws Exception {
     UserGroupInformation callerUGI = getCallerUserGroupInformation(hsr, true);
@@ -2593,8 +2656,7 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
     initForWritableEndpoints(callerUGI, true);
 
     ResourceScheduler scheduler = rm.getResourceScheduler();
-    if (scheduler instanceof MutableConfScheduler
-        && ((MutableConfScheduler) scheduler).isConfigurationMutable()) {
+    if (isConfigurationMutable(scheduler)) {
       try {
         MutableConfigurationProvider mutableConfigurationProvider =
             ((MutableConfScheduler) scheduler).getMutableConfProvider();
@@ -2633,8 +2695,7 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
     UserGroupInformation callerUGI = getCallerUserGroupInformation(hsr, true);
     initForWritableEndpoints(callerUGI, true);
     ResourceScheduler scheduler = rm.getResourceScheduler();
-    if (scheduler instanceof MutableConfScheduler && ((MutableConfScheduler)
-            scheduler).isConfigurationMutable()) {
+    if (isConfigurationMutable(scheduler)) {
       try {
         MutableConfigurationProvider mutableConfigurationProvider =
                 ((MutableConfScheduler) scheduler).getMutableConfProvider();
@@ -2683,49 +2744,59 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
   public synchronized Response updateSchedulerConfiguration(SchedConfUpdateInfo
       mutationInfo, @Context HttpServletRequest hsr)
       throws AuthorizationException, InterruptedException {
-
     UserGroupInformation callerUGI = getCallerUserGroupInformation(hsr, true);
     initForWritableEndpoints(callerUGI, true);
 
     ResourceScheduler scheduler = rm.getResourceScheduler();
-    if (scheduler instanceof MutableConfScheduler && ((MutableConfScheduler)
-        scheduler).isConfigurationMutable()) {
+    if (isConfigurationMutable(scheduler)) {
       try {
-        callerUGI.doAs(new PrivilegedExceptionAction<Void>() {
-          @Override
-          public Void run() throws Exception {
-            MutableConfigurationProvider provider = ((MutableConfScheduler)
-                scheduler).getMutableConfProvider();
-            if (!provider.getAclMutationPolicy().isMutationAllowed(callerUGI,
-                mutationInfo)) {
-              throw new org.apache.hadoop.security.AccessControlException("User"
-                  + " is not admin of all modified queues.");
-            }
-            LogMutation logMutation = provider.logAndApplyMutation(callerUGI,
-                mutationInfo);
-            try {
-              rm.getRMContext().getRMAdminService().refreshQueues();
-            } catch (IOException | YarnException e) {
-              provider.confirmPendingMutation(logMutation, false);
-              throw e;
-            }
-            provider.confirmPendingMutation(logMutation, true);
-            return null;
-          }
+        callerUGI.doAs((PrivilegedExceptionAction<Void>) () -> {
+          MutableConfigurationProvider provider = ((MutableConfScheduler)
+              scheduler).getMutableConfProvider();
+          LogMutation logMutation = applyMutation(provider, callerUGI, mutationInfo);
+          return refreshQueues(provider, logMutation);
         });
       } catch (IOException e) {
         LOG.error("Exception thrown when modifying configuration.", e);
         return Response.status(Status.BAD_REQUEST).entity(e.getMessage())
             .build();
       }
-      return Response.status(Status.OK).entity("Configuration change " +
-          "successfully applied.").build();
+      return Response.status(Status.OK).entity("Configuration change successfully applied.")
+          .build();
     } else {
       return Response.status(Status.BAD_REQUEST)
-          .entity("Configuration change only supported by " +
-              "MutableConfScheduler.")
+          .entity(String.format("Configuration change only supported by " +
+              "%s.", MutableConfScheduler.class.getSimpleName()))
           .build();
     }
+  }
+
+  private Void refreshQueues(MutableConfigurationProvider provider, LogMutation logMutation)
+      throws Exception {
+    try {
+      rm.getRMContext().getRMAdminService().refreshQueues();
+    } catch (IOException | YarnException e) {
+      provider.confirmPendingMutation(logMutation, false);
+      throw e;
+    }
+    provider.confirmPendingMutation(logMutation, true);
+    return null;
+  }
+
+  private LogMutation applyMutation(MutableConfigurationProvider provider,
+      UserGroupInformation callerUGI, SchedConfUpdateInfo mutationInfo) throws Exception {
+    if (!provider.getAclMutationPolicy().isMutationAllowed(callerUGI,
+        mutationInfo)) {
+      throw new org.apache.hadoop.security.AccessControlException("User"
+          + " is not admin of all modified queues.");
+    }
+    return provider.logAndApplyMutation(callerUGI,
+        mutationInfo);
+  }
+
+  private boolean isConfigurationMutable(ResourceScheduler scheduler) {
+    return scheduler instanceof MutableConfScheduler && ((MutableConfScheduler)
+        scheduler).isConfigurationMutable();
   }
 
   @GET
@@ -2740,8 +2811,7 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
     initForWritableEndpoints(callerUGI, true);
 
     ResourceScheduler scheduler = rm.getResourceScheduler();
-    if (scheduler instanceof MutableConfScheduler
-        && ((MutableConfScheduler) scheduler).isConfigurationMutable()) {
+    if (isConfigurationMutable(scheduler)) {
       MutableConfigurationProvider mutableConfigurationProvider =
           ((MutableConfScheduler) scheduler).getMutableConfProvider();
       // We load the cached configuration from configuration store,
@@ -2772,8 +2842,7 @@ public class RMWebServices extends WebServices implements RMWebServiceProtocol {
     initForWritableEndpoints(callerUGI, true);
 
     ResourceScheduler scheduler = rm.getResourceScheduler();
-    if (scheduler instanceof MutableConfScheduler
-        && ((MutableConfScheduler) scheduler).isConfigurationMutable()) {
+    if (isConfigurationMutable(scheduler)) {
       MutableConfigurationProvider mutableConfigurationProvider =
           ((MutableConfScheduler) scheduler).getMutableConfProvider();
 

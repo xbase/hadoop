@@ -33,7 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.fs.Path;
 
-import com.google.common.base.Preconditions;
+import org.apache.hadoop.util.Preconditions;
 
 /**
  * The OptionsParser parses out the command-line options passed to DistCp,
@@ -115,7 +115,9 @@ public class OptionsParser {
         .withVerboseLog(
             command.hasOption(DistCpOptionSwitch.VERBOSE_LOG.getSwitch()))
         .withDirectWrite(
-            command.hasOption(DistCpOptionSwitch.DIRECT_WRITE.getSwitch()));
+            command.hasOption(DistCpOptionSwitch.DIRECT_WRITE.getSwitch()))
+        .withUseIterator(
+            command.hasOption(DistCpOptionSwitch.USE_ITERATOR.getSwitch()));
 
     if (command.hasOption(DistCpOptionSwitch.DIFF.getSwitch())) {
       String[] snapshots = getVals(command,

@@ -17,9 +17,6 @@
  */
 package org.apache.hadoop.hdfs.server.namenode;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
 import org.apache.hadoop.HadoopIllegalArgumentException;
 import org.apache.hadoop.crypto.key.KeyProviderCryptoExtension;
 import org.apache.hadoop.fs.FileStatus;
@@ -29,11 +26,16 @@ import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DFSUtil;
 import org.apache.hadoop.hdfs.XAttrHelper;
+import org.apache.hadoop.hdfs.protocol.XAttrNotFoundException;
 import org.apache.hadoop.hdfs.protocol.proto.HdfsProtos;
 import org.apache.hadoop.hdfs.protocol.proto.HdfsProtos.ReencryptionInfoProto;
 import org.apache.hadoop.hdfs.protocolPB.PBHelperClient;
 import org.apache.hadoop.hdfs.server.namenode.FSDirectory.DirOp;
 import org.apache.hadoop.security.AccessControlException;
+import org.apache.hadoop.util.Lists;
+
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.util.Preconditions;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -41,12 +43,13 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.ListIterator;
 
-import static org.apache.hadoop.hdfs.server.common.HdfsServerConstants.CRYPTO_XATTR_ENCRYPTION_ZONE;
 import static org.apache.hadoop.hdfs.server.common.HdfsServerConstants.SECURITY_XATTR_UNREADABLE_BY_SUPERUSER;
 import static org.apache.hadoop.hdfs.server.common.HdfsServerConstants.XATTR_SATISFY_STORAGE_POLICY;
 import static org.apache.hadoop.hdfs.server.common.HdfsServerConstants.CRYPTO_XATTR_FILE_ENCRYPTION_INFO;
+import static org.apache.hadoop.hdfs.server.common.HdfsServerConstants.XATTR_SNAPSHOT_DELETED;
+import static org.apache.hadoop.hdfs.server.common.HdfsServerConstants.CRYPTO_XATTR_ENCRYPTION_ZONE;
 
-class FSDirXAttrOp {
+public class FSDirXAttrOp {
   private static final XAttr KEYID_XATTR =
       XAttrHelper.buildXAttr(CRYPTO_XATTR_ENCRYPTION_ZONE, null);
   private static final XAttr UNREADABLE_BY_SUPERUSER_XATTR =
@@ -114,8 +117,7 @@ class FSDirXAttrOp {
       return filteredAll;
     }
     if (filteredAll == null || filteredAll.isEmpty()) {
-      throw new IOException(
-          "At least one of the attributes provided was not found.");
+      throw new XAttrNotFoundException();
     }
     List<XAttr> toGet = Lists.newArrayListWithCapacity(xAttrs.size());
     for (XAttr xAttr : xAttrs) {
@@ -129,8 +131,7 @@ class FSDirXAttrOp {
         }
       }
       if (!foundIt) {
-        throw new IOException(
-            "At least one of the attributes provided was not found.");
+        throw new XAttrNotFoundException();
       }
     }
     return toGet;
@@ -265,7 +266,7 @@ class FSDirXAttrOp {
     return newXAttrs;
   }
 
-  static INode unprotectedSetXAttrs(
+  public static INode unprotectedSetXAttrs(
       FSDirectory fsd, final INodesInPath iip, final List<XAttr> xAttrs,
       final EnumSet<XAttrSetFlag> flag)
       throws IOException {
@@ -325,6 +326,12 @@ class FSDirXAttrOp {
       if (!isFile && SECURITY_XATTR_UNREADABLE_BY_SUPERUSER.equals(xaName)) {
         throw new IOException("Can only set '" +
             SECURITY_XATTR_UNREADABLE_BY_SUPERUSER + "' on a file.");
+      }
+
+      if (xaName.equals(XATTR_SNAPSHOT_DELETED) && !(inode.isDirectory() &&
+          inode.getParent().isSnapshottable())) {
+        throw new IOException("Can only set '" +
+            XATTR_SNAPSHOT_DELETED + "' on a snapshot root.");
       }
     }
 
@@ -430,7 +437,10 @@ class FSDirXAttrOp {
       if (inode != null &&
           inode.isDirectory() &&
           inode.getFsPermission().getStickyBit()) {
-        if (!pc.isSuperUser()) {
+        if (pc.isSuperUser()) {
+          // call external enforcer for audit
+          pc.checkSuperuserPrivilege(iip.getPath());
+        } else {
           fsd.checkOwner(pc, iip);
         }
       } else {

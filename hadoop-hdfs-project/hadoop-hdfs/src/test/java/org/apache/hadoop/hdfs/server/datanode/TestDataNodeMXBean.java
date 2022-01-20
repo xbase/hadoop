@@ -28,7 +28,7 @@ import javax.management.ObjectName;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.base.Supplier;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -75,6 +75,10 @@ public class TestDataNodeMXBean extends SaslDataTransferTestCase {
       // get attribute "Version"
       String version = (String)mbs.getAttribute(mxbeanName, "Version");
       Assert.assertEquals(datanode.getVersion(),version);
+      // get attribute "DNStartedTimeInMillis"
+      long startTime = (long) mbs.getAttribute(mxbeanName, "DNStartedTimeInMillis");
+      Assert.assertTrue("Datanode start time should not be 0", startTime > 0);
+      Assert.assertEquals(datanode.getDNStartedTimeInMillis(), startTime);
       // get attribute "SotfwareVersion"
       String softwareVersion =
           (String)mbs.getAttribute(mxbeanName, "SoftwareVersion");

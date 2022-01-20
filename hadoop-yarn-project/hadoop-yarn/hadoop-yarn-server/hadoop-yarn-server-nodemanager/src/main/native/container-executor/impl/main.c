@@ -68,8 +68,8 @@ static void display_usage(FILE *stream) {
   fprintf(stream,
       "       container-executor <user> <yarn-user> <command> <command-args>\n"
       "       where command and command-args: \n" \
-      "            initialize container:  %2d appid tokens nm-local-dirs "
-      "nm-log-dirs cmd app...\n"
+      "            initialize container:  %2d appid containerid tokens nm-local-dirs "
+      "nm-log-dirs cmd...\n"
       "            launch container:      %2d appid containerid workdir "
       "container-script tokens http-option pidfile nm-local-dirs nm-log-dirs resources ",
       INITIALIZE_CONTAINER, LAUNCH_CONTAINER);
@@ -658,14 +658,14 @@ int main(int argc, char **argv) {
   assert_valid_setup(argv[0]);
 
   int operation = -1;
-  int ret = validate_arguments(argc, argv, &operation);
-
-  if (ret != 0) {
-    flush_and_close_log_files();
-    return ret;
-  }
-
   int exit_code = 0;
+  exit_code = validate_arguments(argc, argv, &operation);
+
+  if (exit_code != 0 || operation == -1) {
+    // if operation is still -1, the work was done in validate_arguments
+    // e.g. for --module-gpu
+    goto cleanup;
+  }
 
   switch (operation) {
   case CHECK_SETUP:
@@ -831,6 +831,7 @@ int main(int argc, char **argv) {
     break;
   }
 
+cleanup:
   if (exit_code) {
     fprintf(ERRORFILE, "Nonzero exit code=%d, error message='%s'\n", exit_code,
             get_error_message(exit_code));

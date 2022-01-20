@@ -318,8 +318,10 @@ public class CopyCommitter extends FileOutputCommitter {
     SequenceFile.Reader sourceReader = new SequenceFile.Reader(conf,
                                       SequenceFile.Reader.file(sourceListing));
     long totalLen = clusterFS.getFileStatus(sourceListing).getLen();
-
-    Path targetRoot = new Path(conf.get(DistCpConstants.CONF_LABEL_TARGET_WORK_PATH));
+    // For Atomic Copy the Final & Work Path are different & atomic copy has
+    // already moved it to final path.
+    Path targetRoot =
+            new Path(conf.get(DistCpConstants.CONF_LABEL_TARGET_FINAL_PATH));
 
     long preservedEntries = 0;
     try {
@@ -551,10 +553,6 @@ public class CopyCommitter extends FileOutputCommitter {
         conf.get(DistCpConstants.CONF_LABEL_TARGET_FINAL_PATH));
     List<Path> targets = new ArrayList<>(1);
     targets.add(targetFinalPath);
-    Path resultNonePath = Path.getPathWithoutSchemeAndAuthority(targetFinalPath)
-        .toString().startsWith(DistCpConstants.HDFS_RESERVED_RAW_DIRECTORY_NAME)
-        ? DistCpConstants.RAW_NONE_PATH
-        : DistCpConstants.NONE_PATH;
     //
     // Set up options to be the same from the CopyListing.buildListing's
     // perspective, so to collect similar listings as when doing the copy
@@ -562,12 +560,15 @@ public class CopyCommitter extends FileOutputCommitter {
     // thread count is picked up from the job
     int threads = conf.getInt(DistCpConstants.CONF_LABEL_LISTSTATUS_THREADS,
         DistCpConstants.DEFAULT_LISTSTATUS_THREADS);
+    boolean useIterator =
+        conf.getBoolean(DistCpConstants.CONF_LABEL_USE_ITERATOR, false);
     LOG.info("Scanning destination directory {} with thread count: {}",
         targetFinalPath, threads);
-    DistCpOptions options = new DistCpOptions.Builder(targets, resultNonePath)
+    DistCpOptions options = new DistCpOptions.Builder(targets, targetFinalPath)
         .withOverwrite(overwrite)
         .withSyncFolder(syncFolder)
         .withNumListstatusThreads(threads)
+        .withUseIterator(useIterator)
         .build();
     DistCpContext distCpContext = new DistCpContext(options);
     distCpContext.setTargetPathExists(targetPathExists);

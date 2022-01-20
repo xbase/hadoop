@@ -148,7 +148,22 @@ public class ApplicationStateDataPBImpl extends ApplicationStateData {
     maybeInitBuilder();
     builder.setUser(user);
   }
-  
+
+  @Override
+  public String getRealUser() {
+    ApplicationStateDataProtoOrBuilder p = viaProto ? proto : builder;
+    if (!p.hasRealUser()) {
+      return null;
+    }
+    return (p.getRealUser());
+  }
+
+  @Override
+  public void setRealUser(String realUser) {
+    maybeInitBuilder();
+    builder.setRealUser(realUser);
+  }
+
   @Override
   public ApplicationSubmissionContext getApplicationSubmissionContext() {
     ApplicationStateDataProtoOrBuilder p = viaProto ? proto : builder;
@@ -259,14 +274,17 @@ public class ApplicationStateDataPBImpl extends ApplicationStateData {
 
       RpcHeaderProtos.RPCCallerContextProto.Builder b = RpcHeaderProtos.RPCCallerContextProto
           .newBuilder();
-      if (callerContext.getContext() != null) {
+      if (callerContext.isContextValid()) {
         b.setContext(callerContext.getContext());
       }
       if (callerContext.getSignature() != null) {
         b.setSignature(ByteString.copyFrom(callerContext.getSignature()));
       }
 
-      builder.setCallerContext(b);
+      if(callerContext.isContextValid()
+          || callerContext.getSignature() != null) {
+        builder.setCallerContext(b);
+      }
     }
   }
 

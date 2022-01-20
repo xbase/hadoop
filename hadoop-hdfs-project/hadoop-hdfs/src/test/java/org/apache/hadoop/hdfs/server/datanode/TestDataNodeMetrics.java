@@ -33,13 +33,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
-
-import com.google.common.base.Supplier;
-import com.google.common.collect.Lists;
+import java.util.function.Supplier;
 
 import net.jcip.annotations.NotThreadSafe;
 import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdfs.MiniDFSNNTopology;
+import org.apache.hadoop.util.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -64,6 +63,8 @@ import org.apache.hadoop.test.MetricsAsserts;
 import org.apache.hadoop.util.Time;
 import org.junit.Test;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -158,6 +159,62 @@ public class TestDataNodeMetrics {
       assertQuantileGauges("FsyncNanos" + sec, dnMetrics);
     } finally {
       if (cluster != null) {cluster.shutdown();}
+    }
+  }
+
+  @Test
+  public void testReceivePacketSlowMetrics() throws Exception {
+    Configuration conf = new HdfsConfiguration();
+    final int interval = 1;
+    conf.setInt(DFSConfigKeys.DFS_METRICS_PERCENTILES_INTERVALS_KEY, interval);
+    MiniDFSCluster cluster = new MiniDFSCluster.Builder(conf)
+        .numDataNodes(3).build();
+    DataNodeFaultInjector oldInjector = DataNodeFaultInjector.get();
+    try {
+      cluster.waitActive();
+      DistributedFileSystem fs = cluster.getFileSystem();
+      final DataNodeFaultInjector injector =
+          Mockito.mock(DataNodeFaultInjector.class);
+      Answer answer = new Answer() {
+        @Override
+        public Object answer(InvocationOnMock invocationOnMock)
+            throws Throwable {
+          // make the op taking longer time
+          Thread.sleep(1000);
+          return null;
+        }
+      };
+      Mockito.doAnswer(answer).when(injector).
+          stopSendingPacketDownstream(Mockito.anyString());
+      Mockito.doAnswer(answer).when(injector).delayWriteToOsCache();
+      Mockito.doAnswer(answer).when(injector).delayWriteToDisk();
+      DataNodeFaultInjector.set(injector);
+      Path testFile = new Path("/testFlushNanosMetric.txt");
+      FSDataOutputStream fout = fs.create(testFile);
+      DFSOutputStream dout = (DFSOutputStream) fout.getWrappedStream();
+      fout.write(new byte[1]);
+      fout.hsync();
+      DatanodeInfo[] pipeline = dout.getPipeline();
+      fout.close();
+      dout.close();
+      DatanodeInfo headDatanodeInfo = pipeline[0];
+      List<DataNode> datanodes = cluster.getDataNodes();
+      DataNode headNode = datanodes.stream().filter(d -> d.getDatanodeId().equals(headDatanodeInfo))
+          .findFirst().orElseGet(null);
+      assertNotNull("Could not find the head of the datanode write pipeline",
+          headNode);
+      MetricsRecordBuilder dnMetrics = getMetrics(headNode.getMetrics().name());
+      assertTrue("More than 1 packet received",
+          getLongCounter("PacketsReceived", dnMetrics) > 1L);
+      assertTrue("More than 1 slow packet to mirror",
+          getLongCounter("PacketsSlowWriteToMirror", dnMetrics) > 1L);
+      assertCounter("PacketsSlowWriteToDisk", 1L, dnMetrics);
+      assertCounter("PacketsSlowWriteToOsCache", 0L, dnMetrics);
+    } finally {
+      if (cluster != null) {
+        cluster.shutdown();
+      }
+      DataNodeFaultInjector.set(oldInjector);
     }
   }
 

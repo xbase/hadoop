@@ -60,6 +60,7 @@ import java.util.Collection;
 
 import static org.apache.hadoop.yarn.webapp.WebServicesTestUtils.assertResponseStatusCode;
 import static org.apache.hadoop.yarn.webapp.WebServicesTestUtils.checkStringMatch;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -121,6 +122,45 @@ public class TestRMWebServicesAppAttempts extends JerseyTestBase {
     amNodeManager.nodeHeartbeat(true);
     testAppAttemptsHelper(app1.getApplicationId().toString(), app1,
             MediaType.APPLICATION_JSON);
+    rm.stop();
+  }
+
+  @Test (timeout = 20000)
+  public void testCompletedAppAttempt() throws Exception {
+    Configuration conf = rm.getConfig();
+    String logServerUrl = "http://localhost:19888/jobhistory/logs";
+    conf.set(YarnConfiguration.YARN_LOG_SERVER_URL, logServerUrl);
+    conf.setInt(YarnConfiguration.RM_AM_MAX_ATTEMPTS, 1);
+    rm.start();
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 8192);
+    MockRMAppSubmissionData data =
+        MockRMAppSubmissionData.Builder.createWithMemory(CONTAINER_MB, rm)
+        .withAppName("testwordcount")
+        .withUser("user1")
+        .build();
+    RMApp app1 = MockRMAppSubmitter.submit(rm, data);
+    MockAM am = MockRM.launchAndRegisterAM(app1, rm, amNodeManager);
+    // fail the AM by sending CONTAINER_FINISHED event without registering.
+    amNodeManager.nodeHeartbeat(am.getApplicationAttemptId(), 1,
+        ContainerState.COMPLETE);
+    rm.waitForState(am.getApplicationAttemptId(), RMAppAttemptState.FAILED);
+    rm.waitForState(app1.getApplicationId(), RMAppState.FAILED);
+
+    WebResource r = resource();
+    ClientResponse response = r.path("ws").path("v1").path("cluster")
+        .path("apps").path(app1.getApplicationId().toString())
+        .path("appattempts").accept(MediaType.APPLICATION_JSON)
+        .get(ClientResponse.class);
+    JSONObject json = response.getEntity(JSONObject.class);
+    JSONObject jsonAppAttempts = json.getJSONObject("appAttempts");
+    JSONArray jsonArray = jsonAppAttempts.getJSONArray("appAttempt");
+    JSONObject info = jsonArray.getJSONObject(0);
+    String logsLink = info.getString("logsLink");
+    String containerId = app1.getCurrentAppAttempt().getMasterContainer()
+        .getId().toString();
+    assertThat(logsLink).isEqualTo(logServerUrl
+        + "/127.0.0.1:1234/" + containerId + "/" + containerId + "/"
+        + "user1");
     rm.stop();
   }
 
@@ -381,7 +421,8 @@ public class TestRMWebServicesAppAttempts extends JerseyTestBase {
               WebServicesTestUtils.getXmlString(element, "nodeHttpAddress"),
               WebServicesTestUtils.getXmlString(element, "nodeId"),
               WebServicesTestUtils.getXmlString(element, "logsLink"), user,
-              WebServicesTestUtils.getXmlString(element, "exportPorts"));
+              WebServicesTestUtils.getXmlString(element, "exportPorts"),
+              WebServicesTestUtils.getXmlString(element, "appAttemptState"));
     }
   }
 
@@ -389,17 +430,19 @@ public class TestRMWebServicesAppAttempts extends JerseyTestBase {
           String user)
           throws Exception {
 
-    assertEquals("incorrect number of elements", 11, info.length());
+    assertEquals("incorrect number of elements", 12, info.length());
 
     verifyAppAttemptInfoGeneric(appAttempt, info.getInt("id"),
             info.getLong("startTime"), info.getString("containerId"),
             info.getString("nodeHttpAddress"), info.getString("nodeId"),
-            info.getString("logsLink"), user, info.getString("exportPorts"));
+            info.getString("logsLink"), user, info.getString("exportPorts"),
+            info.getString("appAttemptState"));
   }
 
   private void verifyAppAttemptInfoGeneric(RMAppAttempt appAttempt, int id,
           long startTime, String containerId, String nodeHttpAddress, String
-          nodeId, String logsLink, String user, String exportPorts) {
+          nodeId, String logsLink, String user, String exportPorts,
+          String appAttemptState) {
 
     assertEquals("id doesn't match", appAttempt.getAppAttemptId()
             .getAttemptId(), id);
@@ -415,5 +458,7 @@ public class TestRMWebServicesAppAttempts extends JerseyTestBase {
     assertTrue(
             "logsLink doesn't contain user info", logsLink.endsWith("/"
                     + user));
+    assertEquals("appAttemptState doesn't match", appAttemptState, appAttempt
+            .getAppAttemptState().toString());
   }
 }

@@ -158,6 +158,16 @@ Usage: `hdfs lsSnapshottableDir [-help]`
 
 Get the list of snapshottable directories. When this is run as a super user, it returns all snapshottable directories. Otherwise it returns those directories that are owned by the current user.
 
+### `lsSnapshot`
+
+Usage: `hdfs lsSnapshot [-help]`
+
+| COMMAND\_OPTION | Description |
+|:---- |:---- |
+| `-help` | print help |
+
+Get the list of snapshots for a snapshottable directory.
+
 ### `jmxget`
 
 Usage: `hdfs jmxget [-localVM ConnectorURL | -port port | -server mbeanserver | -service service]`
@@ -291,15 +301,16 @@ Usage:
 | `-idleiterations` \<iterations\> | Maximum number of idle iterations before exit. This overwrites the default idleiterations(5). |
 | `-runDuringUpgrade` | Whether to run the balancer during an ongoing HDFS upgrade. This is usually not desired since it will not affect used space on over-utilized machines. |
 | `-asService` | Run Balancer as a long running service. |
+| `-hotBlockTimeInterval` | Prefer moving cold blocks i.e blocks associated with files accessed or modified before the specified time interval. |
 | `-h`\|`--help` | Display the tool usage and help information and exit. |
 
 Runs a cluster balancing utility. An administrator can simply press Ctrl-C to stop the rebalancing process. See [Balancer](./HdfsUserGuide.html#Balancer) for more details.
 
-Note that the `blockpool` policy is more strict than the `datanode` policy.
+Note that the `blockpool` policy is stricter than the `datanode` policy.
 
 Besides the above command options, a pinning feature is introduced starting from 2.7.0 to prevent certain replicas from getting moved by balancer/mover. This pinning feature is disabled by default, and can be enabled by configuration property "dfs.datanode.block-pinning.enabled". When enabled, this feature only affects blocks that are written to favored nodes specified in the create() call. This feature is useful when we want to maintain the data locality, for applications such as HBase regionserver.
 
-If you want to run Balancer as a long running service, please start Balancer using `-asService` parameter with daemon-mode. You can do this by using the following command: `hdfs --daemon start balancer -asService`, or just use sbin/start-balancer.sh script with parameter `-asService`.
+If you want to run Balancer as a long-running service, please start Balancer using `-asService` parameter with daemon-mode. You can do this by using the following command: `hdfs --daemon start balancer -asService`, or just use sbin/start-balancer.sh script with parameter `-asService`.
 
 ### `cacheadmin`
 
@@ -447,11 +458,12 @@ Usage:
           [-refresh]
           [-refreshRouterArgs <host:ipc_port> <key> [arg1..argn]]
           [-refreshSuperUserGroupsConfiguration]
+          [-refreshCallQueue]
 
 | COMMAND\_OPTION | Description |
 |:---- |:---- |
 | `-add` *source* *nameservices* *destination* | Add a mount table entry or update if it exists. |
-| `-update` *source* *nameservices* *destination* | Update a mount table entry attribures. |
+| `-update` *source* *nameservices* *destination* | Update a mount table entry attributes. |
 | `-rm` *source* | Remove mount point of specified path. |
 | `-ls` `[-d]` *path* | List mount points under specified path. Specify -d parameter to get detailed listing.|
 | `-getDestination` *path* | Get the subcluster where a file is or should be created. |
@@ -465,6 +477,7 @@ Usage:
 | `-refresh` | Update mount table cache of the connected router. |
 | `refreshRouterArgs` \<host:ipc\_port\> \<key\> [arg1..argn] | To trigger a runtime-refresh of the resource specified by \<key\> on \<host:ipc\_port\>. For example, to enable white list checking, we just need to send a refresh command other than restart the router server. |
 | `-refreshSuperUserGroupsConfiguration` | Refresh superuser proxy groups mappings on Router. |
+| `-refreshCallQueue` | Reload the call queue from config for Router. |
 
 The commands for managing Router-based federation. See [Mount table management](../hadoop-hdfs-rbf/HDFSRouterFederation.html#Mount_table_management) for more info.
 
@@ -483,7 +496,7 @@ Usage:
 
 | COMMAND\_OPTION | Description |
 |:---- |:---- |
-|-plan| Creates a disbalancer plan|
+|-plan| Creates a diskbalancer plan|
 |-execute| Executes a given plan on a datanode|
 |-query| Gets the current diskbalancer status from a datanode|
 |-cancel| Cancels a running plan|
@@ -554,7 +567,7 @@ See [HDFS HA with NFS](./HDFSHighAvailabilityWithNFS.html#Administrative_command
 
 Usage: `hdfs journalnode`
 
-This comamnd starts a journalnode for use with [HDFS HA with QJM](./HDFSHighAvailabilityWithQJM.html#Administrative_commands).
+This command starts a journalnode for use with [HDFS HA with QJM](./HDFSHighAvailabilityWithQJM.html#Administrative_commands).
 
 ### `mover`
 
@@ -609,13 +622,13 @@ Runs the namenode. More info about the upgrade and rollback is at [Upgrade Rollb
 
 Usage: `hdfs nfs3`
 
-This comamnd starts the NFS3 gateway for use with the [HDFS NFS3 Service](./HdfsNfsGateway.html#Start_and_stop_NFS_gateway_service).
+This command starts the NFS3 gateway for use with the [HDFS NFS3 Service](./HdfsNfsGateway.html#Start_and_stop_NFS_gateway_service).
 
 ### `portmap`
 
 Usage: `hdfs portmap`
 
-This comamnd starts the RPC portmap for use with the [HDFS NFS3 Service](./HdfsNfsGateway.html#Start_and_stop_NFS_gateway_service).
+This command starts the RPC portmap for use with the [HDFS NFS3 Service](./HdfsNfsGateway.html#Start_and_stop_NFS_gateway_service).
 
 ### `secondarynamenode`
 
@@ -653,7 +666,7 @@ Usage: `hdfs zkfc [-formatZK [-force] [-nonInteractive]]`
 | `-formatZK` | Format the Zookeeper instance. -force: formats the znode if the znode exists. -nonInteractive: formats the znode aborts if the znode exists, unless -force option is specified. |
 | `-h` | Display help |
 
-This comamnd starts a Zookeeper Failover Controller process for use with [HDFS HA with QJM](./HDFSHighAvailabilityWithQJM.html#Administrative_commands).
+This command starts a Zookeeper Failover Controller process for use with [HDFS HA with QJM](./HDFSHighAvailabilityWithQJM.html#Administrative_commands).
 
 Debug Commands
 --------------
@@ -693,4 +706,52 @@ Usage: `hdfs debug recoverLease -path <path> [-retries <num-retries>]`
 | [`-path` *path*] | HDFS path for which to recover the lease. |
 | [`-retries` *num-retries*] | Number of times the client will retry calling recoverLease. The default number of retries is 1. |
 
-Recover the lease on the specified path. The path must reside on an HDFS filesystem. The default number of retries is 1.
+Recover the lease on the specified path. The path must reside on an HDFS file system. The default number of retries is 1.
+
+### `verifyEC`
+
+Usage: `hdfs debug verifyEC -file <file>`
+
+| COMMAND\_OPTION | Description |
+|:---- |:---- |
+| [`-file` *EC-file*] | HDFS EC file to be verified. |
+
+Verify the correctness of erasure coding on an erasure coded file.
+
+dfsadmin with ViewFsOverloadScheme
+----------------------------------
+
+Usage: `hdfs dfsadmin -fs <child fs mount link URI> <dfsadmin command options>`
+
+| COMMAND\_OPTION | Description |
+|:---- |:---- |
+| `-fs` *child fs mount link URI* | Its a logical mount link path to child file system in ViewFS world. This uri typically formed as src mount link prefixed with fs.defaultFS. Please note, this is not an actual child file system uri, instead its a logical mount link uri pointing to actual child file system|
+
+Example command usage:
+   `hdfs dfsadmin -fs hdfs://nn1 -safemode enter`
+
+In ViewFsOverloadScheme, we may have multiple child file systems as mount point mappings as shown in [ViewFsOverloadScheme Guide](./ViewFsOverloadScheme.html). Here -fs option is an optional generic parameter supported by dfsadmin. When users want to execute commands on one of the child file system, they need to pass that file system mount mapping link uri to -fs option. Let's take an example mount link configuration and dfsadmin command below.
+
+Mount link:
+
+```xml
+<property>
+  <name>fs.defaultFS</name>
+  <value>hdfs://MyCluster1</value>
+</property>
+
+<property>
+  <name>fs.viewfs.mounttable.MyCluster1./user</name>
+  <value>hdfs://MyCluster2/user</value>
+  <!-- mount table name : MyCluster1
+       mount link mapping: hdfs://MyCluster1/user --> hdfs://MyCluster2/user
+       mount link path: /user
+       mount link uri: hdfs://MyCluster1/user
+       mount target uri for /user: hdfs://MyCluster2/user -->
+</property>
+```
+
+If user wants to talk to `hdfs://MyCluster2/`, then they can pass -fs option (`-fs hdfs://MyCluster1/user`)
+Since /user was mapped to a cluster `hdfs://MyCluster2/user`, dfsadmin resolve the passed (`-fs hdfs://MyCluster1/user`) to target fs (`hdfs://MyCluster2/user`).
+This way users can get the access to all hdfs child file systems in ViewFsOverloadScheme.
+If there is no `-fs` option provided, then it will try to connect to the configured fs.defaultFS cluster if a cluster running with the fs.defaultFS uri.

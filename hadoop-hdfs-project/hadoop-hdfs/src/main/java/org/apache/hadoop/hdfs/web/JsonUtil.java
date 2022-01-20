@@ -17,7 +17,6 @@
  */
 package org.apache.hadoop.hdfs.web;
 
-import com.google.common.collect.ImmutableMap;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.fs.FileChecksum;
@@ -37,10 +36,12 @@ import org.apache.hadoop.hdfs.protocol.*;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
+import org.apache.hadoop.util.Lists;
 import org.apache.hadoop.util.StringUtils;
 
+import org.apache.hadoop.thirdparty.com.google.common.collect.ImmutableMap;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.collect.Lists;
 
 import java.io.IOException;
 import java.util.*;
@@ -576,6 +577,58 @@ public class JsonUtil {
     return m;
   }
 
+  public static String toJsonString(SnapshotDiffReportListing diffReport) {
+    return toJsonString(SnapshotDiffReportListing.class.getSimpleName(),
+        toJsonMap(diffReport));
+  }
+
+  private static Object toJsonMap(SnapshotDiffReportListing diffReport) {
+    final Map<String, Object> m = new TreeMap<String, Object>();
+    m.put("lastPath", DFSUtilClient.bytes2String(diffReport.getLastPath()));
+    m.put("lastIndex", diffReport.getLastIndex());
+    m.put("isFromEarlier", diffReport.getIsFromEarlier());
+
+    Object[] modifyList = new Object[diffReport.getModifyList().size()];
+    for (int i = 0; i < diffReport.getModifyList().size(); i++) {
+      modifyList[i] = toJsonMap(diffReport.getModifyList().get(i));
+    }
+    m.put("modifyList", modifyList);
+
+    Object[] createList = new Object[diffReport.getCreateList().size()];
+    for (int i = 0; i < diffReport.getCreateList().size(); i++) {
+      createList[i] = toJsonMap(diffReport.getCreateList().get(i));
+    }
+    m.put("createList", createList);
+
+    Object[] deleteList = new Object[diffReport.getDeleteList().size()];
+    for (int i = 0; i < diffReport.getDeleteList().size(); i++) {
+      deleteList[i] = toJsonMap(diffReport.getDeleteList().get(i));
+    }
+    m.put("deleteList", deleteList);
+
+    return m;
+  }
+
+  private static Object toJsonMap(
+      SnapshotDiffReportListing.DiffReportListingEntry diffReportEntry) {
+    final Map<String, Object> m = new TreeMap<String, Object>();
+    m.put("dirId", diffReportEntry.getDirId());
+    m.put("fileId", diffReportEntry.getFileId());
+
+    if (diffReportEntry.getSourcePath() != null) {
+      m.put("sourcePath",
+          DFSUtilClient.byteArray2String(diffReportEntry.getSourcePath()));
+    }
+
+    if (diffReportEntry.getTargetPath() != null) {
+      m.put("targetPath",
+          DFSUtilClient.byteArray2String(diffReportEntry.getTargetPath()));
+    }
+
+    m.put("isReference", diffReportEntry.isReference());
+    return m;
+  }
+
   public static String toJsonString(
       SnapshottableDirectoryStatus[] snapshottableDirectoryList) {
     if (snapshottableDirectoryList == null) {
@@ -588,6 +641,17 @@ public class JsonUtil {
     return toJsonString("SnapshottableDirectoryList", a);
   }
 
+  public static String toJsonString(SnapshotStatus[] snapshotList) {
+    if (snapshotList == null) {
+      return toJsonString("SnapshotList", null);
+    }
+    Object[] a = new Object[snapshotList.length];
+    for (int i = 0; i < snapshotList.length; i++) {
+      a[i] = toJsonMap(snapshotList[i]);
+    }
+    return toJsonString("SnapshotList", a);
+  }
+
   private static Object toJsonMap(
       SnapshottableDirectoryStatus snapshottableDirectoryStatus) {
     final Map<String, Object> m = new TreeMap<String, Object>();
@@ -596,6 +660,19 @@ public class JsonUtil {
     m.put("parentFullPath", DFSUtilClient
         .bytes2String(snapshottableDirectoryStatus.getParentFullPath()));
     m.put("dirStatus", toJsonMap(snapshottableDirectoryStatus.getDirStatus()));
+    return m;
+  }
+
+  private static Object toJsonMap(
+      SnapshotStatus snapshotStatus) {
+    final Map<String, Object> m = new TreeMap<String, Object>();
+    HdfsFileStatus status = snapshotStatus.getDirStatus();
+    m.put("snapshotID", snapshotStatus.getSnapshotID());
+    m.put("deletionStatus", snapshotStatus.isDeleted() ? "DELETED" : "ACTIVE");
+    m.put("fullPath", SnapshotStatus.getSnapshotPath(
+            DFSUtilClient.bytes2String(snapshotStatus.getParentFullPath()),
+        status.getLocalName()));
+    m.put("dirStatus", toJsonMap(snapshotStatus.getDirStatus()));
     return m;
   }
 

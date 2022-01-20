@@ -18,8 +18,8 @@
 
 package org.apache.hadoop.security.token;
 
-import com.google.common.collect.Maps;
-import com.google.common.primitives.Bytes;
+import org.apache.hadoop.thirdparty.com.google.common.collect.Maps;
+import org.apache.hadoop.thirdparty.com.google.common.primitives.Bytes;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.hadoop.HadoopIllegalArgumentException;
@@ -32,7 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.util.Arrays;
+import java.security.MessageDigest;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.ServiceConfigurationError;
@@ -391,8 +391,8 @@ public class Token<T extends TokenIdentifier> implements Writable {
       return false;
     } else {
       Token<T> r = (Token<T>) right;
-      return Arrays.equals(identifier, r.identifier) &&
-             Arrays.equals(password, r.password) &&
+      return MessageDigest.isEqual(identifier, r.identifier) &&
+             MessageDigest.isEqual(password, r.password) &&
              kind.equals(r.kind) &&
              service.equals(r.service);
     }

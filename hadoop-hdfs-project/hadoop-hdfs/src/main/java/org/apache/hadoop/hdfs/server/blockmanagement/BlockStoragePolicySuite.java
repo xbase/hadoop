@@ -17,9 +17,8 @@
  */
 package org.apache.hadoop.hdfs.server.blockmanagement;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.util.Preconditions;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.StorageType;
@@ -28,6 +27,7 @@ import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.XAttrHelper;
 import org.apache.hadoop.hdfs.protocol.BlockStoragePolicy;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
+import org.apache.hadoop.util.Lists;
 import org.apache.hadoop.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,6 +63,12 @@ public class BlockStoragePolicySuite {
         new StorageType[]{StorageType.DISK},
         new StorageType[]{StorageType.DISK},
         true);    // Cannot be changed on regular files, but inherited.
+    final byte allnvdimmId = HdfsConstants.StoragePolicy.ALL_NVDIMM.value();
+    policies[allnvdimmId] = new BlockStoragePolicy(allnvdimmId,
+        HdfsConstants.StoragePolicy.ALL_NVDIMM.name(),
+        new StorageType[]{StorageType.NVDIMM},
+        new StorageType[]{StorageType.DISK},
+        new StorageType[]{StorageType.DISK});
     final byte allssdId = HdfsConstants.StoragePolicy.ALL_SSD.value();
     policies[allssdId] = new BlockStoragePolicy(allssdId,
         HdfsConstants.StoragePolicy.ALL_SSD.name(),

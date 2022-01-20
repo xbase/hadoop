@@ -54,6 +54,7 @@ import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.IO_FILE_BUFFER_
 import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.IO_FILE_BUFFER_SIZE_KEY;
 import static org.apache.hadoop.fs.CreateFlag.CREATE;
 import static org.apache.hadoop.fs.CreateFlag.LAZY_PERSIST;
+import static org.apache.hadoop.fs.CreateFlag.OVERWRITE;
 
 /**
  * Provides: argument processing to ensure the destination is valid
@@ -396,11 +397,11 @@ abstract class CommandWithDestination extends FsCommand {
 
   /**
    * If direct write is disabled ,copies the stream contents to a temporary
-   * file "<target>._COPYING_". If the copy is
-   * successful, the temporary file will be renamed to the real path,
-   * else the temporary file will be deleted.
+   * file "target._COPYING_". If the copy is successful, the temporary file
+   * will be renamed to the real path, else the temporary file will be deleted.
    * if direct write is enabled , then creation temporary file is skipped.
-   * @param in the input stream for the copy
+   *
+   * @param in     the input stream for the copy
    * @param target where to store the contents of the stream
    * @throws IOException if copy fails
    */ 
@@ -515,7 +516,8 @@ abstract class CommandWithDestination extends FsCommand {
           defaultBlockSize = getDefaultBlockSize(item.path);
         }
 
-        EnumSet<CreateFlag> createFlags = EnumSet.of(CREATE, LAZY_PERSIST);
+        EnumSet<CreateFlag> createFlags =
+            EnumSet.of(CREATE, LAZY_PERSIST, OVERWRITE);
         return create(item.path,
                       FsPermission.getFileDefault().applyUMask(
                           FsPermission.getUMask(getConf())),

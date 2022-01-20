@@ -39,6 +39,7 @@ import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -46,25 +47,35 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.WeakHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Strings;
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.util.Preconditions;
+import org.apache.hadoop.thirdparty.com.google.common.base.Strings;
+import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.Futures;
+import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListenableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.EtagSource;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes;
+import org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.ConcurrentWriteOperationDetectedException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.FileSystemOperationUnhandledException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidFileSystemPropertyException;
@@ -78,13 +89,18 @@ import org.apache.hadoop.fs.azurebfs.enums.Trilean;
 import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.extensions.ExtensionHelper;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
+import org.apache.hadoop.fs.azurebfs.oauth2.AzureADAuthenticator;
 import org.apache.hadoop.fs.azurebfs.oauth2.IdentityTransformer;
 import org.apache.hadoop.fs.azurebfs.oauth2.IdentityTransformerInterface;
 import org.apache.hadoop.fs.azurebfs.services.AbfsAclHelper;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientContext;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientContextBuilder;
+import org.apache.hadoop.fs.azurebfs.services.AbfsCounters;
 import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.services.AbfsInputStream;
 import org.apache.hadoop.fs.azurebfs.services.AbfsInputStreamContext;
+import org.apache.hadoop.fs.azurebfs.services.AbfsInputStreamStatisticsImpl;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStreamContext;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStreamStatisticsImpl;
@@ -92,19 +108,27 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsPermission;
 import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.fs.azurebfs.services.AuthType;
 import org.apache.hadoop.fs.azurebfs.services.ExponentialRetryPolicy;
+import org.apache.hadoop.fs.azurebfs.services.AbfsLease;
 import org.apache.hadoop.fs.azurebfs.services.SharedKeyCredentials;
 import org.apache.hadoop.fs.azurebfs.services.AbfsPerfTracker;
 import org.apache.hadoop.fs.azurebfs.services.AbfsPerfInfo;
+import org.apache.hadoop.fs.azurebfs.services.ListingSupport;
 import org.apache.hadoop.fs.azurebfs.utils.Base64;
 import org.apache.hadoop.fs.azurebfs.utils.CRC64;
 import org.apache.hadoop.fs.azurebfs.utils.DateTimeUtils;
+import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
+import org.apache.hadoop.fs.impl.OpenFileParameters;
 import org.apache.hadoop.fs.permission.AclEntry;
 import org.apache.hadoop.fs.permission.AclStatus;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.fs.store.DataBlocks;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.util.BlockingThreadPoolExecutorService;
+import org.apache.hadoop.util.SemaphoredDelegatingExecutor;
+import org.apache.hadoop.util.concurrent.HadoopExecutors;
 import org.apache.http.client.utils.URIBuilder;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_EQUALS;
@@ -113,10 +137,13 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_HYP
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_PLUS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_STAR;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_UNDERSCORE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DIRECTORY;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FILE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SINGLE_WHITE_SPACE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TOKEN_VERSION;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_ABFS_ENDPOINT;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
 
 /**
@@ -124,7 +151,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class AzureBlobFileSystemStore implements Closeable {
+public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private static final Logger LOG = LoggerFactory.getLogger(AzureBlobFileSystemStore.class);
 
   private AbfsClient client;
@@ -135,23 +162,48 @@ public class AzureBlobFileSystemStore implements Closeable {
   private static final String XMS_PROPERTIES_ENCODING = "ISO-8859-1";
   private static final int GET_SET_AGGREGATE_COUNT = 2;
 
+  private final Map<AbfsLease, Object> leaseRefs;
+
   private final AbfsConfiguration abfsConfiguration;
   private final Set<String> azureAtomicRenameDirSet;
+  private Set<String> azureInfiniteLeaseDirSet;
   private Trilean isNamespaceEnabled;
   private final AuthType authType;
   private final UserGroupInformation userGroupInformation;
   private final IdentityTransformerInterface identityTransformer;
   private final AbfsPerfTracker abfsPerfTracker;
+  private final AbfsCounters abfsCounters;
 
-  public AzureBlobFileSystemStore(URI uri, boolean isSecureScheme, Configuration configuration)
-          throws IOException {
-    this.uri = uri;
+  /**
+   * The set of directories where we should store files as append blobs.
+   */
+  private Set<String> appendBlobDirSet;
+
+  /** BlockFactory being used by this instance.*/
+  private DataBlocks.BlockFactory blockFactory;
+  /** Number of active data blocks per AbfsOutputStream */
+  private int blockOutputActiveBlocks;
+  /** Bounded ThreadPool for this instance. */
+  private ExecutorService boundedThreadPool;
+
+  /**
+   * FileSystem Store for {@link AzureBlobFileSystem} for Abfs operations.
+   * Built using the {@link AzureBlobFileSystemStoreBuilder} with parameters
+   * required.
+   * @param abfsStoreBuilder Builder for AzureBlobFileSystemStore.
+   * @throws IOException Throw IOE in case of failure during constructing.
+   */
+  public AzureBlobFileSystemStore(
+      AzureBlobFileSystemStoreBuilder abfsStoreBuilder) throws IOException {
+    this.uri = abfsStoreBuilder.uri;
     String[] authorityParts = authorityParts(uri);
     final String fileSystemName = authorityParts[0];
     final String accountName = authorityParts[1];
 
+    leaseRefs = Collections.synchronizedMap(new WeakHashMap<>());
+
     try {
-      this.abfsConfiguration = new AbfsConfiguration(configuration, accountName);
+      this.abfsConfiguration = new AbfsConfiguration(abfsStoreBuilder.configuration, accountName);
     } catch (IllegalAccessException exception) {
       throw new FileSystemOperationUnhandledException(exception);
     }
@@ -178,21 +230,47 @@ public class AzureBlobFileSystemStore implements Closeable {
 
     this.azureAtomicRenameDirSet = new HashSet<>(Arrays.asList(
         abfsConfiguration.getAzureAtomicRenameDirs().split(AbfsHttpConstants.COMMA)));
+    updateInfiniteLeaseDirs();
     this.authType = abfsConfiguration.getAuthType(accountName);
     boolean usingOauth = (authType == AuthType.OAuth);
-    boolean useHttps = (usingOauth || abfsConfiguration.isHttpsAlwaysUsed()) ? true : isSecureScheme;
+    boolean useHttps = (usingOauth || abfsConfiguration.isHttpsAlwaysUsed()) ? true : abfsStoreBuilder.isSecureScheme;
     this.abfsPerfTracker = new AbfsPerfTracker(fileSystemName, accountName, this.abfsConfiguration);
+    this.abfsCounters = abfsStoreBuilder.abfsCounters;
     initializeClient(uri, fileSystemName, accountName, useHttps);
     final Class<? extends IdentityTransformerInterface> identityTransformerClass =
-        configuration.getClass(FS_AZURE_IDENTITY_TRANSFORM_CLASS, IdentityTransformer.class,
+        abfsStoreBuilder.configuration.getClass(FS_AZURE_IDENTITY_TRANSFORM_CLASS, IdentityTransformer.class,
             IdentityTransformerInterface.class);
     try {
       this.identityTransformer =
-          identityTransformerClass.getConstructor(Configuration.class).newInstance(configuration);
+          identityTransformerClass.getConstructor(Configuration.class).newInstance(abfsStoreBuilder.configuration);
     } catch (IllegalAccessException | InstantiationException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException e) {
       throw new IOException(e);
     }
     LOG.trace("IdentityTransformer init complete");
+
+    // Extract the directories that should contain append blobs
+    String appendBlobDirs = abfsConfiguration.getAppendBlobDirs();
+    if (appendBlobDirs.trim().isEmpty()) {
+      this.appendBlobDirSet = new HashSet<String>();
+    } else {
+      this.appendBlobDirSet = new HashSet<>(Arrays.asList(
+          abfsConfiguration.getAppendBlobDirs().split(AbfsHttpConstants.COMMA)));
+    }
+    this.blockFactory = abfsStoreBuilder.blockFactory;
+    this.blockOutputActiveBlocks = abfsStoreBuilder.blockOutputActiveBlocks;
+    this.boundedThreadPool = BlockingThreadPoolExecutorService.newInstance(
+        abfsConfiguration.getWriteMaxConcurrentRequestCount(),
+        abfsConfiguration.getMaxWriteRequestsToQueue(),
+        10L, TimeUnit.SECONDS,
+        "abfs-bounded");
+  }
+
+  /**
+   * Checks if the given key in Azure Storage should be stored as a page
+   * blob instead of block blob.
+   */
+  public boolean isAppendBlobKey(String key) {
+    return isKeyForDirectorySet(key, appendBlobDirSet);
   }
 
   /**
@@ -211,7 +289,28 @@ public class AzureBlobFileSystemStore implements Closeable {
 
   @Override
   public void close() throws IOException {
-    IOUtils.cleanupWithLogger(LOG, client);
+    List<ListenableFuture<?>> futures = new ArrayList<>();
+    for (AbfsLease lease : leaseRefs.keySet()) {
+      if (lease == null) {
+        continue;
+      }
+      ListenableFuture<?> future = client.submit(() -> lease.free());
+      futures.add(future);
+    }
+    try {
+      Futures.allAsList(futures).get();
+      // shutdown the threadPool and set it to null.
+      HadoopExecutors.shutdown(boundedThreadPool, LOG,
+          30, TimeUnit.SECONDS);
+      boundedThreadPool = null;
+    } catch (InterruptedException e) {
+      LOG.error("Interrupted freeing leases", e);
+      Thread.currentThread().interrupt();
+    } catch (ExecutionException e) {
+      LOG.error("Error freeing leases", e);
+    } finally {
+      IOUtils.cleanupWithLogger(LOG, client);
+    }
   }
 
   byte[] encodeAttribute(String value) throws UnsupportedEncodingException {
@@ -246,7 +345,8 @@ public class AzureBlobFileSystemStore implements Closeable {
     return authorityParts;
   }
 
-  public boolean getIsNamespaceEnabled() throws AzureBlobFileSystemException {
+  public boolean getIsNamespaceEnabled(TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
     try {
       return this.isNamespaceEnabled.toBoolean();
     } catch (TrileanConversionException e) {
@@ -257,7 +357,8 @@ public class AzureBlobFileSystemStore implements Closeable {
     LOG.debug("Get root ACL status");
     try (AbfsPerfInfo perfInfo = startTracking("getIsNamespaceEnabled",
         "getAclStatus")) {
-      AbfsRestOperation op = client.getAclStatus(AbfsHttpConstants.ROOT_PATH);
+      AbfsRestOperation op = client
+          .getAclStatus(AbfsHttpConstants.ROOT_PATH, tracingContext);
       perfInfo.registerResult(op.getResult());
       isNamespaceEnabled = Trilean.getTrilean(true);
       perfInfo.registerSuccess(true);
@@ -310,7 +411,8 @@ public class AzureBlobFileSystemStore implements Closeable {
     return this.abfsConfiguration;
   }
 
-  public Hashtable<String, String> getFilesystemProperties() throws AzureBlobFileSystemException {
+  public Hashtable<String, String> getFilesystemProperties(
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     try (AbfsPerfInfo perfInfo = startTracking("getFilesystemProperties",
             "getFilesystemProperties")) {
       LOG.debug("getFilesystemProperties for filesystem: {}",
@@ -318,7 +420,8 @@ public class AzureBlobFileSystemStore implements Closeable {
 
       final Hashtable<String, String> parsedXmsProperties;
 
-      final AbfsRestOperation op = client.getFilesystemProperties();
+      final AbfsRestOperation op = client
+          .getFilesystemProperties(tracingContext);
       perfInfo.registerResult(op.getResult());
 
       final String xMsProperties = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_PROPERTIES);
@@ -330,7 +433,8 @@ public class AzureBlobFileSystemStore implements Closeable {
     }
   }
 
-  public void setFilesystemProperties(final Hashtable<String, String> properties)
+  public void setFilesystemProperties(
+      final Hashtable<String, String> properties, TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     if (properties == null || properties.isEmpty()) {
       LOG.trace("setFilesystemProperties no properties present");
@@ -350,19 +454,22 @@ public class AzureBlobFileSystemStore implements Closeable {
         throw new InvalidAbfsRestOperationException(ex);
       }
 
-      final AbfsRestOperation op = client.setFilesystemProperties(commaSeparatedProperties);
+      final AbfsRestOperation op = client
+          .setFilesystemProperties(commaSeparatedProperties, tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }
 
-  public Hashtable<String, String> getPathStatus(final Path path) throws AzureBlobFileSystemException {
+  public Hashtable<String, String> getPathStatus(final Path path,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     try (AbfsPerfInfo perfInfo = startTracking("getPathStatus", "getPathStatus")){
       LOG.debug("getPathStatus for filesystem: {} path: {}",
               client.getFileSystem(),
               path);
 
       final Hashtable<String, String> parsedXmsProperties;
-      final AbfsRestOperation op = client.getPathStatus(getRelativePath(path), true);
+      final AbfsRestOperation op = client
+          .getPathStatus(getRelativePath(path), true, tracingContext);
       perfInfo.registerResult(op.getResult());
 
       final String xMsProperties = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_PROPERTIES);
@@ -375,7 +482,9 @@ public class AzureBlobFileSystemStore implements Closeable {
     }
   }
 
-  public void setPathProperties(final Path path, final Hashtable<String, String> properties) throws AzureBlobFileSystemException {
+  public void setPathProperties(final Path path,
+      final Hashtable<String, String> properties, TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
     try (AbfsPerfInfo perfInfo = startTracking("setPathProperties", "setPathProperties")){
       LOG.debug("setFilesystemProperties for filesystem: {} path: {} with properties: {}",
               client.getFileSystem(),
@@ -388,74 +497,224 @@ public class AzureBlobFileSystemStore implements Closeable {
       } catch (CharacterCodingException ex) {
         throw new InvalidAbfsRestOperationException(ex);
       }
-      final AbfsRestOperation op = client.setPathProperties(getRelativePath(path), commaSeparatedProperties);
+      final AbfsRestOperation op = client
+          .setPathProperties(getRelativePath(path), commaSeparatedProperties,
+              tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }
 
-  public void createFilesystem() throws AzureBlobFileSystemException {
+  public void createFilesystem(TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
     try (AbfsPerfInfo perfInfo = startTracking("createFilesystem", "createFilesystem")){
       LOG.debug("createFilesystem for filesystem: {}",
               client.getFileSystem());
 
-      final AbfsRestOperation op = client.createFilesystem();
+      final AbfsRestOperation op = client.createFilesystem(tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }
 
-  public void deleteFilesystem() throws AzureBlobFileSystemException {
+  public void deleteFilesystem(TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
     try (AbfsPerfInfo perfInfo = startTracking("deleteFilesystem", "deleteFilesystem")) {
       LOG.debug("deleteFilesystem for filesystem: {}",
               client.getFileSystem());
 
-      final AbfsRestOperation op = client.deleteFilesystem();
+      final AbfsRestOperation op = client.deleteFilesystem(tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }
 
   public OutputStream createFile(final Path path,
-      final FileSystem.Statistics statistics,
-      final boolean overwrite, final FsPermission permission,
-      final FsPermission umask) throws AzureBlobFileSystemException {
+      final FileSystem.Statistics statistics, final boolean overwrite,
+      final FsPermission permission, final FsPermission umask,
+      TracingContext tracingContext) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createFile", "createPath")) {
-      boolean isNamespaceEnabled = getIsNamespaceEnabled();
+      boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("createFile filesystem: {} path: {} overwrite: {} permission: {} umask: {} isNamespaceEnabled: {}",
               client.getFileSystem(),
               path,
               overwrite,
-              permission.toString(),
-              umask.toString(),
+              permission,
+              umask,
               isNamespaceEnabled);
 
       String relativePath = getRelativePath(path);
+      boolean isAppendBlob = false;
+      if (isAppendBlobKey(path.toString())) {
+        isAppendBlob = true;
+      }
 
-      final AbfsRestOperation op = client.createPath(relativePath, true, overwrite,
-              isNamespaceEnabled ? getOctalNotation(permission) : null,
-              isNamespaceEnabled ? getOctalNotation(umask) : null);
+      // if "fs.azure.enable.conditional.create.overwrite" is enabled and
+      // is a create request with overwrite=true, create will follow different
+      // flow.
+      boolean triggerConditionalCreateOverwrite = false;
+      if (overwrite
+          && abfsConfiguration.isConditionalCreateOverwriteEnabled()) {
+        triggerConditionalCreateOverwrite = true;
+      }
+
+      AbfsRestOperation op;
+      if (triggerConditionalCreateOverwrite) {
+        op = conditionalCreateOverwriteFile(relativePath,
+            statistics,
+            isNamespaceEnabled ? getOctalNotation(permission) : null,
+            isNamespaceEnabled ? getOctalNotation(umask) : null,
+            isAppendBlob,
+            tracingContext
+        );
+
+      } else {
+        op = client.createPath(relativePath, true,
+            overwrite,
+            isNamespaceEnabled ? getOctalNotation(permission) : null,
+            isNamespaceEnabled ? getOctalNotation(umask) : null,
+            isAppendBlob,
+            null,
+            tracingContext);
+
+      }
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
 
+      AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
+
       return new AbfsOutputStream(
-          client,
-          statistics,
-          relativePath,
-          0,
-          populateAbfsOutputStreamContext());
+          populateAbfsOutputStreamContext(
+              isAppendBlob,
+              lease,
+              client,
+              statistics,
+              relativePath,
+              0,
+              tracingContext));
     }
   }
 
-  private AbfsOutputStreamContext populateAbfsOutputStreamContext() {
+  /**
+   * Conditional create overwrite flow ensures that create overwrites is done
+   * only if there is match for eTag of existing file.
+   * @param relativePath
+   * @param statistics
+   * @param permission
+   * @param umask
+   * @param isAppendBlob
+   * @return
+   * @throws AzureBlobFileSystemException
+   */
+  private AbfsRestOperation conditionalCreateOverwriteFile(final String relativePath,
+      final FileSystem.Statistics statistics,
+      final String permission,
+      final String umask,
+      final boolean isAppendBlob,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    AbfsRestOperation op;
+
+    try {
+      // Trigger a create with overwrite=false first so that eTag fetch can be
+      // avoided for cases when no pre-existing file is present (major portion
+      // of create file traffic falls into the case of no pre-existing file).
+      op = client.createPath(relativePath, true, false, permission, umask,
+          isAppendBlob, null, tracingContext);
+
+    } catch (AbfsRestOperationException e) {
+      if (e.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
+        // File pre-exists, fetch eTag
+        try {
+          op = client.getPathStatus(relativePath, false, tracingContext);
+        } catch (AbfsRestOperationException ex) {
+          if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+            // Is a parallel access case, as file which was found to be
+            // present went missing by this request.
+            throw new ConcurrentWriteOperationDetectedException(
+                "Parallel access to the create path detected. Failing request "
+                    + "to honor single writer semantics");
+          } else {
+            throw ex;
+          }
+        }
+
+        String eTag = op.getResult()
+            .getResponseHeader(HttpHeaderConfigurations.ETAG);
+
+        try {
+          // overwrite only if eTag matches with the file properties fetched befpre
+          op = client.createPath(relativePath, true, true, permission, umask,
+              isAppendBlob, eTag, tracingContext);
+        } catch (AbfsRestOperationException ex) {
+          if (ex.getStatusCode() == HttpURLConnection.HTTP_PRECON_FAILED) {
+            // Is a parallel access case, as file with eTag was just queried
+            // and precondition failure can happen only when another file with
+            // different etag got created.
+            throw new ConcurrentWriteOperationDetectedException(
+                "Parallel access to the create path detected. Failing request "
+                    + "to honor single writer semantics");
+          } else {
+            throw ex;
+          }
+        }
+      } else {
+        throw e;
+      }
+    }
+
+    return op;
+  }
+
+  /**
+   * Method to populate AbfsOutputStreamContext with different parameters to
+   * be used to construct {@link AbfsOutputStream}.
+   *
+   * @param isAppendBlob   is Append blob support enabled?
+   * @param lease          instance of AbfsLease for this AbfsOutputStream.
+   * @param client         AbfsClient.
+   * @param statistics     FileSystem statistics.
+   * @param path           Path for AbfsOutputStream.
+   * @param position       Position or offset of the file being opened, set to 0
+   *                       when creating a new file, but needs to be set for APPEND
+   *                       calls on the same file.
+   * @param tracingContext instance of TracingContext for this AbfsOutputStream.
+   * @return AbfsOutputStreamContext instance with the desired parameters.
+   */
+  private AbfsOutputStreamContext populateAbfsOutputStreamContext(
+      boolean isAppendBlob,
+      AbfsLease lease,
+      AbfsClient client,
+      FileSystem.Statistics statistics,
+      String path,
+      long position,
+      TracingContext tracingContext) {
+    int bufferSize = abfsConfiguration.getWriteBufferSize();
+    if (isAppendBlob && bufferSize > FileSystemConfigurations.APPENDBLOB_MAX_WRITE_BUFFER_SIZE) {
+      bufferSize = FileSystemConfigurations.APPENDBLOB_MAX_WRITE_BUFFER_SIZE;
+    }
     return new AbfsOutputStreamContext(abfsConfiguration.getSasTokenRenewPeriodForStreamsInSeconds())
-            .withWriteBufferSize(abfsConfiguration.getWriteBufferSize())
+            .withWriteBufferSize(bufferSize)
             .enableFlush(abfsConfiguration.isFlushEnabled())
+            .enableSmallWriteOptimization(abfsConfiguration.isSmallWriteOptimizationEnabled())
             .disableOutputStreamFlush(abfsConfiguration.isOutputStreamFlushDisabled())
             .withStreamStatistics(new AbfsOutputStreamStatisticsImpl())
+            .withAppendBlob(isAppendBlob)
+            .withWriteMaxConcurrentRequestCount(abfsConfiguration.getWriteMaxConcurrentRequestCount())
+            .withMaxWriteRequestsToQueue(abfsConfiguration.getMaxWriteRequestsToQueue())
+            .withLease(lease)
+            .withBlockFactory(blockFactory)
+            .withBlockOutputActiveBlocks(blockOutputActiveBlocks)
+            .withClient(client)
+            .withPosition(position)
+            .withFsStatistics(statistics)
+            .withPath(path)
+            .withExecutorService(new SemaphoredDelegatingExecutor(boundedThreadPool,
+                blockOutputActiveBlocks, true))
+            .withTracingContext(tracingContext)
             .build();
   }
 
-  public void createDirectory(final Path path, final FsPermission permission, final FsPermission umask)
+  public void createDirectory(final Path path, final FsPermission permission,
+      final FsPermission umask, TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
-      boolean isNamespaceEnabled = getIsNamespaceEnabled();
+      boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("createDirectory filesystem: {} path: {} permission: {} umask: {} isNamespaceEnabled: {}",
               client.getFileSystem(),
               path,
@@ -463,57 +722,103 @@ public class AzureBlobFileSystemStore implements Closeable {
               umask,
               isNamespaceEnabled);
 
-      final AbfsRestOperation op = client.createPath(getRelativePath(path), false, true,
+      boolean overwrite =
+          !isNamespaceEnabled || abfsConfiguration.isEnabledMkdirOverwrite();
+      final AbfsRestOperation op = client.createPath(getRelativePath(path),
+          false, overwrite,
               isNamespaceEnabled ? getOctalNotation(permission) : null,
-              isNamespaceEnabled ? getOctalNotation(umask) : null);
+              isNamespaceEnabled ? getOctalNotation(umask) : null, false, null,
+              tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }
 
-  public AbfsInputStream openFileForRead(final Path path, final FileSystem.Statistics statistics)
-      throws AzureBlobFileSystemException {
-    try (AbfsPerfInfo perfInfo = startTracking("openFileForRead", "getPathStatus")) {
+  public AbfsInputStream openFileForRead(final Path path,
+      final FileSystem.Statistics statistics, TracingContext tracingContext)
+      throws IOException {
+    return openFileForRead(path, Optional.empty(), statistics,
+        tracingContext);
+  }
+
+  public AbfsInputStream openFileForRead(Path path,
+      final Optional<OpenFileParameters> parameters,
+      final FileSystem.Statistics statistics, TracingContext tracingContext)
+      throws IOException {
+    try (AbfsPerfInfo perfInfo = startTracking("openFileForRead",
+        "getPathStatus")) {
       LOG.debug("openFileForRead filesystem: {} path: {}",
-              client.getFileSystem(),
-              path);
+          client.getFileSystem(), path);
 
+      FileStatus fileStatus = parameters.map(OpenFileParameters::getStatus)
+          .orElse(null);
       String relativePath = getRelativePath(path);
-
-      final AbfsRestOperation op = client.getPathStatus(relativePath, false);
-      perfInfo.registerResult(op.getResult());
-
-      final String resourceType = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE);
-      final long contentLength = Long.parseLong(op.getResult().getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
-      final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
+      String resourceType, eTag;
+      long contentLength;
+      if (fileStatus instanceof VersionedFileStatus) {
+        path = path.makeQualified(this.uri, path);
+        Preconditions.checkArgument(fileStatus.getPath().equals(path),
+            String.format(
+                "Filestatus path [%s] does not match with given path [%s]",
+                fileStatus.getPath(), path));
+        resourceType = fileStatus.isFile() ? FILE : DIRECTORY;
+        contentLength = fileStatus.getLen();
+        eTag = ((VersionedFileStatus) fileStatus).getVersion();
+      } else {
+        if (fileStatus != null) {
+          LOG.warn(
+              "Fallback to getPathStatus REST call as provided filestatus "
+                  + "is not of type VersionedFileStatus");
+        }
+        AbfsHttpOperation op = client.getPathStatus(relativePath, false,
+            tracingContext).getResult();
+        resourceType = op.getResponseHeader(
+            HttpHeaderConfigurations.X_MS_RESOURCE_TYPE);
+        contentLength = Long.parseLong(
+            op.getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
+        eTag = op.getResponseHeader(HttpHeaderConfigurations.ETAG);
+      }
 
       if (parseIsDirectory(resourceType)) {
         throw new AbfsRestOperationException(
-                AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
-                AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
-                "openFileForRead must be used with files and not directories",
-                null);
+            AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
+            AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
+            "openFileForRead must be used with files and not directories",
+            null);
       }
 
       perfInfo.registerSuccess(true);
 
       // Add statistics for InputStream
-      return new AbfsInputStream(client, statistics,
-              relativePath, contentLength,
-              populateAbfsInputStreamContext(),
-              eTag);
+      return new AbfsInputStream(client, statistics, relativePath,
+          contentLength, populateAbfsInputStreamContext(
+          parameters.map(OpenFileParameters::getOptions)),
+          eTag, tracingContext);
     }
   }
 
-  private AbfsInputStreamContext populateAbfsInputStreamContext() {
+  private AbfsInputStreamContext populateAbfsInputStreamContext(
+      Optional<Configuration> options) {
+    boolean bufferedPreadDisabled = options
+        .map(c -> c.getBoolean(FS_AZURE_BUFFERED_PREAD_DISABLE, false))
+        .orElse(false);
     return new AbfsInputStreamContext(abfsConfiguration.getSasTokenRenewPeriodForStreamsInSeconds())
             .withReadBufferSize(abfsConfiguration.getReadBufferSize())
             .withReadAheadQueueDepth(abfsConfiguration.getReadAheadQueueDepth())
             .withTolerateOobAppends(abfsConfiguration.getTolerateOobAppends())
+            .withReadSmallFilesCompletely(abfsConfiguration.readSmallFilesCompletely())
+            .withOptimizeFooterRead(abfsConfiguration.optimizeFooterRead())
+            .withReadAheadRange(abfsConfiguration.getReadAheadRange())
+            .withStreamStatistics(new AbfsInputStreamStatisticsImpl())
+            .withShouldReadBufferSizeAlways(
+                abfsConfiguration.shouldReadBufferSizeAlways())
+            .withReadAheadBlockSize(abfsConfiguration.getReadAheadBlockSize())
+            .withBufferedPreadDisabled(bufferedPreadDisabled)
             .build();
   }
 
-  public OutputStream openFileForWrite(final Path path, final FileSystem.Statistics statistics, final boolean overwrite) throws
-          AzureBlobFileSystemException {
+  public OutputStream openFileForWrite(final Path path,
+      final FileSystem.Statistics statistics, final boolean overwrite,
+      TracingContext tracingContext) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("openFileForWrite", "getPathStatus")) {
       LOG.debug("openFileForWrite filesystem: {} path: {} overwrite: {}",
               client.getFileSystem(),
@@ -522,7 +827,8 @@ public class AzureBlobFileSystemStore implements Closeable {
 
       String relativePath = getRelativePath(path);
 
-      final AbfsRestOperation op = client.getPathStatus(relativePath, false);
+      final AbfsRestOperation op = client
+          .getPathStatus(relativePath, false, tracingContext);
       perfInfo.registerResult(op.getResult());
 
       final String resourceType = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE);
@@ -540,16 +846,39 @@ public class AzureBlobFileSystemStore implements Closeable {
 
       perfInfo.registerSuccess(true);
 
+      boolean isAppendBlob = false;
+      if (isAppendBlobKey(path.toString())) {
+        isAppendBlob = true;
+      }
+
+      AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
+
       return new AbfsOutputStream(
-          client,
-          statistics,
-          relativePath,
-          offset,
-          populateAbfsOutputStreamContext());
+          populateAbfsOutputStreamContext(
+              isAppendBlob,
+              lease,
+              client,
+              statistics,
+              relativePath,
+              offset,
+              tracingContext));
     }
   }
 
-  public void rename(final Path source, final Path destination) throws
+  /**
+   * Break any current lease on an ABFS file.
+   *
+   * @param path file name
+   * @param tracingContext TracingContext instance to track correlation IDs
+   * @throws AzureBlobFileSystemException on any exception while breaking the lease
+   */
+  public void breakLease(final Path path, final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    LOG.debug("lease path: {}", path);
+
+    client.breakLease(getRelativePath(path), tracingContext);
+  }
+
+  public void rename(final Path source, final Path destination, TracingContext tracingContext) throws
           AzureBlobFileSystemException {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
     long countAggregate = 0;
@@ -572,8 +901,9 @@ public class AzureBlobFileSystemStore implements Closeable {
 
     do {
       try (AbfsPerfInfo perfInfo = startTracking("rename", "renamePath")) {
-        AbfsRestOperation op = client.renamePath(sourceRelativePath,
-                destinationRelativePath, continuation);
+        AbfsRestOperation op = client
+            .renamePath(sourceRelativePath, destinationRelativePath,
+                continuation, tracingContext);
         perfInfo.registerResult(op.getResult());
         continuation = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
         perfInfo.registerSuccess(true);
@@ -587,8 +917,8 @@ public class AzureBlobFileSystemStore implements Closeable {
     } while (shouldContinue);
   }
 
-  public void delete(final Path path, final boolean recursive)
-      throws AzureBlobFileSystemException {
+  public void delete(final Path path, final boolean recursive,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
     long countAggregate = 0;
     boolean shouldContinue = true;
@@ -604,8 +934,8 @@ public class AzureBlobFileSystemStore implements Closeable {
 
     do {
       try (AbfsPerfInfo perfInfo = startTracking("delete", "deletePath")) {
-        AbfsRestOperation op = client.deletePath(
-                relativePath, recursive, continuation);
+        AbfsRestOperation op = client
+            .deletePath(relativePath, recursive, continuation, tracingContext);
         perfInfo.registerResult(op.getResult());
         continuation = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
         perfInfo.registerSuccess(true);
@@ -619,9 +949,10 @@ public class AzureBlobFileSystemStore implements Closeable {
     } while (shouldContinue);
   }
 
-  public FileStatus getFileStatus(final Path path) throws IOException {
+  public FileStatus getFileStatus(final Path path,
+      TracingContext tracingContext) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("getFileStatus", "undetermined")) {
-      boolean isNamespaceEnabled = getIsNamespaceEnabled();
+      boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("getFileStatus filesystem: {} path: {} isNamespaceEnabled: {}",
               client.getFileSystem(),
               path,
@@ -631,21 +962,21 @@ public class AzureBlobFileSystemStore implements Closeable {
       if (path.isRoot()) {
         if (isNamespaceEnabled) {
           perfInfo.registerCallee("getAclStatus");
-          op = client.getAclStatus(getRelativePath(path));
+          op = client.getAclStatus(getRelativePath(path), tracingContext);
         } else {
           perfInfo.registerCallee("getFilesystemProperties");
-          op = client.getFilesystemProperties();
+          op = client.getFilesystemProperties(tracingContext);
         }
       } else {
         perfInfo.registerCallee("getPathStatus");
-        op = client.getPathStatus(getRelativePath(path), false);
+        op = client.getPathStatus(getRelativePath(path), false, tracingContext);
       }
 
       perfInfo.registerResult(op.getResult());
       final long blockSize = abfsConfiguration.getAzureBlockSize();
       final AbfsHttpOperation result = op.getResult();
 
-      final String eTag = result.getResponseHeader(HttpHeaderConfigurations.ETAG);
+      String eTag = extractEtagHeader(result);
       final String lastModified = result.getResponseHeader(HttpHeaderConfigurations.LAST_MODIFIED);
       final String permissions = result.getResponseHeader((HttpHeaderConfigurations.X_MS_PERMISSIONS));
       final boolean hasAcl = AbfsPermission.isExtendedAcl(permissions);
@@ -690,10 +1021,12 @@ public class AzureBlobFileSystemStore implements Closeable {
 
   /**
    * @param path The list path.
+   * @param tracingContext Tracks identifiers for request header
    * @return the entries in the path.
    * */
-  public FileStatus[] listStatus(final Path path) throws IOException {
-    return listStatus(path, null);
+  @Override
+  public FileStatus[] listStatus(final Path path, TracingContext tracingContext) throws IOException {
+    return listStatus(path, null, tracingContext);
   }
 
   /**
@@ -704,11 +1037,21 @@ public class AzureBlobFileSystemStore implements Closeable {
    *                  Notice that if startFrom is a non-existent entry name, then the list response contains
    *                  all entries after this non-existent entry in lexical order:
    *                  listStatus(Path("/folder"), "cfile") will return "/folder/hfile" and "/folder/ifile".
-   *
+   * @param tracingContext Tracks identifiers for request header
    * @return the entries in the path start from  "startFrom" in lexical order.
    * */
   @InterfaceStability.Unstable
-  public FileStatus[] listStatus(final Path path, final String startFrom) throws IOException {
+  @Override
+  public FileStatus[] listStatus(final Path path, final String startFrom, TracingContext tracingContext) throws IOException {
+    List<FileStatus> fileStatuses = new ArrayList<>();
+    listStatus(path, startFrom, fileStatuses, true, null, tracingContext);
+    return fileStatuses.toArray(new FileStatus[fileStatuses.size()]);
+  }
+
+  @Override
+  public String listStatus(final Path path, final String startFrom,
+      List<FileStatus> fileStatuses, final boolean fetchAll,
+      String continuation, TracingContext tracingContext) throws IOException {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
     long countAggregate = 0;
     boolean shouldContinue = true;
@@ -719,20 +1062,21 @@ public class AzureBlobFileSystemStore implements Closeable {
             startFrom);
 
     final String relativePath = getRelativePath(path);
-    String continuation = null;
 
-    // generate continuation token if a valid startFrom is provided.
-    if (startFrom != null && !startFrom.isEmpty()) {
-      continuation = getIsNamespaceEnabled()
-              ? generateContinuationTokenForXns(startFrom)
-              : generateContinuationTokenForNonXns(relativePath, startFrom);
+    if (continuation == null || continuation.isEmpty()) {
+      // generate continuation token if a valid startFrom is provided.
+      if (startFrom != null && !startFrom.isEmpty()) {
+        continuation = getIsNamespaceEnabled(tracingContext)
+            ? generateContinuationTokenForXns(startFrom)
+            : generateContinuationTokenForNonXns(relativePath, startFrom);
+      }
     }
 
-    ArrayList<FileStatus> fileStatuses = new ArrayList<>();
     do {
       try (AbfsPerfInfo perfInfo = startTracking("listStatus", "listPath")) {
         AbfsRestOperation op = client.listPath(relativePath, false,
-            abfsConfiguration.getListMaxResults(), continuation);
+            abfsConfiguration.getListMaxResults(), continuation,
+            tracingContext);
         perfInfo.registerResult(op.getResult());
         continuation = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
         ListResultSchema retrievedSchema = op.getResult().getListResultSchema();
@@ -782,7 +1126,8 @@ public class AzureBlobFileSystemStore implements Closeable {
 
         perfInfo.registerSuccess(true);
         countAggregate++;
-        shouldContinue = continuation != null && !continuation.isEmpty();
+        shouldContinue =
+            fetchAll && continuation != null && !continuation.isEmpty();
 
         if (!shouldContinue) {
           perfInfo.registerAggregates(startAggregate, countAggregate);
@@ -790,7 +1135,7 @@ public class AzureBlobFileSystemStore implements Closeable {
       }
     } while (shouldContinue);
 
-    return fileStatuses.toArray(new FileStatus[fileStatuses.size()]);
+    return continuation;
   }
 
   // generate continuation token for xns account
@@ -849,9 +1194,9 @@ public class AzureBlobFileSystemStore implements Closeable {
     return encodedTokenBuilder.toString();
   }
 
-  public void setOwner(final Path path, final String owner, final String group) throws
-          AzureBlobFileSystemException {
-    if (!getIsNamespaceEnabled()) {
+  public void setOwner(final Path path, final String owner, final String group,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    if (!getIsNamespaceEnabled(tracingContext)) {
       throw new UnsupportedOperationException(
           "This operation is only valid for storage accounts with the hierarchical namespace enabled.");
     }
@@ -861,7 +1206,7 @@ public class AzureBlobFileSystemStore implements Closeable {
       LOG.debug(
               "setOwner filesystem: {} path: {} owner: {} group: {}",
               client.getFileSystem(),
-              path.toString(),
+              path,
               owner,
               group);
 
@@ -870,15 +1215,16 @@ public class AzureBlobFileSystemStore implements Closeable {
 
       final AbfsRestOperation op = client.setOwner(getRelativePath(path),
               transformedOwner,
-              transformedGroup);
+              transformedGroup,
+              tracingContext);
 
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }
 
-  public void setPermission(final Path path, final FsPermission permission) throws
-          AzureBlobFileSystemException {
-    if (!getIsNamespaceEnabled()) {
+  public void setPermission(final Path path, final FsPermission permission,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    if (!getIsNamespaceEnabled(tracingContext)) {
       throw new UnsupportedOperationException(
           "This operation is only valid for storage accounts with the hierarchical namespace enabled.");
     }
@@ -888,19 +1234,20 @@ public class AzureBlobFileSystemStore implements Closeable {
       LOG.debug(
               "setPermission filesystem: {} path: {} permission: {}",
               client.getFileSystem(),
-              path.toString(),
-              permission.toString());
+              path,
+              permission);
 
       final AbfsRestOperation op = client.setPermission(getRelativePath(path),
-              String.format(AbfsHttpConstants.PERMISSION_FORMAT, permission.toOctal()));
+          String.format(AbfsHttpConstants.PERMISSION_FORMAT,
+              permission.toOctal()), tracingContext);
 
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }
 
-  public void modifyAclEntries(final Path path, final List<AclEntry> aclSpec) throws
-          AzureBlobFileSystemException {
-    if (!getIsNamespaceEnabled()) {
+  public void modifyAclEntries(final Path path, final List<AclEntry> aclSpec,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    if (!getIsNamespaceEnabled(tracingContext)) {
       throw new UnsupportedOperationException(
           "This operation is only valid for storage accounts with the hierarchical namespace enabled.");
     }
@@ -910,7 +1257,7 @@ public class AzureBlobFileSystemStore implements Closeable {
       LOG.debug(
               "modifyAclEntries filesystem: {} path: {} aclSpec: {}",
               client.getFileSystem(),
-              path.toString(),
+              path,
               AclEntry.aclSpecToString(aclSpec));
 
       identityTransformer.transformAclEntriesForSetRequest(aclSpec);
@@ -919,7 +1266,8 @@ public class AzureBlobFileSystemStore implements Closeable {
 
       String relativePath = getRelativePath(path);
 
-      final AbfsRestOperation op = client.getAclStatus(relativePath, useUpn);
+      final AbfsRestOperation op = client
+          .getAclStatus(relativePath, useUpn, tracingContext);
       perfInfoGet.registerResult(op.getResult());
       final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
 
@@ -930,9 +1278,9 @@ public class AzureBlobFileSystemStore implements Closeable {
       perfInfoGet.registerSuccess(true).finishTracking();
 
       try (AbfsPerfInfo perfInfoSet = startTracking("modifyAclEntries", "setAcl")) {
-        final AbfsRestOperation setAclOp
-                = client.setAcl(relativePath,
-                AbfsAclHelper.serializeAclSpec(aclEntries), eTag);
+        final AbfsRestOperation setAclOp = client
+            .setAcl(relativePath, AbfsAclHelper.serializeAclSpec(aclEntries),
+                eTag, tracingContext);
         perfInfoSet.registerResult(setAclOp.getResult())
                 .registerSuccess(true)
                 .registerAggregates(perfInfoGet.getTrackingStart(), GET_SET_AGGREGATE_COUNT);
@@ -940,8 +1288,9 @@ public class AzureBlobFileSystemStore implements Closeable {
     }
   }
 
-  public void removeAclEntries(final Path path, final List<AclEntry> aclSpec) throws AzureBlobFileSystemException {
-    if (!getIsNamespaceEnabled()) {
+  public void removeAclEntries(final Path path, final List<AclEntry> aclSpec,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    if (!getIsNamespaceEnabled(tracingContext)) {
       throw new UnsupportedOperationException(
           "This operation is only valid for storage accounts with the hierarchical namespace enabled.");
     }
@@ -951,7 +1300,7 @@ public class AzureBlobFileSystemStore implements Closeable {
       LOG.debug(
               "removeAclEntries filesystem: {} path: {} aclSpec: {}",
               client.getFileSystem(),
-              path.toString(),
+              path,
               AclEntry.aclSpecToString(aclSpec));
 
       identityTransformer.transformAclEntriesForSetRequest(aclSpec);
@@ -960,7 +1309,8 @@ public class AzureBlobFileSystemStore implements Closeable {
 
       String relativePath = getRelativePath(path);
 
-      final AbfsRestOperation op = client.getAclStatus(relativePath, isUpnFormat);
+      final AbfsRestOperation op = client
+          .getAclStatus(relativePath, isUpnFormat, tracingContext);
       perfInfoGet.registerResult(op.getResult());
       final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
 
@@ -971,9 +1321,9 @@ public class AzureBlobFileSystemStore implements Closeable {
       perfInfoGet.registerSuccess(true).finishTracking();
 
       try (AbfsPerfInfo perfInfoSet = startTracking("removeAclEntries", "setAcl")) {
-        final AbfsRestOperation setAclOp =
-                client.setAcl(relativePath,
-                AbfsAclHelper.serializeAclSpec(aclEntries), eTag);
+        final AbfsRestOperation setAclOp = client
+            .setAcl(relativePath, AbfsAclHelper.serializeAclSpec(aclEntries),
+                eTag, tracingContext);
         perfInfoSet.registerResult(setAclOp.getResult())
                 .registerSuccess(true)
                 .registerAggregates(perfInfoGet.getTrackingStart(), GET_SET_AGGREGATE_COUNT);
@@ -981,8 +1331,9 @@ public class AzureBlobFileSystemStore implements Closeable {
     }
   }
 
-  public void removeDefaultAcl(final Path path) throws AzureBlobFileSystemException {
-    if (!getIsNamespaceEnabled()) {
+  public void removeDefaultAcl(final Path path, TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    if (!getIsNamespaceEnabled(tracingContext)) {
       throw new UnsupportedOperationException(
           "This operation is only valid for storage accounts with the hierarchical namespace enabled.");
     }
@@ -992,11 +1343,12 @@ public class AzureBlobFileSystemStore implements Closeable {
       LOG.debug(
               "removeDefaultAcl filesystem: {} path: {}",
               client.getFileSystem(),
-              path.toString());
+              path);
 
       String relativePath = getRelativePath(path);
 
-      final AbfsRestOperation op = client.getAclStatus(relativePath);
+      final AbfsRestOperation op = client
+          .getAclStatus(relativePath, tracingContext);
       perfInfoGet.registerResult(op.getResult());
       final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
       final Map<String, String> aclEntries = AbfsAclHelper.deserializeAclSpec(op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_ACL));
@@ -1013,9 +1365,9 @@ public class AzureBlobFileSystemStore implements Closeable {
       perfInfoGet.registerSuccess(true).finishTracking();
 
       try (AbfsPerfInfo perfInfoSet = startTracking("removeDefaultAcl", "setAcl")) {
-        final AbfsRestOperation setAclOp =
-                client.setAcl(relativePath,
-                AbfsAclHelper.serializeAclSpec(aclEntries), eTag);
+        final AbfsRestOperation setAclOp = client
+            .setAcl(relativePath, AbfsAclHelper.serializeAclSpec(aclEntries),
+                eTag, tracingContext);
         perfInfoSet.registerResult(setAclOp.getResult())
                 .registerSuccess(true)
                 .registerAggregates(perfInfoGet.getTrackingStart(), GET_SET_AGGREGATE_COUNT);
@@ -1023,8 +1375,9 @@ public class AzureBlobFileSystemStore implements Closeable {
     }
   }
 
-  public void removeAcl(final Path path) throws AzureBlobFileSystemException {
-    if (!getIsNamespaceEnabled()) {
+  public void removeAcl(final Path path, TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    if (!getIsNamespaceEnabled(tracingContext)) {
       throw new UnsupportedOperationException(
           "This operation is only valid for storage accounts with the hierarchical namespace enabled.");
     }
@@ -1034,11 +1387,12 @@ public class AzureBlobFileSystemStore implements Closeable {
       LOG.debug(
               "removeAcl filesystem: {} path: {}",
               client.getFileSystem(),
-              path.toString());
+              path);
 
       String relativePath = getRelativePath(path);
 
-      final AbfsRestOperation op = client.getAclStatus(relativePath);
+      final AbfsRestOperation op = client
+          .getAclStatus(relativePath, tracingContext);
       perfInfoGet.registerResult(op.getResult());
       final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
 
@@ -1052,9 +1406,9 @@ public class AzureBlobFileSystemStore implements Closeable {
       perfInfoGet.registerSuccess(true).finishTracking();
 
       try (AbfsPerfInfo perfInfoSet = startTracking("removeAcl", "setAcl")) {
-        final AbfsRestOperation setAclOp =
-                client.setAcl(relativePath,
-                AbfsAclHelper.serializeAclSpec(newAclEntries), eTag);
+        final AbfsRestOperation setAclOp = client
+            .setAcl(relativePath, AbfsAclHelper.serializeAclSpec(newAclEntries),
+                eTag, tracingContext);
         perfInfoSet.registerResult(setAclOp.getResult())
                 .registerSuccess(true)
                 .registerAggregates(perfInfoGet.getTrackingStart(), GET_SET_AGGREGATE_COUNT);
@@ -1062,8 +1416,9 @@ public class AzureBlobFileSystemStore implements Closeable {
     }
   }
 
-  public void setAcl(final Path path, final List<AclEntry> aclSpec) throws AzureBlobFileSystemException {
-    if (!getIsNamespaceEnabled()) {
+  public void setAcl(final Path path, final List<AclEntry> aclSpec,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    if (!getIsNamespaceEnabled(tracingContext)) {
       throw new UnsupportedOperationException(
           "This operation is only valid for storage accounts with the hierarchical namespace enabled.");
     }
@@ -1073,7 +1428,7 @@ public class AzureBlobFileSystemStore implements Closeable {
       LOG.debug(
               "setAcl filesystem: {} path: {} aclspec: {}",
               client.getFileSystem(),
-              path.toString(),
+              path,
               AclEntry.aclSpecToString(aclSpec));
 
       identityTransformer.transformAclEntriesForSetRequest(aclSpec);
@@ -1082,7 +1437,8 @@ public class AzureBlobFileSystemStore implements Closeable {
 
       String relativePath = getRelativePath(path);
 
-      final AbfsRestOperation op = client.getAclStatus(relativePath, isUpnFormat);
+      final AbfsRestOperation op = client
+          .getAclStatus(relativePath, isUpnFormat, tracingContext);
       perfInfoGet.registerResult(op.getResult());
       final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
 
@@ -1095,7 +1451,7 @@ public class AzureBlobFileSystemStore implements Closeable {
       try (AbfsPerfInfo perfInfoSet = startTracking("setAcl", "setAcl")) {
         final AbfsRestOperation setAclOp =
                 client.setAcl(relativePath,
-                AbfsAclHelper.serializeAclSpec(aclEntries), eTag);
+                AbfsAclHelper.serializeAclSpec(aclEntries), eTag, tracingContext);
         perfInfoSet.registerResult(setAclOp.getResult())
                 .registerSuccess(true)
                 .registerAggregates(perfInfoGet.getTrackingStart(), GET_SET_AGGREGATE_COUNT);
@@ -1103,8 +1459,9 @@ public class AzureBlobFileSystemStore implements Closeable {
     }
   }
 
-  public AclStatus getAclStatus(final Path path) throws IOException {
-    if (!getIsNamespaceEnabled()) {
+  public AclStatus getAclStatus(final Path path, TracingContext tracingContext)
+      throws IOException {
+    if (!getIsNamespaceEnabled(tracingContext)) {
       throw new UnsupportedOperationException(
           "This operation is only valid for storage accounts with the hierarchical namespace enabled.");
     }
@@ -1114,9 +1471,10 @@ public class AzureBlobFileSystemStore implements Closeable {
       LOG.debug(
               "getAclStatus filesystem: {} path: {}",
               client.getFileSystem(),
-              path.toString());
+              path);
 
-      AbfsRestOperation op = client.getAclStatus(getRelativePath(path));
+      AbfsRestOperation op = client
+          .getAclStatus(getRelativePath(path), tracingContext);
       AbfsHttpOperation result = op.getResult();
       perfInfo.registerResult(result);
 
@@ -1149,19 +1507,19 @@ public class AzureBlobFileSystemStore implements Closeable {
     }
   }
 
-  public void access(final Path path, final FsAction mode)
-      throws AzureBlobFileSystemException {
+  public void access(final Path path, final FsAction mode,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     LOG.debug("access for filesystem: {}, path: {}, mode: {}",
         this.client.getFileSystem(), path, mode);
     if (!this.abfsConfiguration.isCheckAccessEnabled()
-        || !getIsNamespaceEnabled()) {
+        || !getIsNamespaceEnabled(tracingContext)) {
       LOG.debug("Returning; either check access is not enabled or the account"
           + " used is not namespace enabled");
       return;
     }
     try (AbfsPerfInfo perfInfo = startTracking("access", "checkAccess")) {
       final AbfsRestOperation op = this.client
-          .checkAccess(getRelativePath(path), mode.SYMBOL);
+          .checkAccess(getRelativePath(path), mode.SYMBOL, tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }
@@ -1170,7 +1528,26 @@ public class AzureBlobFileSystemStore implements Closeable {
     return isKeyForDirectorySet(key, azureAtomicRenameDirSet);
   }
 
-  private void initializeClient(URI uri, String fileSystemName, String accountName, boolean isSecure)
+  public boolean isInfiniteLeaseKey(String key) {
+    if (azureInfiniteLeaseDirSet.isEmpty()) {
+      return false;
+    }
+    return isKeyForDirectorySet(key, azureInfiniteLeaseDirSet);
+  }
+
+  /**
+   * A on-off operation to initialize AbfsClient for AzureBlobFileSystem
+   * Operations.
+   *
+   * @param uri            Uniform resource identifier for Abfs.
+   * @param fileSystemName Name of the fileSystem being used.
+   * @param accountName    Name of the account being used to access Azure
+   *                       data store.
+   * @param isSecure       Tells if https is being used or http.
+   * @throws IOException
+   */
+  private void initializeClient(URI uri, String fileSystemName,
+      String accountName, boolean isSecure)
       throws IOException {
     if (this.client != null) {
       return;
@@ -1190,6 +1567,10 @@ public class AzureBlobFileSystemStore implements Closeable {
     SharedKeyCredentials creds = null;
     AccessTokenProvider tokenProvider = null;
     SASTokenProvider sasTokenProvider = null;
+
+    if (authType == AuthType.OAuth) {
+      AzureADAuthenticator.init(abfsConfiguration);
+    }
 
     if (authType == AuthType.SharedKey) {
       LOG.trace("Fetching SharedKey credentials");
@@ -1213,14 +1594,28 @@ public class AzureBlobFileSystemStore implements Closeable {
     LOG.trace("Initializing AbfsClient for {}", baseUrl);
     if (tokenProvider != null) {
       this.client = new AbfsClient(baseUrl, creds, abfsConfiguration,
-          new ExponentialRetryPolicy(abfsConfiguration.getMaxIoRetries()),
-          tokenProvider, abfsPerfTracker);
+          tokenProvider,
+          populateAbfsClientContext());
     } else {
       this.client = new AbfsClient(baseUrl, creds, abfsConfiguration,
-          new ExponentialRetryPolicy(abfsConfiguration.getMaxIoRetries()),
-          sasTokenProvider, abfsPerfTracker);
+          sasTokenProvider,
+          populateAbfsClientContext());
     }
     LOG.trace("AbfsClient init complete");
+  }
+
+  /**
+   * Populate a new AbfsClientContext instance with the desired properties.
+   *
+   * @return an instance of AbfsClientContext.
+   */
+  private AbfsClientContext populateAbfsClientContext() {
+    return new AbfsClientContextBuilder()
+        .withExponentialRetryPolicy(
+            new ExponentialRetryPolicy(abfsConfiguration))
+        .withAbfsCounters(abfsCounters)
+        .withAbfsPerfTracker(abfsPerfTracker)
+        .build();
   }
 
   private String getOctalNotation(FsPermission fsPermission) {
@@ -1339,10 +1734,27 @@ public class AzureBlobFileSystemStore implements Closeable {
     return new AbfsPerfInfo(abfsPerfTracker, callerName, calleeName);
   }
 
-  private static class VersionedFileStatus extends FileStatus {
-    private final String version;
+  /**
+   * A File status with version info extracted from the etag value returned
+   * in a LIST or HEAD request.
+   * The etag is included in the java serialization.
+   */
+  private static final class VersionedFileStatus extends FileStatus
+      implements EtagSource {
 
-    VersionedFileStatus(
+    /**
+     * The superclass is declared serializable; this subclass can also
+     * be serialized.
+     */
+    private static final long serialVersionUID = -2009013240419749458L;
+
+    /**
+     * The etag of an object.
+     * Not-final so that serialization via reflection will preserve the value.
+     */
+    private String version;
+
+    private VersionedFileStatus(
             final String owner, final String group, final FsPermission fsPermission, final boolean hasAcl,
             final long length, final boolean isdir, final int blockReplication,
             final long blocksize, final long modificationTime, final Path path,
@@ -1404,6 +1816,11 @@ public class AzureBlobFileSystemStore implements Closeable {
     }
 
     @Override
+    public String getEtag() {
+      return getVersion();
+    }
+
+    @Override
     public String toString() {
       final StringBuilder sb = new StringBuilder(
           "VersionedFileStatus{");
@@ -1411,6 +1828,57 @@ public class AzureBlobFileSystemStore implements Closeable {
       sb.append("; version='").append(version).append('\'');
       sb.append('}');
       return sb.toString();
+    }
+  }
+
+  /**
+   * A builder class for AzureBlobFileSystemStore.
+   */
+  public static final class AzureBlobFileSystemStoreBuilder {
+
+    private URI uri;
+    private boolean isSecureScheme;
+    private Configuration configuration;
+    private AbfsCounters abfsCounters;
+    private DataBlocks.BlockFactory blockFactory;
+    private int blockOutputActiveBlocks;
+
+    public AzureBlobFileSystemStoreBuilder withUri(URI value) {
+      this.uri = value;
+      return this;
+    }
+
+    public AzureBlobFileSystemStoreBuilder withSecureScheme(boolean value) {
+      this.isSecureScheme = value;
+      return this;
+    }
+
+    public AzureBlobFileSystemStoreBuilder withConfiguration(
+        Configuration value) {
+      this.configuration = value;
+      return this;
+    }
+
+    public AzureBlobFileSystemStoreBuilder withAbfsCounters(
+        AbfsCounters value) {
+      this.abfsCounters = value;
+      return this;
+    }
+
+    public AzureBlobFileSystemStoreBuilder withBlockFactory(
+        DataBlocks.BlockFactory value) {
+      this.blockFactory = value;
+      return this;
+    }
+
+    public AzureBlobFileSystemStoreBuilder withBlockOutputActiveBlocks(
+        int value) {
+      this.blockOutputActiveBlocks = value;
+      return this;
+    }
+
+    public AzureBlobFileSystemStoreBuilder build() {
+      return this;
     }
   }
 
@@ -1429,4 +1897,58 @@ public class AzureBlobFileSystemStore implements Closeable {
     this.isNamespaceEnabled = isNamespaceEnabled;
   }
 
+  private void updateInfiniteLeaseDirs() {
+    this.azureInfiniteLeaseDirSet = new HashSet<>(Arrays.asList(
+        abfsConfiguration.getAzureInfiniteLeaseDirs().split(AbfsHttpConstants.COMMA)));
+    // remove the empty string, since isKeyForDirectory returns true for empty strings
+    // and we don't want to default to enabling infinite lease dirs
+    this.azureInfiniteLeaseDirSet.remove("");
+  }
+
+  private AbfsLease maybeCreateLease(String relativePath, TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    boolean enableInfiniteLease = isInfiniteLeaseKey(relativePath);
+    if (!enableInfiniteLease) {
+      return null;
+    }
+    AbfsLease lease = new AbfsLease(client, relativePath, tracingContext);
+    leaseRefs.put(lease, null);
+    return lease;
+  }
+
+  @VisibleForTesting
+  boolean areLeasesFreed() {
+    for (AbfsLease lease : leaseRefs.keySet()) {
+      if (lease != null && !lease.isFreed()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Get the etag header from a response, stripping any quotations.
+   * see: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag
+   * @param result response to process.
+   * @return the quote-unwrapped etag.
+   */
+  private static String extractEtagHeader(AbfsHttpOperation result) {
+    String etag = result.getResponseHeader(HttpHeaderConfigurations.ETAG);
+    if (etag != null) {
+      // strip out any wrapper "" quotes which come back, for consistency with
+      // list calls
+      if (etag.startsWith("W/\"")) {
+        // Weak etag
+        etag = etag.substring(3);
+      } else if (etag.startsWith("\"")) {
+        // strong etag
+        etag = etag.substring(1);
+      }
+      if (etag.endsWith("\"")) {
+        // trailing quote
+        etag = etag.substring(0, etag.length() - 1);
+      }
+    }
+    return etag;
+  }
 }

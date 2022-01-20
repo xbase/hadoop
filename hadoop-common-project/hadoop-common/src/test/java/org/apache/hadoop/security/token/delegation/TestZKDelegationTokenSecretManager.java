@@ -21,10 +21,9 @@ package org.apache.hadoop.security.token.delegation;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
 
-import com.google.common.base.Supplier;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import org.apache.curator.RetryPolicy;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
@@ -59,18 +58,18 @@ public class TestZKDelegationTokenSecretManager {
   private static final Logger LOG =
       LoggerFactory.getLogger(TestZKDelegationTokenSecretManager.class);
 
-  private static final int TEST_RETRIES = 2;
+  protected static final int TEST_RETRIES = 2;
 
-  private static final int RETRY_COUNT = 5;
+  protected static final int RETRY_COUNT = 5;
 
-  private static final int RETRY_WAIT = 1000;
+  protected static final int RETRY_WAIT = 1000;
 
-  private static final long DAY_IN_SECS = 86400;
+  protected static final long DAY_IN_SECS = 86400;
 
-  private TestingServer zkServer;
+  protected TestingServer zkServer;
 
   @Rule
-  public Timeout globalTimeout = new Timeout(300000);
+  public Timeout globalTimeout = new Timeout(300000, TimeUnit.MILLISECONDS);
 
   @Before
   public void setup() throws Exception {
@@ -317,19 +316,13 @@ public class TestZKDelegationTokenSecretManager {
   @SuppressWarnings("rawtypes")
   protected void verifyDestroy(DelegationTokenManager tm, Configuration conf)
       throws Exception {
-    AbstractDelegationTokenSecretManager sm =
-        tm.getDelegationTokenSecretManager();
-    ZKDelegationTokenSecretManager zksm = (ZKDelegationTokenSecretManager) sm;
-    ExecutorService es = zksm.getListenerThreadPool();
     tm.destroy();
-    Assert.assertTrue(es.isShutdown());
     // wait for the pool to terminate
     long timeout =
         conf.getLong(
             ZKDelegationTokenSecretManager.ZK_DTSM_ZK_SHUTDOWN_TIMEOUT,
             ZKDelegationTokenSecretManager.ZK_DTSM_ZK_SHUTDOWN_TIMEOUT_DEFAULT);
     Thread.sleep(timeout * 3);
-    Assert.assertTrue(es.isTerminated());
   }
 
   @SuppressWarnings({ "unchecked", "rawtypes" })
@@ -356,17 +349,6 @@ public class TestZKDelegationTokenSecretManager {
       (Token<DelegationTokenIdentifier>)
     tm1.createToken(UserGroupInformation.getCurrentUser(), "foo");
     Assert.assertNotNull(token);
-
-    AbstractDelegationTokenSecretManager sm = tm1.getDelegationTokenSecretManager();
-    ZKDelegationTokenSecretManager zksm = (ZKDelegationTokenSecretManager)sm;
-    ExecutorService es = zksm.getListenerThreadPool();
-    es.submit(new Callable<Void>() {
-      public Void call() throws Exception {
-        Thread.sleep(shutdownTimeoutMillis * 2); // force this to be shutdownNow
-        return null;
-      }
-    });
-
     tm1.destroy();
   }
 
@@ -425,7 +407,7 @@ public class TestZKDelegationTokenSecretManager {
   // cancelled but.. that would mean having to make an RPC call for every
   // verification request.
   // Thus, the eventual consistency tradef-off should be acceptable here...
-  private void verifyTokenFail(DelegationTokenManager tm,
+  protected void verifyTokenFail(DelegationTokenManager tm,
       Token<DelegationTokenIdentifier> token) throws IOException,
       InterruptedException {
     verifyTokenFailWithRetry(tm, token, RETRY_COUNT);

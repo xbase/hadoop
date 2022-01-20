@@ -44,6 +44,7 @@ import org.apache.hadoop.hdfs.protocol.HdfsConstants.SafeModeAction;
 import org.apache.hadoop.hdfs.protocol.SnapshotDiffReport;
 import org.apache.hadoop.hdfs.server.blockmanagement.BlockInfo;
 import org.apache.hadoop.hdfs.server.blockmanagement.BlockManager;
+import org.apache.hadoop.hdfs.server.blockmanagement.BlockManagerTestUtil;
 import org.apache.hadoop.hdfs.server.namenode.FSDirectory;
 import org.apache.hadoop.hdfs.server.namenode.FSNamesystem;
 import org.apache.hadoop.hdfs.server.namenode.INode;
@@ -156,7 +157,7 @@ public class TestSnapshotDeletion {
     assertEquals(2, cluster.getNamesystem().getSnapshotManager()
         .getNumSnapshottableDirs());
     assertEquals(2, cluster.getNamesystem().getSnapshotManager()
-        .getSnapshottableDirs().length);
+        .getSnapshottableDirs().size());
 
     // delete /foo
     hdfs.delete(foo, true);
@@ -165,7 +166,7 @@ public class TestSnapshotDeletion {
     assertEquals(0, cluster.getNamesystem().getSnapshotManager()
         .getNumSnapshottableDirs());
     assertEquals(0, cluster.getNamesystem().getSnapshotManager()
-        .getSnapshottableDirs().length);
+        .getSnapshottableDirs().size());
     hdfs.setSafeMode(SafeModeAction.SAFEMODE_ENTER);
     hdfs.saveNamespace();
     hdfs.setSafeMode(SafeModeAction.SAFEMODE_LEAVE);
@@ -1128,7 +1129,8 @@ public class TestSnapshotDeletion {
   }
 
   @Test
-  public void testCorrectNumberOfBlocksAfterRestart() throws IOException {
+  public void testCorrectNumberOfBlocksAfterRestart()
+      throws IOException, InterruptedException {
     final Path foo = new Path("/foo");
     final Path bar = new Path(foo, "bar");
     final Path file = new Path(foo, "file");
@@ -1149,9 +1151,10 @@ public class TestSnapshotDeletion {
     hdfs.delete(bar, true);
     hdfs.delete(foo, true);
 
-    long numberOfBlocks = cluster.getNamesystem().getBlocksTotal();
     cluster.restartNameNode(0);
-    assertEquals(numberOfBlocks, cluster.getNamesystem().getBlocksTotal());
+    BlockManagerTestUtil.waitForMarkedDeleteQueueIsEmpty(
+        cluster.getNamesystem().getBlockManager());
+    assertEquals(0, cluster.getNamesystem().getBlocksTotal());
   }
 
   /*

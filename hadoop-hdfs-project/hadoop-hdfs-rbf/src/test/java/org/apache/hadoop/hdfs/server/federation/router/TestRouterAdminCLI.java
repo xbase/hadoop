@@ -64,7 +64,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mockito.Mockito;
 
-import com.google.common.base.Supplier;
+import java.util.function.Supplier;
 
 /**
  * Tests Router admin commands.
@@ -1113,6 +1113,10 @@ public class TestRouterAdminCLI {
     // ensure the Router become RUNNING state
     waitState(RouterServiceState.RUNNING);
     assertFalse(routerContext.getRouter().getSafemodeService().isInSafeMode());
+    final RouterClientProtocol clientProtocol =
+        routerContext.getRouter().getRpcServer().getClientProtocolModule();
+    assertEquals(HAServiceState.ACTIVE, clientProtocol.getHAServiceState());
+
     assertEquals(0,
         ToolRunner.run(admin, new String[] {"-safemode", "enter" }));
 
@@ -1125,6 +1129,7 @@ public class TestRouterAdminCLI {
     // verify state using RBFMetrics
     assertEquals(RouterServiceState.SAFEMODE.toString(), jsonString);
     assertTrue(routerContext.getRouter().getSafemodeService().isInSafeMode());
+    assertEquals(HAServiceState.STANDBY, clientProtocol.getHAServiceState());
 
     System.setOut(new PrintStream(out));
     assertEquals(0,
@@ -1136,6 +1141,7 @@ public class TestRouterAdminCLI {
     // verify state
     assertEquals(RouterServiceState.RUNNING.toString(), jsonString);
     assertFalse(routerContext.getRouter().getSafemodeService().isInSafeMode());
+    assertEquals(HAServiceState.ACTIVE, clientProtocol.getHAServiceState());
 
     out.reset();
     assertEquals(0, ToolRunner.run(admin, new String[] {"-safemode", "get" }));
@@ -1732,6 +1738,25 @@ public class TestRouterAdminCLI {
     argv = new String[] {"-add", "/mntft", "ns0,ns1", "/tmp",
         "-order", "HASH_ALL", "-faulttolerant"};
     assertEquals(0, ToolRunner.run(admin, argv));
+  }
+
+  @Test
+  public void testRefreshCallQueue() throws Exception {
+
+    System.setOut(new PrintStream(out));
+    System.setErr(new PrintStream(err));
+
+    String[] argv = new String[]{"-refreshCallQueue"};
+    assertEquals(0, ToolRunner.run(admin, argv));
+    assertTrue(out.toString().contains("Refresh call queue successfully"));
+
+    argv = new String[]{};
+    assertEquals(-1, ToolRunner.run(admin, argv));
+    assertTrue(out.toString().contains("-refreshCallQueue"));
+
+    argv = new String[]{"-refreshCallQueue", "redundant"};
+    assertEquals(-1, ToolRunner.run(admin, argv));
+    assertTrue(err.toString().contains("No arguments allowed"));
   }
 
   private void addMountTable(String src, String nsId, String dst)

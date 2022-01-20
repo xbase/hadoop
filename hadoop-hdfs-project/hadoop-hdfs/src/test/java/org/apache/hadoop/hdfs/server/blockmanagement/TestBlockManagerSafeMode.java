@@ -17,7 +17,7 @@
  */
 package org.apache.hadoop.hdfs.server.blockmanagement;
 
-import com.google.common.base.Supplier;
+import java.util.function.Supplier;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
@@ -30,6 +30,7 @@ import org.apache.hadoop.hdfs.server.namenode.NameNode;
 import org.apache.hadoop.test.GenericTestUtils;
 import org.apache.hadoop.test.Whitebox;
 
+import org.assertj.core.api.Assertions;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -228,6 +229,32 @@ public class TestBlockManagerSafeMode {
     setSafeModeStatus(BMSafeModeStatus.PENDING_THRESHOLD);
     bmSafeMode.checkSafeMode();
     assertEquals(BMSafeModeStatus.OFF, getSafeModeStatus());
+  }
+
+  @Test(timeout = 20000)
+  public void testCheckSafeMode9() throws Exception {
+    Configuration conf = new HdfsConfiguration();
+    conf.setLong(DFSConfigKeys.DFS_NAMENODE_SAFEMODE_RECHECK_INTERVAL_KEY, 3000);
+    GenericTestUtils.LogCapturer logs =
+        GenericTestUtils.LogCapturer.captureLogs(BlockManagerSafeMode.LOG);
+    BlockManagerSafeMode blockManagerSafeMode = new BlockManagerSafeMode(bm,
+        fsn, true, conf);
+    String content = logs.getOutput();
+    assertTrue(content.contains("Using 3000 as SafeModeMonitor Interval"));
+  }
+
+  @Test(timeout = 20000)
+  public void testCheckSafeMode10(){
+    Configuration conf = new HdfsConfiguration();
+    conf.setLong(DFSConfigKeys.DFS_NAMENODE_SAFEMODE_RECHECK_INTERVAL_KEY, -1);
+    GenericTestUtils.LogCapturer logs =
+            GenericTestUtils.LogCapturer.captureLogs(BlockManagerSafeMode.LOG);
+    BlockManagerSafeMode blockManagerSafeMode = new BlockManagerSafeMode(bm,
+            fsn, true, conf);
+    String content = logs.getOutput();
+    Assertions.assertThat(content).contains("Invalid value for " +
+            DFSConfigKeys.DFS_NAMENODE_SAFEMODE_RECHECK_INTERVAL_KEY +
+            ". Should be greater than 0, but is -1");
   }
 
   /**
@@ -527,8 +554,8 @@ public class TestBlockManagerSafeMode {
                 "threshold %.4f of total blocks %d.%n",
             0, BLOCK_THRESHOLD, THRESHOLD, BLOCK_TOTAL)));
     assertTrue(tip.contains(
-        String.format("The number of live datanodes %d has reached the " +
-            "minimum number %d. ", dn.getNumLiveDataNodes(), DATANODE_NUM)));
+        "The number of live datanodes is not calculated " +
+            "since reported blocks hasn't reached the threshold."));
     assertTrue(tip.contains("Safe mode will be turned off automatically once " +
         "the thresholds have been reached."));
 

@@ -75,6 +75,7 @@ import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.server.blockmanagement.BlockManager;
+import org.apache.hadoop.hdfs.server.blockmanagement.BlockManagerTestUtil;
 import org.apache.hadoop.hdfs.server.datanode.DataNode;
 import org.apache.hadoop.hdfs.server.datanode.DataNodeTestUtils;
 import org.apache.hadoop.hdfs.server.datanode.SimulatedFSDataset;
@@ -239,9 +240,8 @@ public class TestFileCreation {
    * Test that server defaults are updated on the client after cache expiration.
    */
   @Test
-  public void testServerDefaultsWithMinimalCaching()
-      throws IOException, InterruptedException {
-    // Create cluster with an explicit block size param
+  public void testServerDefaultsWithMinimalCaching() throws Exception  {
+    // Create cluster with an explicit block size param.
     Configuration clusterConf = new HdfsConfiguration();
     long originalBlockSize = DFS_BLOCK_SIZE_DEFAULT * 2;
     clusterConf.setLong(DFS_BLOCK_SIZE_KEY, originalBlockSize);
@@ -273,10 +273,17 @@ public class TestFileCreation {
               defaults.getDefaultStoragePolicyId());
       doReturn(newDefaults).when(spyNamesystem).getServerDefaults();
 
-      Thread.sleep(1);
-      defaults = dfsClient.getServerDefaults();
-      // Value is updated correctly
-      assertEquals(updatedDefaultBlockSize, defaults.getBlockSize());
+      // Verify that the value is updated correctly. Wait for 3 seconds.
+      GenericTestUtils.waitFor(()->{
+        try {
+          FsServerDefaults currDef = dfsClient.getServerDefaults();
+          return (currDef.getBlockSize() == updatedDefaultBlockSize);
+        } catch (IOException e) {
+          // do nothing;
+          return false;
+        }
+      }, 1, 3000);
+
     } finally {
       cluster.shutdown();
     }
@@ -1350,6 +1357,8 @@ public class TestFileCreation {
       assertBlocks(bm, oldBlocks, true);
       
       out = dfs.create(filePath, true);
+      BlockManagerTestUtil.waitForMarkedDeleteQueueIsEmpty(
+          cluster.getNamesystem(0).getBlockManager());
       byte[] newData = AppendTestUtil.randomBytes(seed, fileSize);
       try {
         out.write(newData);
@@ -1357,6 +1366,8 @@ public class TestFileCreation {
         out.close();
       }
       dfs.deleteOnExit(filePath);
+      BlockManagerTestUtil.waitForMarkedDeleteQueueIsEmpty(
+          cluster.getNamesystem(0).getBlockManager());
       
       LocatedBlocks newBlocks = NameNodeAdapter.getBlockLocations(
           nn, file, 0, fileSize);

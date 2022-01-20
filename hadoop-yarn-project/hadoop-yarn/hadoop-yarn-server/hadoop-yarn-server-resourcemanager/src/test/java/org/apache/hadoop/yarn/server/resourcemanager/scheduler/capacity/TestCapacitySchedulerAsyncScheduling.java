@@ -18,7 +18,7 @@
 
 package org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity;
 
-import com.google.common.collect.ImmutableList;
+import org.apache.hadoop.thirdparty.com.google.common.collect.ImmutableList;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerExitStatus;
@@ -85,6 +85,10 @@ public class TestCapacitySchedulerAsyncScheduling {
 
   private NMHeartbeatThread nmHeartbeatThread = null;
 
+  private static final String POLICY_CLASS_NAME =
+          "org.apache.hadoop.yarn.server.resourcemanager.scheduler" +
+                  ".placement.ResourceUsageMultiNodeLookupPolicy";
+
   @Before
   public void setUp() throws Exception {
     conf = new YarnConfiguration();
@@ -111,13 +115,56 @@ public class TestCapacitySchedulerAsyncScheduling {
     testAsyncContainerAllocation(3);
   }
 
+  @Test(timeout = 300000)
+  public void testAsyncContainerAllocationWithMultiNode() throws Exception {
+    conf.set(CapacitySchedulerConfiguration.MULTI_NODE_SORTING_POLICIES,
+            "resource-based");
+    conf.set(CapacitySchedulerConfiguration.MULTI_NODE_SORTING_POLICY_NAME,
+            "resource-based");
+    String policyName =
+            CapacitySchedulerConfiguration.MULTI_NODE_SORTING_POLICY_NAME
+                    + ".resource-based" + ".class";
+    conf.set(policyName, POLICY_CLASS_NAME);
+    conf.setBoolean(CapacitySchedulerConfiguration.MULTI_NODE_PLACEMENT_ENABLED,
+            true);
+    testAsyncContainerAllocation(2);
+  }
+
+  @Test(timeout = 300000)
+  public void testAsyncThreadNames() throws Exception {
+    conf.setInt(
+        CapacitySchedulerConfiguration.SCHEDULE_ASYNCHRONOUSLY_MAXIMUM_THREAD,
+        1);
+    conf.setInt(CapacitySchedulerConfiguration.SCHEDULE_ASYNCHRONOUSLY_PREFIX
+        + ".scheduling-interval-ms", 0);
+    final RMNodeLabelsManager mg = new NullRMNodeLabelsManager();
+    mg.init(conf);
+
+    // inject node label manager
+    MockRM rm = new MockRM(TestUtils.getConfigurationWithMultipleQueues(conf)) {
+      @Override
+      public RMNodeLabelsManager createNodeLabelManager() {
+        return mg;
+      }
+    };
+
+    rm.getRMContext().setNodeLabelManager(mg);
+    rm.start();
+
+    CapacityScheduler cs = (CapacityScheduler) rm.getResourceScheduler();
+    for (CapacityScheduler.AsyncScheduleThread thread :
+        cs.getAsyncSchedulerThreads()) {
+      Assert.assertTrue(thread.getName()
+          .startsWith("AsyncCapacitySchedulerThread"));
+    }
+  }
+
   public void testAsyncContainerAllocation(int numThreads) throws Exception {
     conf.setInt(
         CapacitySchedulerConfiguration.SCHEDULE_ASYNCHRONOUSLY_MAXIMUM_THREAD,
         numThreads);
     conf.setInt(CapacitySchedulerConfiguration.SCHEDULE_ASYNCHRONOUSLY_PREFIX
         + ".scheduling-interval-ms", 0);
-
     final RMNodeLabelsManager mgr = new NullRMNodeLabelsManager();
     mgr.init(conf);
 
@@ -168,7 +215,6 @@ public class TestCapacitySchedulerAsyncScheduling {
       ams.get(i).allocate("*", 1024, 20 * (i + 1), new ArrayList<>());
       totalAsked += 20 * (i + 1) * GB;
     }
-
     // Wait for at most 15000 ms
     int waitTime = 15000; // ms
     while (waitTime > 0) {
@@ -555,8 +601,6 @@ public class TestCapacitySchedulerAsyncScheduling {
         + ".scheduling-interval-ms", 100);
     // Heartbeat interval is 100 ms.
     conf.setInt(YarnConfiguration.RM_NM_HEARTBEAT_INTERVAL_MS, heartbeatInterval);
-
-    final RMNodeLabelsManager mgr = new NullRMNodeLabelsManager();
     mgr.init(conf);
 
     // inject node label manager
@@ -626,6 +670,112 @@ public class TestCapacitySchedulerAsyncScheduling {
       }
     }
 
+    rm.close();
+  }
+
+  /**
+   * Make sure scheduler skips NMs which are not RUNNING.
+   * @throws Exception
+   */
+  @Test
+  public void testAsyncSchedulerSkipNoRunningNMs() throws Exception {
+    int heartbeatInterval = 100;
+    conf.setInt(
+        CapacitySchedulerConfiguration.SCHEDULE_ASYNCHRONOUSLY_MAXIMUM_THREAD,
+        1);
+    conf.setInt(CapacitySchedulerConfiguration.SCHEDULE_ASYNCHRONOUSLY_PREFIX
+        + ".scheduling-interval-ms", 100);
+    // Heartbeat interval is 100 ms.
+    conf.setInt(YarnConfiguration.RM_NM_HEARTBEAT_INTERVAL_MS,
+        heartbeatInterval);
+    conf.setInt(YarnConfiguration.SCHEDULER_SKIP_NODE_MULTIPLIER,
+        5);
+    final RMNodeLabelsManager mgr = new NullRMNodeLabelsManager();
+    mgr.init(conf);
+
+    // inject node label manager
+    MockRM rm = new MockRM(TestUtils.getConfigurationWithMultipleQueues(conf)) {
+      @Override
+      public RMNodeLabelsManager createNodeLabelManager() {
+        return mgr;
+      }
+    };
+
+    CapacityScheduler cs = (CapacityScheduler) rm.getResourceScheduler();
+    rm.getRMContext().setNodeLabelManager(mgr);
+    rm.start();
+
+    List<MockNM> nms = new ArrayList<>();
+    // Add 10 nodes to the cluster, in the cluster we have 200 GB resource
+    for (int i = 0; i < 10; i++) {
+      nms.add(rm.registerNode("127.0.0." + i + ":1234", 20 * GB));
+    }
+
+    keepNMHeartbeat(nms, heartbeatInterval);
+
+    List<MockAM> ams = new ArrayList<>();
+    for (int i = 0; i < 3; i++) {
+      RMApp rmApp = MockRMAppSubmitter.submit(rm,
+          MockRMAppSubmissionData.Builder.createWithMemory(1024, rm)
+              .withAppName("app")
+              .withUser("user")
+              .withAcls(null)
+              .withUnmanagedAM(false)
+              .withQueue(Character.toString((char) (i % 34 + 97)))
+              .withMaxAppAttempts(1)
+              .withCredentials(null)
+              .withAppType(null)
+              .withWaitForAppAcceptedState(false)
+              .build());
+      MockAM am = MockRM.launchAMWhenAsyncSchedulingEnabled(rmApp, rm);
+      am.registerAppAttempt();
+      ams.add(am);
+    }
+
+    // Test for no NodeState.RUNNING node
+    for (int i = 0; i < 5; i++) {
+      RMNode rmNode = cs.getNode(nms.get(i).getNodeId()).getRMNode();
+      cs.getRMContext().getDispatcher().getEventHandler().handle(
+          new RMNodeEvent(rmNode.getNodeID(),
+              RMNodeEventType.GRACEFUL_DECOMMISSION));
+      rm.drainEvents();
+      Assert.assertEquals(NodeState.DECOMMISSIONING, rmNode.getState());
+      boolean shouldSkip =
+          cs.shouldSkipNodeSchedule(cs.getNode(nms.get(i).getNodeId()),
+              cs, true);
+      // make sure should skip
+      Assert.assertTrue(shouldSkip);
+    }
+
+    for (int i = 5; i < 9; i++) {
+      boolean shouldSkip =
+          cs.shouldSkipNodeSchedule(cs.getNode(nms.get(i).getNodeId()),
+              cs, true);
+      // make sure should not skip
+      Assert.assertFalse(shouldSkip);
+    }
+
+    pauseNMHeartbeat();
+
+    //Not exceed configured 5
+    Thread.sleep(heartbeatInterval * 3);
+
+    // Applications request containers.
+    for (int i = 0; i < 3; i++) {
+      ams.get(i).allocate("*", 1024, 20 * (i + 1), new ArrayList<>());
+    }
+
+    // Wait for 2000 ms.
+    Thread.sleep(2000);
+
+    //Make sure that NM 0-5 don't have non-AM containers.
+    for (int i = 0; i < 9; i++) {
+      if (i < 5) {
+        Assert.assertTrue(checkNumNonAMContainersOnNode(cs, nms.get(i)) == 0);
+      } else {
+        Assert.assertTrue(checkNumNonAMContainersOnNode(cs, nms.get(i)) > 0);
+      }
+    }
     rm.close();
   }
 

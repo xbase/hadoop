@@ -18,13 +18,12 @@
 
 package org.apache.hadoop.yarn.server.resourcemanager;
 
-
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
+import org.apache.hadoop.util.Lists;
+import org.apache.hadoop.util.Sets;
+import org.apache.hadoop.yarn.api.records.Container;
+import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.QueueACL;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttempt;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.io.DataOutputBuffer;
@@ -78,14 +77,26 @@ import org.apache.hadoop.yarn.server.security.ApplicationACLsManager;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.hadoop.yarn.util.resource.ResourceCalculator;
 import org.apache.hadoop.yarn.util.resource.Resources;
+
+import org.apache.hadoop.thirdparty.com.google.common.collect.Maps;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestWatcher;
+import org.junit.runner.Description;
+import org.mockito.ArgumentCaptor;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import java.io.IOException;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -99,6 +110,7 @@ import java.util.concurrent.ConcurrentMap;
 
 import static org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacitySchedulerConfiguration.PREFIX;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -117,12 +129,16 @@ import static org.mockito.Mockito.when;
  */
 
 public class TestAppManager extends AppManagerTestBase{
+  @Rule
+  public UseCapacitySchedulerRule shouldUseCs = new UseCapacitySchedulerRule();
+
   private static final Logger LOG =
       LoggerFactory.getLogger(TestAppManager.class);
   private static RMAppEventType appEventType = RMAppEventType.KILL;
 
   private static String USER = "user_";
   private static String USER0 = USER + 0;
+  private ResourceScheduler scheduler;
 
   private static final String USER_ID_PREFIX = "userid=";
 
@@ -224,7 +240,13 @@ public class TestAppManager extends AppManagerTestBase{
     rmContext = mockRMContext(1, now - 10);
     rmContext
         .setRMTimelineCollectorManager(mock(RMTimelineCollectorManager.class));
-    ResourceScheduler scheduler = mockResourceScheduler();
+
+    if (shouldUseCs.useCapacityScheduler()) {
+      scheduler = mockResourceScheduler(CapacityScheduler.class);
+    } else {
+      scheduler = mockResourceScheduler();
+    }
+
     ((RMContextImpl)rmContext).setScheduler(scheduler);
 
     Configuration conf = new Configuration();
@@ -252,10 +274,41 @@ public class TestAppManager extends AppManagerTestBase{
     setupDispatcher(rmContext, conf);
   }
 
+  private static PlacementManager createMockPlacementManager(
+      String userRegex, String placementQueue, String placementParentQueue
+  ) throws YarnException {
+    PlacementManager placementMgr = mock(PlacementManager.class);
+    doAnswer(new Answer<ApplicationPlacementContext>() {
+
+      @Override
+      public ApplicationPlacementContext answer(InvocationOnMock invocation)
+          throws Throwable {
+        return new ApplicationPlacementContext(placementQueue, placementParentQueue);
+      }
+
+    }).when(placementMgr).placeApplication(
+        any(ApplicationSubmissionContext.class),
+        matches(userRegex),
+        any(Boolean.class));
+
+    return placementMgr;
+  }
+
+  private TestRMAppManager createAppManager(RMContext context, Configuration configuration) {
+    ApplicationMasterService masterService = new ApplicationMasterService(context,
+        context.getScheduler());
+
+    return new TestRMAppManager(context,
+        new ClientToAMTokenSecretManagerInRM(),
+        context.getScheduler(), masterService,
+        new ApplicationACLsManager(configuration), configuration);
+  }
+
   @Test
   public void testQueueSubmitWithACLsEnabledWithQueueMapping()
-      throws IOException, YarnException, InterruptedException {
-    YarnConfiguration conf = new YarnConfiguration();
+      throws YarnException {
+    YarnConfiguration conf = new YarnConfiguration(new Configuration(false));
+    conf.set(YarnConfiguration.YARN_ACL_ENABLE, "true");
     conf.setClass(YarnConfiguration.RM_SCHEDULER, CapacityScheduler.class,
         ResourceScheduler.class);
 
@@ -263,11 +316,11 @@ public class TestAppManager extends AppManagerTestBase{
         CapacitySchedulerConfiguration(conf, false);
     csConf.set(PREFIX + "root.queues", "default,test");
 
-    csConf.setFloat(PREFIX + "root.default.capacity", 50.0f);
-    csConf.setFloat(PREFIX + "root.default.maximum-capacity", 100.0f);
+    csConf.setCapacity("root.default", 50.0f);
+    csConf.setMaximumCapacity("root.default", 100.0f);
 
-    csConf.setFloat(PREFIX + "root.test.capacity", 50.0f);
-    csConf.setFloat(PREFIX + "root.test.maximum-capacity", 100.0f);
+    csConf.setCapacity("root.test", 50.0f);
+    csConf.setMaximumCapacity("root.test", 100.0f);
 
     csConf.set(PREFIX + "root.acl_submit_applications", " ");
     csConf.set(PREFIX + "root.acl_administer_queue", " ");
@@ -278,55 +331,30 @@ public class TestAppManager extends AppManagerTestBase{
     csConf.set(PREFIX + "root.test.acl_submit_applications", "test");
     csConf.set(PREFIX + "root.test.acl_administer_queue", "test");
 
-    csConf.set(PREFIX + "root.test.acl_submit_applications", "test");
-    csConf.set(PREFIX + "root.test.acl_administer_queue", "test");
+    asContext.setQueue("test");
 
-    csConf.set(YarnConfiguration.YARN_ACL_ENABLE, "true");
-
-    // Setup a PlacementManager returns a new queue
-    PlacementManager placementMgr = mock(PlacementManager.class);
-    doAnswer(new Answer<ApplicationPlacementContext>() {
-
-      @Override
-      public ApplicationPlacementContext answer(InvocationOnMock invocation)
-          throws Throwable {
-        return new ApplicationPlacementContext("test");
-      }
-
-    }).when(placementMgr).placeApplication(
-        any(ApplicationSubmissionContext.class), matches("test"));
-
-    asContext.setQueue("oldQueue");
-
-    MockRM newMockRM = new MockRM(conf);
+    MockRM newMockRM = new MockRM(csConf);
     RMContext newMockRMContext = newMockRM.getRMContext();
-    newMockRMContext.setQueuePlacementManager(placementMgr);
-    ApplicationMasterService masterService =
-        new ApplicationMasterService(newMockRMContext,
-            newMockRMContext.getScheduler());
+    newMockRMContext.setQueuePlacementManager(createMockPlacementManager("test", "test", null));
+    TestRMAppManager newAppMonitor = createAppManager(newMockRMContext, conf);
 
-    TestRMAppManager newAppMonitor = new TestRMAppManager(newMockRMContext,
-        new ClientToAMTokenSecretManagerInRM(),
-        newMockRMContext.getScheduler(), masterService,
-        new ApplicationACLsManager(conf), conf);
-
-    //only user test has permission to submit to 'test' queue
     newAppMonitor.submitApplication(asContext, "test");
+    RMApp app = newMockRMContext.getRMApps().get(appId);
+    Assert.assertNotNull("app should not be null", app);
+    Assert.assertEquals("the queue should be placed on 'test' queue", "test", app.getQueue());
 
     try {
-      //should fail since user does not have permission to submit to queue
-      // 'test'
       asContext.setApplicationId(appId = MockApps.newAppID(2));
       newAppMonitor.submitApplication(asContext, "test1");
+      Assert.fail("should fail since test1 does not have permission to submit to queue");
     } catch(YarnException e) {
       assertTrue(e.getCause() instanceof AccessControlException);
     }
   }
 
   @Test
-  public void
-  testQueueSubmitWithACLsEnabledWithQueueMappingForAutoCreatedQueue()
-      throws IOException, YarnException, InterruptedException {
+  public void testQueueSubmitWithACLsEnabledWithQueueMappingForAutoCreatedQueue()
+      throws IOException, YarnException {
     YarnConfiguration conf = new YarnConfiguration();
     conf.set(YarnConfiguration.YARN_ACL_ENABLE, "true");
     conf.setClass(YarnConfiguration.RM_SCHEDULER, CapacityScheduler.class,
@@ -336,8 +364,11 @@ public class TestAppManager extends AppManagerTestBase{
         conf, false);
     csConf.set(PREFIX + "root.queues", "default,managedparent");
 
-    csConf.setFloat(PREFIX + "root.default.capacity", 50.0f);
-    csConf.setFloat(PREFIX + "root.default.maximum-capacity", 100.0f);
+    csConf.setCapacity("root.default", 50.0f);
+    csConf.setMaximumCapacity("root.default", 100.0f);
+
+    csConf.setCapacity("root.managedparent", 50.0f);
+    csConf.setMaximumCapacity("root.managedparent", 100.0f);
 
     csConf.set(PREFIX + "root.acl_submit_applications", " ");
     csConf.set(PREFIX + "root.acl_administer_queue", " ");
@@ -352,46 +383,32 @@ public class TestAppManager extends AppManagerTestBase{
     csConf.setAutoCreatedLeafQueueConfigCapacity("root.managedparent", 30f);
     csConf.setAutoCreatedLeafQueueConfigMaxCapacity("root.managedparent", 100f);
 
-    // Setup a PlacementManager returns a new queue
-    PlacementManager placementMgr = mock(PlacementManager.class);
-    doAnswer(new Answer<ApplicationPlacementContext>() {
-
-      @Override
-      public ApplicationPlacementContext answer(InvocationOnMock invocation)
-          throws Throwable {
-        return new ApplicationPlacementContext("user1", "managedparent");
-      }
-
-    }).when(placementMgr).placeApplication(
-        any(ApplicationSubmissionContext.class), matches("user1|user2"));
-
     asContext.setQueue("oldQueue");
 
-    MockRM newMockRM = new MockRM(conf);
+    MockRM newMockRM = new MockRM(csConf);
     CapacityScheduler cs =
         ((CapacityScheduler) newMockRM.getResourceScheduler());
-    ManagedParentQueue managedParentQueue = new ManagedParentQueue(cs,
+    ManagedParentQueue managedParentQueue = new ManagedParentQueue(cs.getQueueContext(),
         "managedparent", cs.getQueue("root"), null);
     cs.getCapacitySchedulerQueueManager().addQueue("managedparent",
         managedParentQueue);
 
     RMContext newMockRMContext = newMockRM.getRMContext();
-    newMockRMContext.setQueuePlacementManager(placementMgr);
-    ApplicationMasterService masterService = new ApplicationMasterService(
-        newMockRMContext, newMockRMContext.getScheduler());
+    newMockRMContext.setQueuePlacementManager(createMockPlacementManager(
+        "user1|user2", "user1", "managedparent"));
+    TestRMAppManager newAppMonitor = createAppManager(newMockRMContext, conf);
 
-    TestRMAppManager newAppMonitor = new TestRMAppManager(newMockRMContext,
-        new ClientToAMTokenSecretManagerInRM(), newMockRMContext.getScheduler(),
-        masterService, new ApplicationACLsManager(conf), conf);
-
-    //only user test has permission to submit to 'user1' queue
     newAppMonitor.submitApplication(asContext, "user1");
+    RMApp app = newMockRMContext.getRMApps().get(appId);
+    Assert.assertNotNull("app should not be null", app);
+    Assert.assertEquals("the queue should be placed on 'managedparent.user1' queue",
+        "managedparent.user1",
+        app.getQueue());
 
     try {
-      //should fail since user does not have permission to submit to queue
-      // 'managedparent'
       asContext.setApplicationId(appId = MockApps.newAppID(2));
       newAppMonitor.submitApplication(asContext, "user2");
+      Assert.fail("should fail since user2 does not have permission to submit to queue");
     } catch (YarnException e) {
       assertTrue(e.getCause() instanceof AccessControlException);
     }
@@ -877,7 +894,7 @@ public class TestAppManager extends AppManagerTestBase{
         new int[]{ 1, 1, 1, 1 }};
     for (int i = 0; i < globalMaxAppAttempts.length; ++i) {
       for (int j = 0; j < individualMaxAppAttempts.length; ++j) {
-        ResourceScheduler scheduler = mockResourceScheduler();
+        scheduler = mockResourceScheduler();
         Configuration conf = new Configuration();
         conf.setInt(YarnConfiguration.GLOBAL_RM_AM_MAX_ATTEMPTS,
             globalMaxAppAttempts[i]);
@@ -972,6 +989,17 @@ public class TestAppManager extends AppManagerTestBase{
     when(app.getSubmitTime()).thenReturn(1000L);
     when(app.getLaunchTime()).thenReturn(2000L);
     when(app.getApplicationTags()).thenReturn(Sets.newHashSet("tag2", "tag1"));
+
+    RMAppAttempt mockRMAppAttempt = mock(RMAppAttempt.class);
+    Container mockContainer = mock(Container.class);
+    NodeId mockNodeId = mock(NodeId.class);
+    String host = "127.0.0.1";
+
+    when(mockNodeId.getHost()).thenReturn(host);
+    when(mockContainer.getNodeId()).thenReturn(mockNodeId);
+    when(mockRMAppAttempt.getMasterContainer()).thenReturn(mockContainer);
+    when(app.getCurrentAppAttempt()).thenReturn(mockRMAppAttempt);
+
     Map<String, Long> resourceSecondsMap = new HashMap<>();
     resourceSecondsMap.put(ResourceInformation.MEMORY_MB.getName(), 16384L);
     resourceSecondsMap.put(ResourceInformation.VCORES.getName(), 64L);
@@ -993,6 +1021,7 @@ public class TestAppManager extends AppManagerTestBase{
     assertTrue(msg.contains("Multiline" + escaped +"AppName"));
     assertTrue(msg.contains("Multiline" + escaped +"UserName"));
     assertTrue(msg.contains("Multiline" + escaped +"QueueName"));
+    assertTrue(msg.contains("appMasterHost=" + host));
     assertTrue(msg.contains("submitTime=1000"));
     assertTrue(msg.contains("launchTime=2000"));
     assertTrue(msg.contains("memorySeconds=16384"));
@@ -1021,7 +1050,9 @@ public class TestAppManager extends AppManagerTestBase{
       }
 
     }).when(placementMgr).placeApplication(
-        any(ApplicationSubmissionContext.class), any(String.class));
+        any(ApplicationSubmissionContext.class),
+        any(String.class),
+        any(Boolean.class));
     rmContext.setQueuePlacementManager(placementMgr);
 
     asContext.setQueue("oldQueue");
@@ -1046,7 +1077,12 @@ public class TestAppManager extends AppManagerTestBase{
   }
 
   private static ResourceScheduler mockResourceScheduler() {
-    ResourceScheduler scheduler = mock(ResourceScheduler.class);
+    return mockResourceScheduler(ResourceScheduler.class);
+  }
+
+  private static <T extends ResourceScheduler> ResourceScheduler
+      mockResourceScheduler(Class<T> schedulerClass) {
+    ResourceScheduler scheduler = mock(schedulerClass);
     when(scheduler.getMinimumResourceCapability()).thenReturn(
         Resources.createResource(
             YarnConfiguration.DEFAULT_RM_SCHEDULER_MINIMUM_ALLOCATION_MB));
@@ -1284,6 +1320,51 @@ public class TestAppManager extends AppManagerTestBase{
     Assert.assertEquals(expectedUser, userNameForPlacement);
   }
 
+  @Test
+  @UseMockCapacityScheduler
+  public void testCheckAccessFullPathWithCapacityScheduler()
+      throws YarnException {
+    // make sure we only combine "parent + queue" if CS is selected
+    testCheckAccess("root.users", "hadoop");
+  }
+
+  @Test
+  @UseMockCapacityScheduler
+  public void testCheckAccessLeafQueueOnlyWithCapacityScheduler()
+      throws YarnException {
+    // make sure we that NPE is avoided if there's no parent defined
+    testCheckAccess(null, "hadoop");
+  }
+
+  private void testCheckAccess(String parent, String queue)
+      throws YarnException {
+    enableApplicationTagPlacement(true, "hadoop");
+    String userIdTag = USER_ID_PREFIX + "hadoop";
+    setApplicationTags("tag1", userIdTag, "tag2");
+    PlacementManager placementMgr = mock(PlacementManager.class);
+    ApplicationPlacementContext appContext;
+    String expectedQueue;
+    if (parent == null) {
+      appContext = new ApplicationPlacementContext(queue);
+      expectedQueue = queue;
+    } else {
+      appContext = new ApplicationPlacementContext(queue, parent);
+      expectedQueue = parent + "." + queue;
+    }
+
+    when(placementMgr.placeApplication(asContext, "hadoop"))
+            .thenReturn(appContext);
+    appMonitor.getUserNameForPlacement("hadoop", asContext, placementMgr);
+
+    ArgumentCaptor<String> queueNameCaptor =
+        ArgumentCaptor.forClass(String.class);
+    verify(scheduler).checkAccess(any(UserGroupInformation.class),
+        any(QueueACL.class), queueNameCaptor.capture());
+
+    assertEquals("Expected access check for queue",
+        expectedQueue, queueNameCaptor.getValue());
+  }
+
   private void enableApplicationTagPlacement(boolean userHasAccessToQueue,
                                              String... whiteListedUsers) {
     Configuration conf = new Configuration();
@@ -1292,7 +1373,6 @@ public class TestAppManager extends AppManagerTestBase{
     conf.setStrings(YarnConfiguration
             .APPLICATION_TAG_BASED_PLACEMENT_USER_WHITELIST, whiteListedUsers);
     ((RMContextImpl) rmContext).setYarnConfiguration(conf);
-    ResourceScheduler scheduler = mockResourceScheduler();
     when(scheduler.checkAccess(any(UserGroupInformation.class),
             eq(QueueACL.SUBMIT_APPLICATIONS), any(String.class)))
             .thenReturn(userHasAccessToQueue);
@@ -1322,5 +1402,25 @@ public class TestAppManager extends AppManagerTestBase{
     Set<String> applicationTags = new TreeSet<>();
     Collections.addAll(applicationTags, tags);
     asContext.setApplicationTags(applicationTags);
+  }
+
+  private class UseCapacitySchedulerRule extends TestWatcher {
+    private boolean useCapacityScheduler;
+
+    @Override
+    protected void starting(Description d) {
+      useCapacityScheduler =
+          d.getAnnotation(UseMockCapacityScheduler.class) != null;
+    }
+
+    public boolean useCapacityScheduler() {
+      return useCapacityScheduler;
+    }
+  }
+
+  @Retention(RetentionPolicy.RUNTIME)
+  public @interface UseMockCapacityScheduler {
+    // mark test cases with this which require
+    // the scheduler type to be CapacityScheduler
   }
 }

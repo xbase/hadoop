@@ -18,11 +18,14 @@
 
 package org.apache.hadoop.fs.s3a;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import com.amazonaws.services.s3.model.ListObjectsV2Result;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
-
-import java.util.List;
+import org.slf4j.Logger;
 
 /**
  * API version-independent container for S3 List responses.
@@ -92,6 +95,58 @@ public class S3ListResult {
     } else {
       return v2Result.getCommonPrefixes();
     }
+  }
 
+  /**
+   * Get the list of keys in the object summary.
+   * @return a possibly empty list
+   */
+  private List<String> objectSummaryKeys() {
+    return getObjectSummaries().stream()
+        .map(S3ObjectSummary::getKey)
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * Does this listing have prefixes or objects?
+   * @return true if the result is non-empty
+   */
+  public boolean hasPrefixesOrObjects() {
+
+    return !(getCommonPrefixes()).isEmpty()
+        || !getObjectSummaries().isEmpty();
+  }
+
+  /**
+   * Does this listing represent an empty directory?
+   * @param dirKey directory key
+   * @return true if the list is considered empty.
+   */
+  public boolean representsEmptyDirectory(
+      final String dirKey) {
+    // If looking for an empty directory, the marker must exist but
+    // no children.
+    // So the listing must contain the marker entry only as an object,
+    // and prefixes is null
+    List<String> keys = objectSummaryKeys();
+    return keys.size() == 1 && keys.contains(dirKey)
+        && getCommonPrefixes().isEmpty();
+  }
+
+  /**
+   * Dump the result at debug level.
+   * @param log log to use
+   */
+  public void logAtDebug(Logger log) {
+    Collection<String> prefixes = getCommonPrefixes();
+    Collection<S3ObjectSummary> summaries = getObjectSummaries();
+    log.debug("Prefix count = {}; object count={}",
+        prefixes.size(), summaries.size());
+    for (S3ObjectSummary summary : summaries) {
+      log.debug("Summary: {} {}", summary.getKey(), summary.getSize());
+    }
+    for (String prefix : prefixes) {
+      log.debug("Prefix: {}", prefix);
+    }
   }
 }

@@ -28,8 +28,8 @@ import java.util.Properties;
 
 import org.apache.commons.lang3.StringUtils;
 
-import com.google.common.annotations.VisibleForTesting;
-
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.placement.schema.Rule.Policy;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair.FairSchedulerConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,17 +61,8 @@ public class FSConfigToCSConfigRuleHandler {
   public static final String MIN_RESOURCES =
       "minResources.action";
 
-  public static final String USER_MAX_RUNNING_APPS =
-      "userMaxRunningApps.action";
-
-  public static final String USER_MAX_APPS_DEFAULT =
-      "userMaxAppsDefault.action";
-
   public static final String DYNAMIC_MAX_ASSIGN =
       "dynamicMaxAssign.action";
-
-  public static final String SPECIFIED_NOT_FIRST =
-      "specifiedNotFirstRule.action";
 
   public static final String RESERVATION_SYSTEM =
       "reservationSystem.action";
@@ -82,8 +73,17 @@ public class FSConfigToCSConfigRuleHandler {
   public static final String FAIR_AS_DRF =
       "fairAsDrf.action";
 
-  public static final String MAPPED_DYNAMIC_QUEUE =
-      "mappedDynamicQueue.action";
+  public static final String QUEUE_DYNAMIC_CREATE =
+      "queueDynamicCreate.action";
+
+  public static final String PARENT_DYNAMIC_CREATE =
+      "parentDynamicCreate.action";
+
+  public static final String CHILD_STATIC_DYNAMIC_CONFLICT =
+      "childStaticDynamicConflict.action";
+
+  public static final String PARENT_CHILD_CREATE_DIFFERS =
+      "parentChildCreateDiff.action";
 
   @VisibleForTesting
   enum RuleAction {
@@ -126,14 +126,14 @@ public class FSConfigToCSConfigRuleHandler {
     setActionForProperty(MAX_CHILD_CAPACITY);
     setActionForProperty(MAX_RESOURCES);
     setActionForProperty(MIN_RESOURCES);
-    setActionForProperty(USER_MAX_RUNNING_APPS);
-    setActionForProperty(USER_MAX_APPS_DEFAULT);
     setActionForProperty(DYNAMIC_MAX_ASSIGN);
-    setActionForProperty(SPECIFIED_NOT_FIRST);
     setActionForProperty(RESERVATION_SYSTEM);
     setActionForProperty(QUEUE_AUTO_CREATE);
     setActionForProperty(FAIR_AS_DRF);
-    setActionForProperty(MAPPED_DYNAMIC_QUEUE);
+    setActionForProperty(QUEUE_DYNAMIC_CREATE);
+    setActionForProperty(PARENT_DYNAMIC_CREATE);
+    setActionForProperty(CHILD_STATIC_DYNAMIC_CONFLICT);
+    setActionForProperty(PARENT_CHILD_CREATE_DIFFERS);
   }
 
   public void handleMaxCapacityPercentage(String queueName) {
@@ -170,39 +170,15 @@ public class FSConfigToCSConfigRuleHandler {
     }
   }
 
-  public void handleUserMaxApps() {
-    handle(USER_MAX_RUNNING_APPS, "<maxRunningApps>", null);
-  }
-
-  public void handleUserMaxAppsDefault() {
-    handle(USER_MAX_APPS_DEFAULT, "<userMaxAppsDefault>", null);
-  }
-
   public void handleDynamicMaxAssign() {
     handle(DYNAMIC_MAX_ASSIGN,
         FairSchedulerConfiguration.DYNAMIC_MAX_ASSIGN, null);
-  }
-
-  public void handleSpecifiedNotFirstRule() {
-    handle(SPECIFIED_NOT_FIRST,
-        null,
-        "The <specified> tag is not the first placement rule, this cannot be"
-        + " converted properly");
   }
 
   public void handleReservationSystem() {
     handle(RESERVATION_SYSTEM,
         null,
         "Conversion of reservation system is not supported");
-  }
-
-  public void handleQueueAutoCreate(String placementRule) {
-    handle(QUEUE_AUTO_CREATE,
-        null,
-        format(
-            "Placement rules: queue auto-create is not supported (type: %s),"
-            + " please configure auto-create-child-queue property manually",
-            placementRule));
   }
 
   public void handleFairAsDrf(String queueName) {
@@ -213,19 +189,39 @@ public class FSConfigToCSConfigRuleHandler {
             queueName));
   }
 
-  public void handleDynamicMappedQueue(String mapping, boolean create) {
-    String msg = "Mapping rule %s is dynamic - this might cause inconsistent"
-        + " behaviour compared to FS.";
+  public void handleRuleAutoCreateFlag(String queue) {
+    String msg = format("Placement rules: create=true is enabled for"
+        + " path %s - you have to make sure that these queues are"
+        + " managed queues and set auto-create-child-queues=true."
+        + " Other queues cannot statically exist under this path!", queue);
 
-    if (create) {
-      msg += " Also, setting auto-create-child-queue=true is"
-          + " necessary, because the create flag was set to true on the"
-          + " original placement rule.";
-    }
+    handle(QUEUE_DYNAMIC_CREATE, null, msg);
+  }
 
-    handle(MAPPED_DYNAMIC_QUEUE,
-        null,
-        format(msg, mapping));
+  public void handleFSParentCreateFlag(String parentPath) {
+    String msg = format("Placement rules: create=true is enabled for parent"
+        + " path %s - this is not supported in Capacity Scheduler."
+        + " The parent must exist as a static queue and cannot be"
+        + " created automatically", parentPath);
+
+    handle(PARENT_DYNAMIC_CREATE, null, msg);
+  }
+
+  public void handleChildStaticDynamicConflict(String parentPath) {
+    String msg = String.format("Placement rules: rule maps to"
+        + " path %s, but this queue already contains static queue definitions!"
+        + " This configuration is invalid and *must* be corrected", parentPath);
+
+    handle(CHILD_STATIC_DYNAMIC_CONFLICT, null, msg);
+  }
+
+  public void handleFSParentAndChildCreateFlagDiff(Policy policy) {
+    String msg = String.format("Placement rules: the policy %s originally uses"
+        + " true/false or false/true \"create\" settings on the Fair Scheduler"
+        + " side. This is not supported and create flag will be set"
+        + " to *true* in the generated JSON rule chain", policy.name());
+
+    handle(PARENT_CHILD_CREATE_DIFFERS, null, msg);
   }
 
   private void handle(String actionName, String fsSetting, String message) {

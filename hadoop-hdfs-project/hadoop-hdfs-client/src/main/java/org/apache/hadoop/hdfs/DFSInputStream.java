@@ -44,7 +44,6 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.fs.ByteBufferPositionedReadable;
 import org.apache.hadoop.fs.ByteBufferReadable;
@@ -77,6 +76,7 @@ import org.apache.hadoop.hdfs.server.datanode.ReplicaNotFoundException;
 import org.apache.hadoop.hdfs.shortcircuit.ClientMmap;
 import org.apache.hadoop.hdfs.util.IOUtilsClient;
 import org.apache.hadoop.io.ByteBufferPool;
+import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.ipc.RPC;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hadoop.ipc.RetriableException;
@@ -88,7 +88,7 @@ import org.apache.hadoop.util.StopWatch;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.util.Time;
 
-import com.google.common.annotations.VisibleForTesting;
+import org.apache.hadoop.classification.VisibleForTesting;
 
 import javax.annotation.Nonnull;
 
@@ -181,10 +181,13 @@ public class DFSInputStream extends FSInputStream
   private byte[] oneByteBuf; // used for 'int read()'
 
   protected void addToLocalDeadNodes(DatanodeInfo dnInfo) {
+    DFSClient.LOG.debug("Add {} to local dead nodes, previously was {}.",
+            dnInfo, deadNodes);
     deadNodes.put(dnInfo, dnInfo);
   }
 
   protected void removeFromLocalDeadNodes(DatanodeInfo dnInfo) {
+    DFSClient.LOG.debug("Remove {} from local dead nodes.", dnInfo);
     deadNodes.remove(dnInfo);
   }
 
@@ -1000,7 +1003,7 @@ public class DFSInputStream extends FSInputStream
       String description = "Could not obtain block: " + blockInfo;
       DFSClient.LOG.warn(description + errMsg
           + ". Throwing a BlockMissingException");
-      throw new BlockMissingException(src, description,
+      throw new BlockMissingException(src, description + errMsg,
           block.getStartOffset());
     }
 
@@ -1086,7 +1089,9 @@ public class DFSInputStream extends FSInputStream
     final String dnAddr =
         chosenNode.getXferAddr(dfsClient.getConf().isConnectToDnViaHostname());
     DFSClient.LOG.debug("Connecting to datanode {}", dnAddr);
-    InetSocketAddress targetAddr = NetUtils.createSocketAddr(dnAddr);
+    boolean uriCacheEnabled = dfsClient.getConf().isUriCacheEnabled();
+    InetSocketAddress targetAddr = NetUtils.createSocketAddr(dnAddr,
+        -1, null, uriCacheEnabled);
     return new DNAddrPair(chosenNode, targetAddr, storageType, block);
   }
 
@@ -1914,7 +1919,7 @@ public class DFSInputStream extends FSInputStream
       success = true;
     } finally {
       if (!success) {
-        IOUtils.closeQuietly(clientMmap);
+        IOUtils.closeStream(clientMmap);
       }
     }
     return buffer;
@@ -1929,7 +1934,7 @@ public class DFSInputStream extends FSInputStream
           "that was not created by this stream, " + buffer);
     }
     if (val instanceof ClientMmap) {
-      IOUtils.closeQuietly((ClientMmap)val);
+      IOUtils.closeStream((ClientMmap)val);
     } else if (val instanceof ByteBufferPool) {
       ((ByteBufferPool)val).putBuffer(buffer);
     }

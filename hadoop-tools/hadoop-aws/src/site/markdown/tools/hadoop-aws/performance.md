@@ -30,11 +30,11 @@ That's because its a very different system, as you can see:
 | communication | RPC | HTTP GET/PUT/HEAD/LIST/COPY requests |
 | data locality | local storage | remote S3 servers |
 | replication | multiple datanodes | asynchronous after upload |
-| consistency | consistent data and listings | eventual consistent for listings, deletes and updates |
+| consistency | consistent data and listings | consistent since November 2020|
 | bandwidth | best: local IO, worst: datacenter network | bandwidth between servers and S3 |
 | latency | low | high, especially for "low cost" directory operations |
-| rename | fast, atomic | slow faked rename through COPY & DELETE|
-| delete | fast, atomic | fast for a file, slow & non-atomic for directories |
+| rename | fast, atomic | slow faked rename through COPY and DELETE|
+| delete | fast, atomic | fast for a file, slow and non-atomic for directories |
 | writing| incremental | in blocks; not visible until the writer is closed |
 | reading | seek() is fast | seek() is slow and expensive |
 | IOPs | limited only by hardware | callers are throttled to shards in an s3 bucket |
@@ -54,16 +54,6 @@ Overall, although the S3A connector makes S3 look like a file system,
 it isn't, and some attempts to preserve the metaphor are "aggressively suboptimal".
 
 To make most efficient use of S3, care is needed.
-
-## <a name="s3guard"></a> Speeding up directory listing operations through S3Guard
-
-[S3Guard](s3guard.html) provides significant speedups for operations which
-list files a lot. This includes the setup of all queries against data:
-MapReduce, Hive and Spark, as well as DistCP.
-
-
-Experiment with using it to see what speedup it delivers.
-
 
 ## <a name="fadvise"></a> Improving data input performance through fadvise
 
@@ -157,9 +147,7 @@ When using S3 as a destination, this is slow because of the way `rename()`
 is mimicked with copy and delete.
 
 If committing output takes a long time, it is because you are using the standard
-`FileOutputCommitter`. If you are doing this on any S3 endpoint which lacks
-list consistency (Amazon S3 without [S3Guard](s3guard.html)), this committer
-is at risk of losing data!
+`FileOutputCommitter`.
 
 *Your problem may appear to be performance, but that is a symptom
 of the underlying problem: the way S3A fakes rename operations means that
@@ -448,27 +436,6 @@ If you believe that you are reaching these limits, you may be able to
 get them increased.
 Consult [the KMS Rate Limit documentation](http://docs.aws.amazon.com/kms/latest/developerguide/limits.html).
 
-### <a name="s3guard_throttling"></a> S3Guard and Throttling
-
-
-S3Guard uses DynamoDB for directory and file lookups;
-it is rate limited to the amount of (guaranteed) IO purchased for a
-table.
-
-To see the allocated capacity of a bucket, the `hadoop s3guard bucket-info s3a://bucket`
-command will print out the allocated capacity.
-
-
-If significant throttling events/rate is observed here, the pre-allocated
-IOPs can be increased with the `hadoop s3guard set-capacity` command, or
-through the AWS Console. Throttling events in S3Guard are noted in logs, and
-also in the S3A metrics `s3guard_metadatastore_throttle_rate` and
-`s3guard_metadatastore_throttled`.
-
-If you are using DistCP for a large backup to/from a S3Guarded bucket, it is
-actually possible to increase the capacity for the duration of the operation.
-
-
 ## <a name="coding"></a> Best Practises for Code
 
 Here are some best practises if you are writing applications to work with
@@ -483,10 +450,6 @@ multiple HTTP requests to scan each directory, all the way down.
 Cache the outcome of `getFileStats()`, rather than repeatedly ask for it.
 That includes using `isFile()`, `isDirectory()`, which are simply wrappers
 around `getFileStatus()`.
-
-Don't immediately look for a file with a `getFileStatus()` or listing call
-after creating it, or try to read it immediately.
-This is where eventual consistency problems surface: the data may not yet be visible.
 
 Rely on `FileNotFoundException` being raised if the source of an operation is
 missing, rather than implementing your own probe for the file before
@@ -629,6 +592,8 @@ being placed on the classpath.
 
 ## Tuning FileSystem Initialization.
 
+### Disabling bucket existence checks
+
 When an S3A Filesystem instance is created and initialized, the client
 checks if the bucket provided is valid. This can be slow.
 You can ignore bucket validation by configuring `fs.s3a.bucket.probe` as follows:
@@ -642,3 +607,52 @@ You can ignore bucket validation by configuring `fs.s3a.bucket.probe` as follows
 
 Note: if the bucket does not exist, this issue will surface when operations are performed
 on the filesystem; you will see `UnknownStoreException` stack traces.
+
+### Rate limiting parallel FileSystem creation operations
+
+Applications normally ask for filesystems from the shared cache,
+via `FileSystem.get()` or `Path.getFileSystem()`.
+The cache, `FileSystem.CACHE` will, for each user, cachec one instance of a filesystem
+for a given URI.
+All calls to `FileSystem.get` for a cached FS for a URI such
+as `s3a://landsat-pds/` will return that singe single instance.
+
+FileSystem instances are created on-demand for the cache,
+and will be done in each thread which requests an instance.
+This is done outside of any synchronisation block.
+Once a task has an initialized FileSystem instance, it will, in a synchronized block
+add it to the cache.
+If it turns out that the cache now already has an instance for that URI, it will
+revert the cached copy to it, and close the FS instance it has just created.
+
+If a FileSystem takes time to be initialized, and many threads are trying to
+retrieve a FileSystem instance for the same S3 bucket in parallel,
+All but one of the threads will be doing useless work, and may unintentionally
+be creating lock contention on shared objects.
+
+There is an option, `fs.creation.parallel.count`, which uses a semaphore
+to limit the number of FS instances which may be created in parallel.
+
+Setting this to a low number will reduce the amount of wasted work,
+at the expense of limiting the number of FileSystem clients which
+can be created simultaneously for different object stores/distributed
+filesystems.
+
+For example, a value of four would put an upper limit on the number
+of wasted instantiations of a connector for the `s3a://landsat-pds/`
+bucket.
+
+```xml
+<property>
+  <name>fs.creation.parallel.count</name>
+  <value>4</value>
+</property>
+```
+
+It would also mean that if four threads were in the process
+of creating such connectors, all threads trying to create
+connectors for other buckets, would end up blocking too.
+
+Consider experimenting with this when running applications
+where many threads may try to simultaneously interact
+with the same slow-to-initialize object stores.

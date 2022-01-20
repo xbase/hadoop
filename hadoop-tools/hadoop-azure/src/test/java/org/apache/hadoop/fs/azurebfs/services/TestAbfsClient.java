@@ -19,8 +19,9 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.net.MalformedURLException;
+import java.lang.reflect.Field;
 import java.net.URL;
+import java.util.List;
 import java.util.regex.Pattern;
 
 import org.junit.Test;
@@ -33,6 +34,9 @@ import org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys;
 import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APN_VERSION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CLIENT_VERSION;
@@ -98,9 +102,10 @@ public final class TestAbfsClient {
   }
 
   private String getUserAgentString(AbfsConfiguration config,
-      boolean includeSSLProvider) throws MalformedURLException {
+      boolean includeSSLProvider) throws IOException {
+    AbfsClientContext abfsClientContext = new AbfsClientContextBuilder().build();
     AbfsClient client = new AbfsClient(new URL("https://azure.com"), null,
-        config, null, (AccessTokenProvider) null, null);
+        config, (AccessTokenProvider) null, abfsClientContext);
     String sslProviderName = null;
     if (includeSSLProvider) {
       sslProviderName = DelegatingSSLSocketFactory.getDefaultFactory()
@@ -244,14 +249,19 @@ public final class TestAbfsClient {
 
   public static AbfsClient createTestClientFromCurrentContext(
       AbfsClient baseAbfsClientInstance,
-      AbfsConfiguration abfsConfig)
-      throws AzureBlobFileSystemException {
+      AbfsConfiguration abfsConfig) throws IOException {
     AuthType currentAuthType = abfsConfig.getAuthType(
         abfsConfig.getAccountName());
 
     AbfsPerfTracker tracker = new AbfsPerfTracker("test",
         abfsConfig.getAccountName(),
         abfsConfig);
+
+    AbfsClientContext abfsClientContext =
+        new AbfsClientContextBuilder().withAbfsPerfTracker(tracker)
+                                .withExponentialRetryPolicy(
+                                    new ExponentialRetryPolicy(abfsConfig.getMaxIoRetries()))
+                                .build();
 
     // Create test AbfsClient
     AbfsClient testClient = new AbfsClient(
@@ -263,12 +273,126 @@ public final class TestAbfsClient {
             abfsConfig.getStorageAccountKey())
             : null),
         abfsConfig,
-        new ExponentialRetryPolicy(abfsConfig.getMaxIoRetries()),
         (currentAuthType == AuthType.OAuth
             ? abfsConfig.getTokenProvider()
             : null),
-        tracker);
+        abfsClientContext);
 
     return testClient;
+  }
+
+  public static AbfsClient getMockAbfsClient(AbfsClient baseAbfsClientInstance,
+      AbfsConfiguration abfsConfig) throws Exception {
+    AuthType currentAuthType = abfsConfig.getAuthType(
+        abfsConfig.getAccountName());
+
+    org.junit.Assume.assumeTrue(
+        (currentAuthType == AuthType.SharedKey)
+        || (currentAuthType == AuthType.OAuth));
+
+    AbfsClient client = mock(AbfsClient.class);
+    AbfsPerfTracker tracker = new AbfsPerfTracker(
+        "test",
+        abfsConfig.getAccountName(),
+        abfsConfig);
+
+    when(client.getAbfsPerfTracker()).thenReturn(tracker);
+    when(client.getAuthType()).thenReturn(currentAuthType);
+    when(client.getRetryPolicy()).thenReturn(
+        new ExponentialRetryPolicy(1));
+
+    when(client.createDefaultUriQueryBuilder()).thenCallRealMethod();
+    when(client.createRequestUrl(any(), any())).thenCallRealMethod();
+    when(client.getAccessToken()).thenCallRealMethod();
+    when(client.getSharedKeyCredentials()).thenCallRealMethod();
+    when(client.createDefaultHeaders()).thenCallRealMethod();
+
+    // override baseurl
+    client = TestAbfsClient.setAbfsClientField(client, "abfsConfiguration",
+        abfsConfig);
+
+    // override baseurl
+    client = TestAbfsClient.setAbfsClientField(client, "baseUrl",
+        baseAbfsClientInstance.getBaseUrl());
+
+    // override auth provider
+    if (currentAuthType == AuthType.SharedKey) {
+      client = TestAbfsClient.setAbfsClientField(client, "sharedKeyCredentials",
+          new SharedKeyCredentials(
+              abfsConfig.getAccountName().substring(0,
+                  abfsConfig.getAccountName().indexOf(DOT)),
+              abfsConfig.getStorageAccountKey()));
+    } else {
+      client = TestAbfsClient.setAbfsClientField(client, "tokenProvider",
+          abfsConfig.getTokenProvider());
+    }
+
+    // override user agent
+    String userAgent = "APN/1.0 Azure Blob FS/3.4.0-SNAPSHOT (PrivateBuild "
+        + "JavaJRE 1.8.0_252; Linux 5.3.0-59-generic/amd64; openssl-1.0; "
+        + "UNKNOWN/UNKNOWN) MSFT";
+    client = TestAbfsClient.setAbfsClientField(client, "userAgent", userAgent);
+
+    return client;
+  }
+
+  private static AbfsClient setAbfsClientField(
+      final AbfsClient client,
+      final String fieldName,
+      Object fieldObject) throws Exception {
+
+    Field field = AbfsClient.class.getDeclaredField(fieldName);
+    field.setAccessible(true);
+    Field modifiersField = Field.class.getDeclaredField("modifiers");
+    modifiersField.setAccessible(true);
+    modifiersField.setInt(field,
+        field.getModifiers() & ~java.lang.reflect.Modifier.FINAL);
+    field.set(client, fieldObject);
+    return client;
+  }
+
+  /**
+   * Test helper method to access private createRequestUrl method.
+   * @param client test AbfsClient instace
+   * @param path path to generate Url
+   * @return return store path url
+   * @throws AzureBlobFileSystemException
+   */
+  public static URL getTestUrl(AbfsClient client, String path) throws
+      AzureBlobFileSystemException {
+    final AbfsUriQueryBuilder abfsUriQueryBuilder
+        = client.createDefaultUriQueryBuilder();
+    return client.createRequestUrl(path, abfsUriQueryBuilder.toString());
+  }
+
+  /**
+   * Test helper method to access private createDefaultHeaders method.
+   * @param client test AbfsClient instance
+   * @return List of AbfsHttpHeaders
+   */
+  public static List<AbfsHttpHeader> getTestRequestHeaders(AbfsClient client) {
+    return client.createDefaultHeaders();
+  }
+
+  /**
+   * Test helper method to create an AbfsRestOperation instance.
+   * @param type RestOpType
+   * @param client AbfsClient
+   * @param method HttpMethod
+   * @param url Test path url
+   * @param requestHeaders request headers
+   * @return instance of AbfsRestOperation
+   */
+  public static AbfsRestOperation getRestOp(AbfsRestOperationType type,
+      AbfsClient client,
+      String method,
+      URL url,
+      List<AbfsHttpHeader> requestHeaders) {
+    return new AbfsRestOperation(
+        type,
+        client,
+        method,
+        url,
+        requestHeaders);
   }
 }

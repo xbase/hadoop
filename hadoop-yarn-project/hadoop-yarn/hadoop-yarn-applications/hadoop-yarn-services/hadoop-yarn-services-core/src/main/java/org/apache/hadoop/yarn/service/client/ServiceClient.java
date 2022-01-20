@@ -18,7 +18,7 @@
 
 package org.apache.hadoop.yarn.service.client;
 
-import com.google.common.annotations.VisibleForTesting;
+import org.apache.hadoop.classification.VisibleForTesting;
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
@@ -27,7 +27,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.RetryNTimes;
-import org.apache.curator.shaded.com.google.common.io.Files;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
@@ -117,6 +116,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -557,7 +557,13 @@ public class ServiceClient extends AppAdminClient implements SliderExitCodes,
 
     // Write the definition first and then submit - AM will read the definition
     ServiceApiUtil.createDirAndPersistApp(fs, appDir, service);
-    ApplicationId appId = submitApp(service);
+    ApplicationId appId;
+    try {
+      appId = submitApp(service);
+    } catch(YarnException e){
+      actionDestroy(serviceName);
+      throw e;
+    }
     cachedAppInfo.put(serviceName, new AppInfo(appId, service
         .getKerberosPrincipal().getPrincipalName()));
     service.setId(appId.toString());
@@ -1134,7 +1140,10 @@ public class ServiceClient extends AppAdminClient implements SliderExitCodes,
       return;
     }
     String buffer = ServiceApiUtil.jsonSerDeser.toJson(app);
-    File tmpDir = Files.createTempDir();
+    File testDir =
+        new File(System.getProperty("java.io.tmpdir"));
+    File tmpDir = Files.createTempDirectory(
+        testDir.toPath(), System.currentTimeMillis() + "-").toFile();
     if (tmpDir.exists()) {
       String serviceJsonPath = tmpDir.getAbsolutePath() + "/app.json";
       File localFile = new File(serviceJsonPath);
@@ -1362,7 +1371,13 @@ public class ServiceClient extends AppAdminClient implements SliderExitCodes,
       ServiceApiUtil.validateAndResolveService(service, fs, getConfig());
       // see if it is actually running and bail out;
       verifyNoLiveAppInRM(serviceName, "start");
-      ApplicationId appId = submitApp(service);
+      ApplicationId appId;
+      try {
+        appId = submitApp(service);
+      } catch (YarnException e) {
+        actionDestroy(serviceName);
+        throw e;
+      }
       cachedAppInfo.put(serviceName, new AppInfo(appId, service
           .getKerberosPrincipal().getPrincipalName()));
       service.setId(appId.toString());
@@ -1478,18 +1493,18 @@ public class ServiceClient extends AppAdminClient implements SliderExitCodes,
     if ("file".equals(keytabURI.getScheme())) {
       LOG.info("Using a keytab from localhost: " + keytabURI);
     } else {
-      Path keytabOnhdfs = new Path(keytabURI);
-      if (!fileSystem.getFileSystem().exists(keytabOnhdfs)) {
+      Path keytabPath = new Path(keytabURI);
+      if (!fileSystem.getFileSystem().exists(keytabPath)) {
         LOG.warn(service.getName() + "'s keytab (principalName = "
-            + principalName + ") doesn't exist at: " + keytabOnhdfs);
+            + principalName + ") doesn't exist at: " + keytabPath);
         return;
       }
-      LocalResource keytabRes = fileSystem.createAmResource(keytabOnhdfs,
+      LocalResource keytabRes = fileSystem.createAmResource(keytabPath,
           LocalResourceType.FILE, LocalResourceVisibility.PRIVATE);
       localResource.put(String.format(YarnServiceConstants.KEYTAB_LOCATION,
           service.getName()), keytabRes);
       LOG.info("Adding " + service.getName() + "'s keytab for "
-          + "localization, uri = " + keytabOnhdfs);
+          + "localization, uri = " + keytabPath);
     }
   }
 

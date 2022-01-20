@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.util.Set;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.util.Sets;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.resourcemanager.RMContext;
@@ -46,9 +47,6 @@ import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
-
-import com.google.common.collect.Sets;
-
 
 /**
  * Unit tests for FSQueueConverter.
@@ -68,7 +66,10 @@ public class TestFSQueueConverter {
           "root.admins.alice",
           "root.admins.bob",
           "root.users.joe",
-          "root.users.john");
+          "root.users.john",
+          "root.misc",
+          "root.misc.a",
+          "root.misc.b");
 
   private static final String FILE_PREFIX = "file:";
   private static final String FAIR_SCHEDULER_XML =
@@ -135,7 +136,6 @@ public class TestFSQueueConverter {
         .withCapacitySchedulerConfig(csConfig)
         .withPreemptionEnabled(false)
         .withSizeBasedWeight(false)
-        .withAutoCreateChildQueues(false)
         .withClusterResource(CLUSTER_RESOURCE)
         .withQueueMaxAMShareDefault(MAX_AM_SHARE_DEFAULT)
         .withQueueMaxAppsDefault(MAX_APPS_DEFAULT)
@@ -149,7 +149,7 @@ public class TestFSQueueConverter {
     converter.convertQueueHierarchy(rootQueue);
 
     // root children
-    assertEquals("root children", "default,admins,users",
+    assertEquals("root children", "admins,users,misc,default",
         csConfig.get(PREFIX + "root.queues"));
 
     // root.admins children
@@ -168,7 +168,8 @@ public class TestFSQueueConverter {
         Sets.newHashSet("root",
             "root.default",
             "root.admins",
-            "root.users"));
+            "root.users",
+            "root.misc"));
 
     assertNoValueForQueues(leafs, ".queues", csConfig);
   }
@@ -195,18 +196,18 @@ public class TestFSQueueConverter {
   }
 
   @Test
-  public void testQueueMaxRunningApps() {
+  public void testQueueMaxParallelApps() {
     converter = builder.build();
 
     converter.convertQueueHierarchy(rootQueue);
 
     assertEquals("root.admins.alice max apps", 2,
-        csConfig.getInt(PREFIX + "root.admins.alice.maximum-applications",
+        csConfig.getInt(PREFIX + "root.admins.alice.max-parallel-apps",
             -1));
 
     Set<String> remaining = Sets.difference(ALL_QUEUES,
         Sets.newHashSet("root.admins.alice"));
-    assertNoValueForQueues(remaining, ".maximum-applications", csConfig);
+    assertNoValueForQueues(remaining, ".max-parallel-apps", csConfig);
   }
 
   @Test
@@ -262,8 +263,8 @@ public class TestFSQueueConverter {
   }
 
   @Test
-  public void testChildCapacity() {
-    converter = builder.build();
+  public void testChildCapacityInCapacityMode() {
+    converter = builder.withPercentages(true).build();
 
     converter.convertQueueHierarchy(rootQueue);
 
@@ -286,6 +287,93 @@ public class TestFSQueueConverter {
         csConfig.get(PREFIX + "root.admins.alice.capacity"));
     assertEquals("root.admins.bob capacity", "25.000",
         csConfig.get(PREFIX + "root.admins.bob.capacity"));
+
+    // root.misc
+    assertEquals("root.misc capacity", "0.000",
+        csConfig.get(PREFIX + "root.misc.capacity"));
+    assertEquals("root.misc.a capacity", "0.000",
+        csConfig.get(PREFIX + "root.misc.a.capacity"));
+    assertEquals("root.misc.b capacity", "0.000",
+        csConfig.get(PREFIX + "root.misc.b.capacity"));
+  }
+
+  @Test
+  public void testChildCapacityInWeightMode() {
+    converter = builder.withPercentages(false).build();
+
+    converter.convertQueueHierarchy(rootQueue);
+
+    // root
+    assertEquals("root.default weight", "1.0w",
+        csConfig.get(PREFIX + "root.default.capacity"));
+    assertEquals("root.admins weight", "1.0w",
+        csConfig.get(PREFIX + "root.admins.capacity"));
+    assertEquals("root.users weight", "1.0w",
+        csConfig.get(PREFIX + "root.users.capacity"));
+
+    // root.users
+    assertEquals("root.users.john weight", "1.0w",
+        csConfig.get(PREFIX + "root.users.john.capacity"));
+    assertEquals("root.users.joe weight", "3.0w",
+        csConfig.get(PREFIX + "root.users.joe.capacity"));
+
+    // root.admins
+    assertEquals("root.admins.alice weight", "3.0w",
+        csConfig.get(PREFIX + "root.admins.alice.capacity"));
+    assertEquals("root.admins.bob weight", "1.0w",
+        csConfig.get(PREFIX + "root.admins.bob.capacity"));
+
+    // root.misc
+    assertEquals("root.misc weight", "0.0w",
+        csConfig.get(PREFIX + "root.misc.capacity"));
+    assertEquals("root.misc.a weight", "0.0w",
+        csConfig.get(PREFIX + "root.misc.a.capacity"));
+    assertEquals("root.misc.b weight", "0.0w",
+        csConfig.get(PREFIX + "root.misc.b.capacity"));
+  }
+
+  @Test
+  public void testAutoCreateV2FlagsInWeightMode() {
+    converter = builder.withPercentages(false).build();
+
+    converter.convertQueueHierarchy(rootQueue);
+
+    assertTrue("root autocreate v2 flag",
+        csConfig.getBoolean(
+            PREFIX + "root.auto-queue-creation-v2.enabled", false));
+    assertTrue("root.admins autocreate v2 flag",
+        csConfig.getBoolean(
+            PREFIX + "root.admins.auto-queue-creation-v2.enabled", false));
+    assertTrue("root.users autocreate v2 flag",
+        csConfig.getBoolean(
+            PREFIX + "root.users.auto-queue-creation-v2.enabled", false));
+    assertTrue("root.misc autocreate v2 flag",
+        csConfig.getBoolean(
+            PREFIX + "root.misc.auto-queue-creation-v2.enabled", false));
+
+    Set<String> leafs = Sets.difference(ALL_QUEUES,
+        Sets.newHashSet("root",
+            "root.default",
+            "root.admins",
+            "root.users",
+            "root.misc"));
+    assertNoValueForQueues(leafs, "auto-queue-creation-v2.enabled",
+        csConfig);
+  }
+
+  @Test
+  public void testZeroSumCapacityValidation() {
+    converter = builder.withPercentages(true).build();
+
+    converter.convertQueueHierarchy(rootQueue);
+
+    Set<String> noZeroSumAllowedQueues = Sets.difference(ALL_QUEUES,
+        Sets.newHashSet("root.misc"));
+    assertNoValueForQueues(noZeroSumAllowedQueues, ".allow-zero-capacity-sum",
+        csConfig);
+
+    assertTrue("root.misc allow zero capacities", csConfig.getBoolean(
+        PREFIX + "root.misc.allow-zero-capacity-sum", false));
   }
 
   @Test
@@ -308,36 +396,9 @@ public class TestFSQueueConverter {
   }
 
   @Test
-  public void testQueueAutoCreateChildQueue() {
-    converter = builder
-        .withCapacitySchedulerConfig(csConfig)
-        .withAutoCreateChildQueues(true)
-        .build();
-
-    converter.convertQueueHierarchy(rootQueue);
-
-    Set<String> parentQueues = Sets.newHashSet(
-        "root.admins",
-        "root.users");
-
-    Set<String> leafQueues = Sets.newHashSet(
-        "root.default",
-        "root.admins.alice",
-        "root.admins.bob",
-        "root.users.joe",
-        "root.users.john");
-
-    assertTrueForQueues(parentQueues, ".auto-create-child-queue.enabled",
-        csConfig);
-    assertNoValueForQueues(leafQueues, ".auto-create-child-queue.enabled",
-        csConfig);
-  }
-
-  @Test
   public void testQueueWithNoAutoCreateChildQueue() {
     converter = builder
         .withCapacitySchedulerConfig(csConfig)
-        .withAutoCreateChildQueues(false)
         .build();
 
     converter.convertQueueHierarchy(rootQueue);

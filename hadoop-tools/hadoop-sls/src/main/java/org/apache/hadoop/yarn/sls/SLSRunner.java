@@ -143,6 +143,8 @@ public class SLSRunner extends Configured implements Tool {
 
   private static boolean exitAtTheFinish = false;
 
+  private static final String DEFAULT_USER = "default";
+
   /**
    * The type of trace in input.
    */
@@ -156,6 +158,10 @@ public class SLSRunner extends Configured implements Tool {
 
   private TraceType inputType;
   private SynthTraceJobProducer stjp;
+
+  public static int getRemainingApps() {
+    return remainingApps;
+  }
 
   public SLSRunner() throws ClassNotFoundException {
     Configuration tempConf = new Configuration(false);
@@ -732,7 +738,8 @@ public class SLSRunner extends Configured implements Tool {
     // creation
     while ((job = (SynthJob) stjp.getNextJob()) != null) {
       // only support MapReduce currently
-      String user = job.getUser();
+      String user = job.getUser() == null ? DEFAULT_USER :
+              job.getUser();
       String jobQueue = job.getQueueName();
       String oldJobId = job.getJobID().toString();
       long jobStartTimeMS = job.getSubmissionTime();
@@ -813,7 +820,7 @@ public class SLSRunner extends Configured implements Tool {
     if (appNum == null) {
       appNum = 1;
     } else {
-      appNum++;
+      appNum = appNum + 1;
     }
 
     queueAppNumMap.put(queueName, appNum);
@@ -930,12 +937,12 @@ public class SLSRunner extends Configured implements Tool {
 
   public static void decreaseRemainingApps() {
     remainingApps--;
+  }
 
-    if (remainingApps == 0) {
-      LOG.info("SLSRunner tears down.");
-      if (exitAtTheFinish) {
-        System.exit(0);
-      }
+  public static void exitSLSRunner() {
+    LOG.info("SLSRunner tears down.");
+    if (exitAtTheFinish) {
+      System.exit(0);
     }
   }
 

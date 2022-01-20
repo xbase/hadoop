@@ -96,15 +96,15 @@ public class TestAbsoluteResourceWithAutoQueue
   private CapacitySchedulerConfiguration setupMinMaxResourceConfiguration(
       CapacitySchedulerConfiguration csConf) {
     // Update min/max resource to queueA/B/C
-    csConf.setMinimumResourceRequirement("", QUEUEA_FULL, QUEUE_A_MINRES);
-    csConf.setMinimumResourceRequirement("", QUEUEB_FULL, QUEUE_B_MINRES);
-    csConf.setMinimumResourceRequirement("", QUEUEC_FULL, QUEUE_C_MINRES);
-    csConf.setMinimumResourceRequirement("", QUEUED_FULL, QUEUE_D_MINRES);
+    csConf.setMinimumResourceRequirement("", new QueuePath(QUEUEA_FULL), QUEUE_A_MINRES);
+    csConf.setMinimumResourceRequirement("", new QueuePath(QUEUEB_FULL), QUEUE_B_MINRES);
+    csConf.setMinimumResourceRequirement("", new QueuePath(QUEUEC_FULL), QUEUE_C_MINRES);
+    csConf.setMinimumResourceRequirement("", new QueuePath(QUEUED_FULL), QUEUE_D_MINRES);
 
-    csConf.setMaximumResourceRequirement("", QUEUEA_FULL, QUEUE_A_MAXRES);
-    csConf.setMaximumResourceRequirement("", QUEUEB_FULL, QUEUE_B_MAXRES);
-    csConf.setMaximumResourceRequirement("", QUEUEC_FULL, QUEUE_C_MAXRES);
-    csConf.setMaximumResourceRequirement("", QUEUED_FULL, QUEUE_D_MAXRES);
+    csConf.setMaximumResourceRequirement("", new QueuePath(QUEUEA_FULL), QUEUE_A_MAXRES);
+    csConf.setMaximumResourceRequirement("", new QueuePath(QUEUEB_FULL), QUEUE_B_MAXRES);
+    csConf.setMaximumResourceRequirement("", new QueuePath(QUEUEC_FULL), QUEUE_C_MAXRES);
+    csConf.setMaximumResourceRequirement("", new QueuePath(QUEUED_FULL), QUEUE_D_MAXRES);
 
     return csConf;
   }
@@ -148,6 +148,8 @@ public class TestAbsoluteResourceWithAutoQueue
     return csConf;
   }
 
+  // TODO: Wangda: I think this test case is not correct, Sunil could help look
+  // into details.
   @Test(timeout = 20000)
   public void testAutoCreateLeafQueueCreation() throws Exception {
 
@@ -159,6 +161,7 @@ public class TestAbsoluteResourceWithAutoQueue
 
       csConf.setClass(YarnConfiguration.RM_SCHEDULER, CapacityScheduler.class,
           ResourceScheduler.class);
+      csConf.setOverrideWithQueueMappings(true);
 
       mockRM = new MockRM(csConf);
       cs = (CapacityScheduler) mockRM.getResourceScheduler();
@@ -234,6 +237,10 @@ public class TestAbsoluteResourceWithAutoQueue
       final CSQueue autoCreatedLeafQueue2 = cs.getQueue(TEST_GROUPUSER2);
       validateCapacities((AutoCreatedLeafQueue) autoCreatedLeafQueue2, 0.0f,
           0.0f, 1f, 0.6f);
+      validateCapacities((AutoCreatedLeafQueue) autoCreatedLeafQueue1, 0.4f,
+          0.04f, 1f, 0.6f);
+      validateCapacities((AutoCreatedLeafQueue) autoCreatedLeafQueue, 0.4f,
+          0.04f, 1f, 0.6f);
 
       GuaranteedOrZeroCapacityOverTimePolicy autoCreatedQueueManagementPolicy =
           (GuaranteedOrZeroCapacityOverTimePolicy) ((ManagedParentQueue) parentQueue)

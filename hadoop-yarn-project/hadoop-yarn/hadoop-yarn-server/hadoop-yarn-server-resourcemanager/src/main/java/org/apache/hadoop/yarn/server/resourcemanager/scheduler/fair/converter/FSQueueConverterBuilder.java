@@ -27,12 +27,12 @@ public final class FSQueueConverterBuilder {
   Configuration capacitySchedulerConfig;
   boolean preemptionEnabled;
   boolean sizeBasedWeight;
-  boolean autoCreateChildQueues;
   Resource clusterResource;
   float queueMaxAMShareDefault;
   int queueMaxAppsDefault;
   ConversionOptions conversionOptions;
   boolean drfUsed;
+  boolean usePercentages;
 
   private FSQueueConverterBuilder() {
   }
@@ -65,12 +65,6 @@ public final class FSQueueConverterBuilder {
     return this;
   }
 
-  public FSQueueConverterBuilder withAutoCreateChildQueues(
-      boolean autoCreateChildQueues) {
-    this.autoCreateChildQueues = autoCreateChildQueues;
-    return this;
-  }
-
   public FSQueueConverterBuilder withClusterResource(
       Resource resource) {
     this.clusterResource = resource;
@@ -97,6 +91,11 @@ public final class FSQueueConverterBuilder {
 
   public FSQueueConverterBuilder withDrfUsed(boolean drfUsed) {
     this.drfUsed = drfUsed;
+    return this;
+  }
+
+  public FSQueueConverterBuilder withPercentages(boolean usePercentages) {
+    this.usePercentages = usePercentages;
     return this;
   }
 

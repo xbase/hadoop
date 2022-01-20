@@ -21,12 +21,10 @@ package org.apache.hadoop.yarn.server.resourcemanager.placement;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.AutoCreatedLeafQueue;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CSQueue;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacitySchedulerQueueManager;
-import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.LeafQueue;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.AbstractLeafQueue;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.ManagedParentQueue;
 
 import java.io.IOException;
-
-import static org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacitySchedulerConfiguration.DOT;
 
 /**
  * Utility class for Capacity Scheduler queue PlacementRules.
@@ -65,26 +63,25 @@ public final class QueuePlacementRuleUtils {
     }
   }
 
-  public static QueueMappingEntity validateAndGetAutoCreatedQueueMapping(
-      CapacitySchedulerQueueManager queueManager, QueueMappingEntity mapping,
-      QueuePath queuePath) throws IOException {
-    if (queuePath.hasParentQueue()) {
+  public static QueueMapping validateAndGetAutoCreatedQueueMapping(
+      CapacitySchedulerQueueManager queueManager, QueueMapping mapping)
+      throws IOException {
+    if (mapping.hasParentQueue()) {
       //if parent queue is specified,
       // then it should exist and be an instance of ManagedParentQueue
       validateQueueMappingUnderParentQueue(queueManager.getQueue(
-          queuePath.getParentQueue()), queuePath.getParentQueue(),
-          queuePath.getFullPath());
-      return new QueueMappingEntity(mapping.getSource(),
-          queuePath.getFullPath(), queuePath.getParentQueue());
+          mapping.getParentQueue()), mapping.getParentQueue(),
+          mapping.getFullPath());
+      return mapping;
     }
 
     return null;
   }
 
-  public static QueueMappingEntity validateAndGetQueueMapping(
+  public static QueueMapping validateAndGetQueueMapping(
       CapacitySchedulerQueueManager queueManager, CSQueue queue,
-      QueueMappingEntity mapping, QueuePath queuePath) throws IOException {
-    if (!(queue instanceof LeafQueue)) {
+      QueueMapping mapping) throws IOException {
+    if (!(queue instanceof AbstractLeafQueue)) {
       throw new IOException(
           "mapping contains invalid or non-leaf queue : " +
           mapping.getFullPath());
@@ -93,8 +90,8 @@ public final class QueuePlacementRuleUtils {
     if (queue instanceof AutoCreatedLeafQueue && queue
         .getParent() instanceof ManagedParentQueue) {
 
-      QueueMappingEntity newMapping = validateAndGetAutoCreatedQueueMapping(
-          queueManager, mapping, queuePath);
+      QueueMapping newMapping = validateAndGetAutoCreatedQueueMapping(
+          queueManager, mapping);
       if (newMapping == null) {
         throw new IOException(
             "mapping contains invalid or non-leaf queue " +
@@ -105,34 +102,20 @@ public final class QueuePlacementRuleUtils {
     return mapping;
   }
 
-  public static boolean isStaticQueueMapping(QueueMappingEntity mapping) {
+  public static boolean isStaticQueueMapping(QueueMapping mapping) {
     return !mapping.getQueue().contains(CURRENT_USER_MAPPING) && !mapping
         .getQueue().contains(PRIMARY_GROUP_MAPPING)
         && !mapping.getQueue().contains(SECONDARY_GROUP_MAPPING);
   }
 
-  public static QueuePath extractQueuePath(String queuePath) {
-    int parentQueueNameEndIndex = queuePath.lastIndexOf(DOT);
-
-    if (parentQueueNameEndIndex > -1) {
-      final String parentQueue = queuePath.substring(0, parentQueueNameEndIndex)
-          .trim();
-      final String leafQueue = queuePath.substring(parentQueueNameEndIndex + 1)
-          .trim();
-      return new QueuePath(parentQueue, leafQueue);
-    }
-
-    return new QueuePath(queuePath);
-  }
-
   public static ApplicationPlacementContext getPlacementContext(
-      QueueMappingEntity mapping, CapacitySchedulerQueueManager queueManager)
+      QueueMapping mapping, CapacitySchedulerQueueManager queueManager)
       throws IOException {
     return getPlacementContext(mapping, mapping.getQueue(), queueManager);
   }
 
   public static ApplicationPlacementContext getPlacementContext(
-      QueueMappingEntity mapping, String leafQueueName,
+      QueueMapping mapping, String leafQueueName,
       CapacitySchedulerQueueManager queueManager) throws IOException {
 
     //leafQueue name no longer identifies a queue uniquely checking ambiguity

@@ -17,9 +17,9 @@
  */
 package org.apache.hadoop.hdfs.server.namenode;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.util.Preconditions;
+import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
@@ -835,7 +835,7 @@ public class ReencryptionHandler implements Runnable {
     }
   }
 
-  private class ZoneTraverseInfo extends TraverseInfo {
+  private static class ZoneTraverseInfo extends TraverseInfo {
     private String ezKeyVerName;
 
     ZoneTraverseInfo(String ezKeyVerName) {

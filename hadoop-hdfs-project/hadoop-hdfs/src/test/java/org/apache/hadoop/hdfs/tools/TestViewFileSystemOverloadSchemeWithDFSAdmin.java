@@ -41,13 +41,13 @@ import org.apache.hadoop.fs.viewfs.ViewFsTestSetup;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.test.PathUtils;
+import org.apache.hadoop.util.Lists;
 import org.apache.hadoop.util.ToolRunner;
+
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import com.google.common.collect.Lists;
 
 /**
  * Tests DFSAdmin with ViewFileSystemOverloadScheme with configured mount links.
@@ -151,7 +151,7 @@ public class TestViewFileSystemOverloadSchemeWithDFSAdmin {
   @Test
   public void testSaveNameSpace() throws Exception {
     final Path hdfsTargetPath = new Path(defaultFSURI + HDFS_USER_FOLDER);
-    addMountLinks(defaultFSURI.getAuthority(),
+    addMountLinks(defaultFSURI.getHost(),
         new String[] {HDFS_USER_FOLDER, LOCAL_FOLDER },
         new String[] {hdfsTargetPath.toUri().toString(),
             localTargetDir.toURI().toString() },
@@ -177,7 +177,7 @@ public class TestViewFileSystemOverloadSchemeWithDFSAdmin {
   @Test
   public void testSaveNamespaceWithoutSpecifyingFS() throws Exception {
     final Path hdfsTargetPath = new Path(defaultFSURI + HDFS_USER_FOLDER);
-    addMountLinks(defaultFSURI.getAuthority(),
+    addMountLinks(defaultFSURI.getHost(),
         new String[] {HDFS_USER_FOLDER, LOCAL_FOLDER },
         new String[] {hdfsTargetPath.toUri().toString(),
             localTargetDir.toURI().toString() },
@@ -198,14 +198,15 @@ public class TestViewFileSystemOverloadSchemeWithDFSAdmin {
    */
   @Test
   public void testSafeModeWithWrongFS() throws Exception {
+    String wrongFsUri = "hdfs://nonExistent";
     final Path hdfsTargetPath =
-        new Path("hdfs://nonExistent" + HDFS_USER_FOLDER);
-    addMountLinks(defaultFSURI.getAuthority(),
-        new String[] {HDFS_USER_FOLDER },
-        new String[] {hdfsTargetPath.toUri().toString(), }, conf);
+        new Path(wrongFsUri + HDFS_USER_FOLDER);
+    addMountLinks(defaultFSURI.getHost(), new String[] {HDFS_USER_FOLDER},
+        new String[] {hdfsTargetPath.toUri().toString()}, conf);
     final DFSAdmin dfsAdmin = new DFSAdmin(conf);
     redirectStream();
-    int ret = ToolRunner.run(dfsAdmin, new String[] {"-safemode", "enter" });
+    int ret = ToolRunner.run(dfsAdmin,
+        new String[] {"-fs", wrongFsUri, "-safemode", "enter" });
     assertEquals(-1, ret);
     assertErrMsg("safemode: java.net.UnknownHostException: nonExistent", 0);
   }
@@ -215,7 +216,7 @@ public class TestViewFileSystemOverloadSchemeWithDFSAdmin {
    */
   @Test
   public void testSafeModeShouldFailOnLocalTargetFS() throws Exception {
-    addMountLinks(defaultFSURI.getAuthority(), new String[] {LOCAL_FOLDER },
+    addMountLinks(defaultFSURI.getHost(), new String[] {LOCAL_FOLDER },
         new String[] {localTargetDir.toURI().toString() }, conf);
     final DFSAdmin dfsAdmin = new DFSAdmin(conf);
     // ViewFSOveloadScheme uri with localfs mount point
@@ -229,16 +230,22 @@ public class TestViewFileSystemOverloadSchemeWithDFSAdmin {
   }
 
   /**
-   * Tests safemode with ViewFSOverloadScheme, but without mounttables.
+   * Tests safemode get with ViewFSOverloadScheme, but without any mount links
+   * configured. The ViewFSOverloadScheme should consider initialized fs as
+   * fallback fs automatically.
    */
   @Test
-  public void testSafeModeShouldFailWithoutMountTables() throws Exception {
+  public void testGetSafemodeWithoutMountLinksConfigured() throws Exception {
     final DFSAdmin dfsAdmin = new DFSAdmin(conf);
-    String uri = defaultFSURI.toString();
-    redirectStream();
-    int ret = ToolRunner.run(dfsAdmin,
-        new String[] {"-fs", uri, "-safemode", "enter" });
-    assertEquals(-1, ret);
+    try {
+      redirectStream();
+      int ret = ToolRunner.run(dfsAdmin,
+          new String[] {"-fs", defaultFSURI.toString(), "-safemode", "get"});
+      assertOutMsg("Safe mode is OFF", 0);
+      assertEquals(0, ret);
+    } finally {
+      dfsAdmin.close();
+    }
   }
 
   /**
@@ -247,8 +254,8 @@ public class TestViewFileSystemOverloadSchemeWithDFSAdmin {
   @Test
   public void testAllowAndDisalllowSnapShot() throws Exception {
     final Path hdfsTargetPath = new Path(defaultFSURI + HDFS_USER_FOLDER);
-    addMountLinks(defaultFSURI.getAuthority(),
-        new String[] {HDFS_USER_FOLDER, LOCAL_FOLDER },
+    addMountLinks(defaultFSURI.getHost(),
+        new String[] {HDFS_USER_FOLDER, LOCAL_FOLDER},
         new String[] {hdfsTargetPath.toUri().toString(),
             localTargetDir.toURI().toString() },
         conf);
@@ -261,6 +268,26 @@ public class TestViewFileSystemOverloadSchemeWithDFSAdmin {
     ret = ToolRunner.run(dfsAdmin, new String[] {"-fs",
         defaultFSURI.toString(), "-disallowSnapshot", "/" });
     assertOutMsg("Disallowing snapshot on / succeeded", 1);
+    assertEquals(0, ret);
+  }
+
+  /**
+   * Tests setBalancerBandwidth with ViewFSOverloadScheme.
+   */
+  @Test
+  public void testSetBalancerBandwidth() throws Exception {
+    final Path hdfsTargetPath = new Path(defaultFSURI + HDFS_USER_FOLDER);
+    addMountLinks(defaultFSURI.getHost(),
+        new String[] {HDFS_USER_FOLDER, LOCAL_FOLDER },
+        new String[] {hdfsTargetPath.toUri().toString(),
+            localTargetDir.toURI().toString() },
+        conf);
+    final DFSAdmin dfsAdmin = new DFSAdmin(conf);
+    redirectStream();
+    int ret = ToolRunner.run(dfsAdmin,
+        new String[] {"-fs", defaultFSURI.toString(), "-setBalancerBandwidth",
+            "1000"});
+    assertOutMsg("Balancer bandwidth is set to 1000", 0);
     assertEquals(0, ret);
   }
 }

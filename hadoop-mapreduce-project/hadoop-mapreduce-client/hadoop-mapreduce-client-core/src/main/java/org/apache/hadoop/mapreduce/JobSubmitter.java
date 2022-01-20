@@ -63,7 +63,7 @@ import org.apache.hadoop.util.JsonSerialization;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.yarn.api.records.ReservationId;
 
-import com.google.common.base.Charsets;
+import org.apache.hadoop.thirdparty.com.google.common.base.Charsets;
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -466,7 +466,7 @@ class JobSubmitter {
         throw new IllegalArgumentException(e);
       }
 
-      DistributedCache.addCacheArchive(uri, conf);
+      Job.addCacheArchive(uri, conf);
     }
   }
 }

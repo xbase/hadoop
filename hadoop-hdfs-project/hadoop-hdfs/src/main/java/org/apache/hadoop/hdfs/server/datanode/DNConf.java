@@ -62,6 +62,8 @@ import static org.apache.hadoop.hdfs.DFSConfigKeys.IGNORE_SECURE_PORTS_FOR_TESTI
 import static org.apache.hadoop.hdfs.DFSConfigKeys.IGNORE_SECURE_PORTS_FOR_TESTING_DEFAULT;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_BP_READY_TIMEOUT_KEY;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_BP_READY_TIMEOUT_DEFAULT;
+import static org.apache.hadoop.hdfs.client.HdfsClientConfigKeys.DFS_CHECKSUM_EC_SOCKET_TIMEOUT_KEY;
+import static org.apache.hadoop.hdfs.client.HdfsClientConfigKeys.DFS_CHECKSUM_EC_SOCKET_TIMEOUT_DEFAULT;
 
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
@@ -72,6 +74,7 @@ import org.apache.hadoop.hdfs.protocol.datatransfer.TrustedChannelResolver;
 import org.apache.hadoop.hdfs.protocol.datatransfer.sasl.DataTransferSaslUtil;
 import org.apache.hadoop.hdfs.server.common.Util;
 import org.apache.hadoop.security.SaslPropertiesResolver;
+import org.apache.hadoop.util.Preconditions;
 
 import java.util.concurrent.TimeUnit;
 
@@ -84,6 +87,7 @@ public class DNConf {
   final int socketTimeout;
   final int socketWriteTimeout;
   final int socketKeepaliveTimeout;
+  final int ecChecksumSocketTimeout;
   private final int transferSocketSendBufferSize;
   private final int transferSocketRecvBufferSize;
   private final boolean tcpNoDelay;
@@ -102,14 +106,14 @@ public class DNConf {
   final long readaheadLength;
   final long heartBeatInterval;
   private final long lifelineIntervalMs;
-  final long blockReportInterval;
+  volatile long blockReportInterval;
   final long blockReportSplitThreshold;
   final boolean peerStatsEnabled;
   final boolean diskStatsEnabled;
   final long outliersReportIntervalMs;
   final long ibrInterval;
   final long initialBlockReportDelayMs;
-  final long cacheReportInterval;
+  volatile long cacheReportInterval;
   final long datanodeSlowIoWarningThresholdMs;
 
   final String minimumNameNodeVersion;
@@ -145,6 +149,9 @@ public class DNConf {
     socketKeepaliveTimeout = getConf().getInt(
         DFSConfigKeys.DFS_DATANODE_SOCKET_REUSE_KEEPALIVE_KEY,
         DFSConfigKeys.DFS_DATANODE_SOCKET_REUSE_KEEPALIVE_DEFAULT);
+    ecChecksumSocketTimeout = getConf().getInt(
+        DFS_CHECKSUM_EC_SOCKET_TIMEOUT_KEY,
+        DFS_CHECKSUM_EC_SOCKET_TIMEOUT_DEFAULT);
     this.transferSocketSendBufferSize = getConf().getInt(
         DFSConfigKeys.DFS_DATANODE_TRANSFER_SOCKET_SEND_BUFFER_SIZE_KEY,
         DFSConfigKeys.DFS_DATANODE_TRANSFER_SOCKET_SEND_BUFFER_SIZE_DEFAULT);
@@ -373,6 +380,15 @@ public class DNConf {
   }
 
   /**
+   * Returns socket timeout for computing the checksum of EC blocks
+   *
+   * @return int socket timeout
+   */
+  public int getEcChecksumSocketTimeout() {
+    return ecChecksumSocketTimeout;
+  }
+
+  /**
    * Returns the SaslPropertiesResolver configured for use with
    * DataTransferProtocol, or null if not configured.
    *
@@ -458,5 +474,24 @@ public class DNConf {
 
   public long getProcessCommandsThresholdMs() {
     return processCommandsThresholdMs;
+  }
+
+  void setBlockReportInterval(long intervalMs) {
+    Preconditions.checkArgument(intervalMs > 0);
+    blockReportInterval = intervalMs;
+  }
+
+  public long getBlockReportInterval() {
+    return blockReportInterval;
+  }
+
+  void setCacheReportInterval(long intervalMs) {
+    Preconditions.checkArgument(intervalMs > 0,
+        "dfs.cachereport.intervalMsec should be larger than 0");
+    cacheReportInterval = intervalMs;
+  }
+
+  public long getCacheReportInterval() {
+    return cacheReportInterval;
   }
 }

@@ -17,10 +17,11 @@
  */
 package org.apache.hadoop.hdfs.server.datanode.fsdataset.impl;
 
-import com.google.common.base.Supplier;
+import java.util.function.Supplier;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.DF;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileSystemTestHelper;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.StorageType;
@@ -32,12 +33,16 @@ import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.MiniDFSNNTopology;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageDirectory;
 import org.apache.hadoop.hdfs.server.datanode.BlockScanner;
+import org.apache.hadoop.hdfs.server.datanode.DataNode;
 import org.apache.hadoop.hdfs.server.datanode.StorageLocation;
 import org.apache.hadoop.hdfs.server.datanode.fsdataset.FsVolumeReference;
 import org.apache.hadoop.hdfs.server.datanode.fsdataset.RoundRobinVolumeChoosingPolicy;
 import org.apache.hadoop.hdfs.server.datanode.fsdataset.VolumeChoosingPolicy;
+import org.apache.hadoop.hdfs.server.protocol.SlowDiskReports;
 import org.apache.hadoop.test.GenericTestUtils;
+import org.apache.hadoop.thirdparty.com.google.common.collect.ImmutableMap;
 import org.apache.hadoop.util.StringUtils;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -53,6 +58,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_DU_RESERVED_PERCENTAGE_KEY;
 import static org.junit.Assert.assertEquals;
@@ -73,6 +79,10 @@ public class TestFsVolumeList {
   private FsDatasetImpl dataset = null;
   private String baseDir;
   private BlockScanner blockScanner;
+  private final static int NUM_DATANODES = 3;
+  private final static int STORAGES_PER_DATANODE = 3;
+  private final static int DEFAULT_BLOCK_SIZE = 102400;
+  private final static int BUFFER_LENGTH = 1024;
 
   @Before
   public void setUp() {
@@ -88,7 +98,8 @@ public class TestFsVolumeList {
   @Test(timeout=30000)
   public void testGetNextVolumeWithClosedVolume() throws IOException {
     FsVolumeList volumeList = new FsVolumeList(
-        Collections.<VolumeFailureInfo>emptyList(), blockScanner, blockChooser);
+        Collections.<VolumeFailureInfo>emptyList(),
+        blockScanner, blockChooser, conf, null);
     final List<FsVolumeImpl> volumes = new ArrayList<>();
     for (int i = 0; i < 3; i++) {
       File curDir = new File(baseDir, "nextvolume-" + i);
@@ -131,7 +142,7 @@ public class TestFsVolumeList {
   @Test(timeout=30000)
   public void testReleaseVolumeRefIfNoBlockScanner() throws IOException {
     FsVolumeList volumeList = new FsVolumeList(
-        Collections.<VolumeFailureInfo>emptyList(), null, blockChooser);
+        Collections.<VolumeFailureInfo>emptyList(), null, blockChooser, conf, null);
     File volDir = new File(baseDir, "volume-0");
     volDir.mkdirs();
     FsVolumeImpl volume = new FsVolumeImplBuilder()
@@ -170,6 +181,9 @@ public class TestFsVolumeList {
     conf.setLong(
         DFSConfigKeys.DFS_DATANODE_DU_RESERVED_KEY + "."
             + StringUtils.toLowerCase(StorageType.SSD.toString()), 2L);
+    conf.setLong(
+        DFSConfigKeys.DFS_DATANODE_DU_RESERVED_KEY + "."
+            + StringUtils.toLowerCase(StorageType.NVDIMM.toString()), 3L);
     FsVolumeImpl volume1 = new FsVolumeImplBuilder().setDataset(dataset)
         .setStorageDirectory(
             new StorageDirectory(
@@ -202,6 +216,14 @@ public class TestFsVolumeList {
         .setConf(conf)
         .build();
     assertEquals("", 100L, volume4.getReserved());
+    FsVolumeImpl volume5 = new FsVolumeImplBuilder().setDataset(dataset)
+        .setStorageDirectory(
+            new StorageDirectory(
+                StorageLocation.parse("[NVDIMM]"+volDir.getPath())))
+        .setStorageID("storage-id")
+        .setConf(conf)
+        .build();
+    assertEquals(3L, volume5.getReserved());
   }
 
   @Test
@@ -286,6 +308,9 @@ public class TestFsVolumeList {
     conf.setLong(
         DFS_DATANODE_DU_RESERVED_PERCENTAGE_KEY + "."
             + StringUtils.toLowerCase(StorageType.SSD.toString()), 50);
+    conf.setLong(
+        DFS_DATANODE_DU_RESERVED_PERCENTAGE_KEY + "."
+            + StringUtils.toLowerCase(StorageType.NVDIMM.toString()), 20);
     FsVolumeImpl volume1 = new FsVolumeImplBuilder()
         .setConf(conf)
         .setDataset(dataset)
@@ -329,9 +354,21 @@ public class TestFsVolumeList {
         .setUsage(usage)
         .build();
     assertEquals(600, volume4.getReserved());
+    FsVolumeImpl volume5 = new FsVolumeImplBuilder()
+        .setConf(conf)
+        .setDataset(dataset)
+        .setStorageID("storage-id")
+        .setStorageDirectory(
+            new StorageDirectory(StorageLocation.parse(
+                "[NVDIMM]" + volDir.getPath())))
+        .setUsage(usage)
+        .build();
+    assertEquals(800, volume5.getReserved());
+    assertEquals(3200, volume5.getCapacity());
+    assertEquals(200, volume5.getAvailable());
   }
 
-  @Test(timeout = 60000)
+  @Test(timeout = 300000)
   public void testAddRplicaProcessorForAddingReplicaInMap() throws Exception {
     BlockPoolSlice.reInitializeAddReplicaThreadPool();
     Configuration cnf = new Configuration();
@@ -451,5 +488,241 @@ public class TestFsVolumeList {
 
     conf.setBoolean(DFSConfigKeys.DFS_DATANODE_FIXED_VOLUME_SIZE_KEY,
         DFSConfigKeys.DFS_DATANODE_FIXED_VOLUME_SIZE_DEFAULT);
+  }
+
+  // Test basics with same disk archival turned on.
+  @Test
+  public void testGetVolumeWithSameDiskArchival() throws Exception {
+    File diskVolDir = new File(baseDir, "volume-disk");
+    File archivalVolDir = new File(baseDir, "volume-archival");
+    diskVolDir.mkdirs();
+    archivalVolDir.mkdirs();
+    double reservedForArchival = 0.75;
+    conf.setBoolean(DFSConfigKeys.DFS_DATANODE_ALLOW_SAME_DISK_TIERING,
+        true);
+    conf.setDouble(DFSConfigKeys
+            .DFS_DATANODE_RESERVE_FOR_ARCHIVE_DEFAULT_PERCENTAGE,
+        reservedForArchival);
+    FsVolumeImpl diskVolume = new FsVolumeImplBuilder()
+        .setConf(conf)
+        .setDataset(dataset)
+        .setStorageID("storage-id")
+        .setStorageDirectory(
+            new StorageDirectory(
+                StorageLocation.parse(diskVolDir.getPath())))
+        .build();
+    FsVolumeImpl archivalVolume = new FsVolumeImplBuilder()
+        .setConf(conf)
+        .setDataset(dataset)
+        .setStorageID("storage-id")
+        .setStorageDirectory(
+            new StorageDirectory(StorageLocation
+                .parse("[ARCHIVE]" + archivalVolDir.getPath())))
+        .build();
+    FsVolumeList volumeList = new FsVolumeList(
+        Collections.<VolumeFailureInfo>emptyList(),
+        blockScanner, blockChooser, conf, null);
+    volumeList.addVolume(archivalVolume.obtainReference());
+    volumeList.addVolume(diskVolume.obtainReference());
+
+    assertEquals(diskVolume.getMount(), archivalVolume.getMount());
+    String device = diskVolume.getMount();
+
+    // 1) getVolumeRef should return correct reference.
+    assertEquals(diskVolume,
+        volumeList.getMountVolumeMap()
+            .getVolumeRefByMountAndStorageType(
+            device, StorageType.DISK).getVolume());
+    assertEquals(archivalVolume,
+        volumeList.getMountVolumeMap()
+            .getVolumeRefByMountAndStorageType(
+            device, StorageType.ARCHIVE).getVolume());
+
+    // 2) removeVolume should work as expected
+    volumeList.removeVolume(diskVolume.getStorageLocation(), true);
+    assertNull(volumeList.getMountVolumeMap()
+            .getVolumeRefByMountAndStorageType(
+            device, StorageType.DISK));
+    assertEquals(archivalVolume, volumeList.getMountVolumeMap()
+        .getVolumeRefByMountAndStorageType(
+        device, StorageType.ARCHIVE).getVolume());
+  }
+
+  // Test dfs stats with same disk archival
+  @Test
+  public void testDfsUsageStatWithSameDiskArchival() throws Exception {
+    File diskVolDir = new File(baseDir, "volume-disk");
+    File archivalVolDir = new File(baseDir, "volume-archival");
+    diskVolDir.mkdirs();
+    archivalVolDir.mkdirs();
+
+    long dfCapacity = 1100L;
+    double reservedForArchival = 0.75;
+    // Disk and Archive shares same du Reserved.
+    long duReserved = 100L;
+    long diskDfsUsage = 100L;
+    long archivalDfsUsage = 200L;
+    long dfUsage = 700L;
+    long dfAvailable = 300L;
+
+    // Set up DISK and ARCHIVAL and capacity.
+    conf.setLong(DFSConfigKeys.DFS_DATANODE_DU_RESERVED_KEY, duReserved);
+    conf.setBoolean(DFSConfigKeys.DFS_DATANODE_ALLOW_SAME_DISK_TIERING,
+        true);
+    conf.setDouble(DFSConfigKeys
+            .DFS_DATANODE_RESERVE_FOR_ARCHIVE_DEFAULT_PERCENTAGE,
+        reservedForArchival);
+    FsVolumeImpl diskVolume = new FsVolumeImplBuilder()
+        .setConf(conf)
+        .setDataset(dataset)
+        .setStorageID("storage-id")
+        .setStorageDirectory(
+            new StorageDirectory(StorageLocation.parse(diskVolDir.getPath())))
+        .build();
+    FsVolumeImpl archivalVolume = new FsVolumeImplBuilder()
+        .setConf(conf)
+        .setDataset(dataset)
+        .setStorageID("storage-id")
+        .setStorageDirectory(
+            new StorageDirectory(
+                StorageLocation.parse("[ARCHIVE]" + archivalVolDir.getPath())))
+        .build();
+    FsVolumeImpl spyDiskVolume = Mockito.spy(diskVolume);
+    FsVolumeImpl spyArchivalVolume = Mockito.spy(archivalVolume);
+    long testDfCapacity = dfCapacity - duReserved;
+    spyDiskVolume.setCapacityForTesting(testDfCapacity);
+    spyArchivalVolume.setCapacityForTesting(testDfCapacity);
+    Mockito.doReturn(dfAvailable).when(spyDiskVolume).getDfAvailable();
+    Mockito.doReturn(dfAvailable).when(spyArchivalVolume).getDfAvailable();
+
+    MountVolumeMap mountVolumeMap = new MountVolumeMap(conf);
+    mountVolumeMap.addVolume(spyDiskVolume);
+    mountVolumeMap.addVolume(spyArchivalVolume);
+    Mockito.doReturn(mountVolumeMap).when(dataset).getMountVolumeMap();
+
+    // 1) getCapacity() should reflect configured archive storage percentage.
+    long diskStorageTypeCapacity =
+        (long) ((dfCapacity - duReserved) * (1 - reservedForArchival));
+    assertEquals(diskStorageTypeCapacity, spyDiskVolume.getCapacity());
+    long archiveStorageTypeCapacity =
+        (long) ((dfCapacity - duReserved) * (reservedForArchival));
+    assertEquals(archiveStorageTypeCapacity, spyArchivalVolume.getCapacity());
+
+    // 2) getActualNonDfsUsed() should count in both DISK and ARCHIVE.
+    // expectedActualNonDfsUsage =
+    // diskUsage - archivalDfsUsage - diskDfsUsage
+    long expectedActualNonDfsUsage = 400L;
+    Mockito.doReturn(diskDfsUsage)
+        .when(spyDiskVolume).getDfsUsed();
+    Mockito.doReturn(archivalDfsUsage)
+        .when(spyArchivalVolume).getDfsUsed();
+    Mockito.doReturn(dfUsage)
+        .when(spyDiskVolume).getDfUsed();
+    Mockito.doReturn(dfUsage)
+        .when(spyArchivalVolume).getDfUsed();
+    assertEquals(expectedActualNonDfsUsage,
+        spyDiskVolume.getActualNonDfsUsed());
+    assertEquals(expectedActualNonDfsUsage,
+        spyArchivalVolume.getActualNonDfsUsed());
+
+    // 3) When there is only one volume on a disk mount,
+    // we allocate the full disk capacity regardless of the default ratio.
+    mountVolumeMap.removeVolume(spyArchivalVolume);
+    assertEquals(dfCapacity - duReserved, spyDiskVolume.getCapacity());
+  }
+
+  @Test
+  public void testExcludeSlowDiskWhenChoosingVolume() throws Exception {
+    conf = new HdfsConfiguration();
+    conf.setLong(DFSConfigKeys.DFS_BLOCK_SIZE_KEY, DEFAULT_BLOCK_SIZE);
+    // Set datanode outliers report interval to 1s.
+    conf.setStrings(DFSConfigKeys.DFS_DATANODE_OUTLIERS_REPORT_INTERVAL_KEY, "1s");
+    // Enable datanode disk metrics collector.
+    conf.setInt(DFSConfigKeys.DFS_DATANODE_FILEIO_PROFILING_SAMPLING_PERCENTAGE_KEY, 30);
+    // Enable excluding slow disks when choosing volume.
+    conf.setInt(DFSConfigKeys.DFS_DATANODE_MAX_SLOWDISKS_TO_EXCLUDE_KEY, 1);
+    // Ensure that each volume capacity is larger than the DEFAULT_BLOCK_SIZE.
+    long capacity = 10 * DEFAULT_BLOCK_SIZE;
+    long[][] capacities = new long[NUM_DATANODES][STORAGES_PER_DATANODE];
+    String[] hostnames = new String[NUM_DATANODES];
+    for (int i = 0; i < NUM_DATANODES; i++) {
+      hostnames[i] = i + "." + i + "." + i + "." + i;
+      for(int j = 0; j < STORAGES_PER_DATANODE; j++){
+        capacities[i][j]=capacity;
+      }
+    }
+
+    MiniDFSCluster cluster = new MiniDFSCluster.Builder(conf)
+        .hosts(hostnames)
+        .numDataNodes(NUM_DATANODES)
+        .storagesPerDatanode(STORAGES_PER_DATANODE)
+        .storageCapacities(capacities).build();
+    cluster.waitActive();
+    FileSystem fs = cluster.getFileSystem();
+
+    // Create file for each datanode.
+    ArrayList<DataNode> dataNodes = cluster.getDataNodes();
+    DataNode dn0 = dataNodes.get(0);
+    DataNode dn1 = dataNodes.get(1);
+    DataNode dn2 = dataNodes.get(2);
+
+    // Mock the first disk of each datanode is a slowest disk.
+    String slowDisk0OnDn0 = dn0.getFSDataset().getFsVolumeReferences().getReference(0)
+        .getVolume().getBaseURI().getPath();
+    String slowDisk0OnDn1 = dn1.getFSDataset().getFsVolumeReferences().getReference(0)
+        .getVolume().getBaseURI().getPath();
+    String slowDisk0OnDn2 = dn2.getFSDataset().getFsVolumeReferences().getReference(0)
+        .getVolume().getBaseURI().getPath();
+
+    String slowDisk1OnDn0 = dn0.getFSDataset().getFsVolumeReferences().getReference(1)
+        .getVolume().getBaseURI().getPath();
+    String slowDisk1OnDn1 = dn1.getFSDataset().getFsVolumeReferences().getReference(1)
+        .getVolume().getBaseURI().getPath();
+    String slowDisk1OnDn2 = dn2.getFSDataset().getFsVolumeReferences().getReference(1)
+        .getVolume().getBaseURI().getPath();
+
+    dn0.getDiskMetrics().addSlowDiskForTesting(slowDisk0OnDn0, ImmutableMap.of(
+        SlowDiskReports.DiskOp.READ, 1.0, SlowDiskReports.DiskOp.WRITE, 1.5,
+        SlowDiskReports.DiskOp.METADATA, 2.0));
+    dn1.getDiskMetrics().addSlowDiskForTesting(slowDisk0OnDn1, ImmutableMap.of(
+        SlowDiskReports.DiskOp.READ, 1.0, SlowDiskReports.DiskOp.WRITE, 1.5,
+        SlowDiskReports.DiskOp.METADATA, 2.0));
+    dn2.getDiskMetrics().addSlowDiskForTesting(slowDisk0OnDn2, ImmutableMap.of(
+        SlowDiskReports.DiskOp.READ, 1.0, SlowDiskReports.DiskOp.WRITE, 1.5,
+        SlowDiskReports.DiskOp.METADATA, 2.0));
+
+    dn0.getDiskMetrics().addSlowDiskForTesting(slowDisk1OnDn0, ImmutableMap.of(
+        SlowDiskReports.DiskOp.READ, 1.0, SlowDiskReports.DiskOp.WRITE, 1.0,
+        SlowDiskReports.DiskOp.METADATA, 1.0));
+    dn1.getDiskMetrics().addSlowDiskForTesting(slowDisk1OnDn1, ImmutableMap.of(
+        SlowDiskReports.DiskOp.READ, 1.0, SlowDiskReports.DiskOp.WRITE, 1.0,
+        SlowDiskReports.DiskOp.METADATA, 1.0));
+    dn2.getDiskMetrics().addSlowDiskForTesting(slowDisk1OnDn2, ImmutableMap.of(
+        SlowDiskReports.DiskOp.READ, 1.0, SlowDiskReports.DiskOp.WRITE, 1.0,
+        SlowDiskReports.DiskOp.METADATA, 1.0));
+
+    // Wait until the data on the slow disk is collected successfully.
+    GenericTestUtils.waitFor(new Supplier<Boolean>() {
+      @Override public Boolean get() {
+        return dn0.getDiskMetrics().getSlowDisksToExclude().size() == 1 &&
+            dn1.getDiskMetrics().getSlowDisksToExclude().size() == 1 &&
+            dn2.getDiskMetrics().getSlowDisksToExclude().size() == 1;
+      }
+    }, 1000, 5000);
+
+    // Create a file with 3 replica.
+    DFSTestUtil.createFile(fs, new Path("/file0"), false, BUFFER_LENGTH, 1000,
+        DEFAULT_BLOCK_SIZE, (short) 3, 0, false, null);
+
+    // Asserts that the number of blocks created on a slow disk is 0.
+    Assert.assertEquals(0, dn0.getVolumeReport().stream()
+        .filter(v -> (v.getPath() + "/").equals(slowDisk0OnDn0)).collect(Collectors.toList()).get(0)
+        .getNumBlocks());
+    Assert.assertEquals(0, dn1.getVolumeReport().stream()
+        .filter(v -> (v.getPath() + "/").equals(slowDisk0OnDn1)).collect(Collectors.toList()).get(0)
+        .getNumBlocks());
+    Assert.assertEquals(0, dn2.getVolumeReport().stream()
+        .filter(v -> (v.getPath() + "/").equals(slowDisk0OnDn2)).collect(Collectors.toList()).get(0)
+        .getNumBlocks());
   }
 }

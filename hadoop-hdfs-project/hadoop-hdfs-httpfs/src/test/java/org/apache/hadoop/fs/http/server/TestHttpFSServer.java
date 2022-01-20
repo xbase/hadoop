@@ -32,6 +32,7 @@ import org.apache.hadoop.hdfs.protocol.HdfsConstants.StoragePolicySatisfierMode;
 import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.protocol.SnapshotDiffReport;
 import org.apache.hadoop.hdfs.protocol.SnapshottableDirectoryStatus;
+import org.apache.hadoop.hdfs.protocol.SnapshotStatus;
 import org.apache.hadoop.hdfs.protocol.SystemErasureCodingPolicies;
 import org.apache.hadoop.hdfs.server.common.HdfsServerConstants;
 import org.apache.hadoop.hdfs.web.JsonUtil;
@@ -56,13 +57,16 @@ import java.io.Writer;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -103,8 +107,9 @@ import org.junit.Test;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.webapp.WebAppContext;
 
-import com.google.common.collect.Maps;
+import org.apache.hadoop.thirdparty.com.google.common.collect.Maps;
 import java.util.Properties;
+import java.util.concurrent.Callable;
 import java.util.regex.Pattern;
 
 import javax.ws.rs.HttpMethod;
@@ -116,6 +121,23 @@ import org.apache.hadoop.security.authentication.server.AuthenticationFilter;
  * Main test class for HttpFSServer.
  */
 public class TestHttpFSServer extends HFSTestCase {
+
+  /**
+   * define metric getters for unit tests.
+   */
+  private static Callable<Long> defaultEntryMetricGetter = () -> 0L;
+  private static Callable<Long> defaultExitMetricGetter = () -> 1L;
+  private static HashMap<String, Callable<Long>> metricsGetter =
+      new HashMap<String, Callable<Long>>() {
+        {
+          put("LISTSTATUS",
+              () -> HttpFSServerWebApp.get().getMetrics().getOpsListing());
+          put("MKDIRS",
+              () -> HttpFSServerWebApp.get().getMetrics().getOpsMkdir());
+          put("GETFILESTATUS",
+              () -> HttpFSServerWebApp.get().getMetrics().getOpsStat());
+        }
+      };
 
   @Test
   @TestDir
@@ -170,6 +192,11 @@ public class TestHttpFSServer extends HFSTestCase {
       return Arrays.asList(HadoopUsersConfTestHelper.getHadoopUserGroups(user));
     }
 
+    @Override
+    public Set<String> getGroupsSet(String user) throws IOException {
+      return new HashSet<>(getGroups(user));
+    }
+
   }
 
   private Configuration createHttpFSConf(boolean addDelegationTokenAuthHandler,
@@ -204,8 +231,9 @@ public class TestHttpFSServer extends HFSTestCase {
     // HTTPFS configuration
     conf = new Configuration(false);
     if (addDelegationTokenAuthHandler) {
-      conf.set("httpfs.authentication.type",
-               HttpFSKerberosAuthenticationHandlerForTesting.class.getName());
+      conf.set(HttpFSAuthenticationFilter.HADOOP_HTTP_CONF_PREFIX +
+              AuthenticationFilter.AUTH_TYPE,
+          HttpFSKerberosAuthenticationHandlerForTesting.class.getName());
     }
     conf.set("httpfs.services.ext", MockGroups.class.getName());
     conf.set("httpfs.admin.group", HadoopUsersConfTestHelper.
@@ -216,8 +244,9 @@ public class TestHttpFSServer extends HFSTestCase {
     conf.set("httpfs.proxyuser." +
              HadoopUsersConfTestHelper.getHadoopProxyUser() + ".hosts",
              HadoopUsersConfTestHelper.getHadoopProxyUserHosts());
-    conf.set("httpfs.authentication.signature.secret.file",
-             secretFile.getAbsolutePath());
+    conf.set(HttpFSAuthenticationFilter.HADOOP_HTTP_CONF_PREFIX +
+            AuthenticationFilter.SIGNATURE_SECRET_FILE,
+        secretFile.getAbsolutePath());
     conf.set("httpfs.hadoop.config.dir", hadoopConfDir.toString());
     if (sslEnabled) {
       conf.set("httpfs.ssl.enabled", "true");
@@ -400,7 +429,8 @@ public class TestHttpFSServer extends HFSTestCase {
   @TestHdfs
   public void testHdfsAccess() throws Exception {
     createHttpFSServer(false, false);
-
+    long oldOpsListStatus =
+        metricsGetter.get("LISTSTATUS").call();
     String user = HadoopUsersConfTestHelper.getHadoopUsers()[0];
     URL url = new URL(TestJettyHelper.getJettyURL(),
         MessageFormat.format("/webhdfs/v1/?user.name={0}&op=liststatus",
@@ -411,6 +441,8 @@ public class TestHttpFSServer extends HFSTestCase {
         new InputStreamReader(conn.getInputStream()));
     reader.readLine();
     reader.close();
+    Assert.assertEquals(1 + oldOpsListStatus,
+        (long) metricsGetter.get("LISTSTATUS").call());
   }
 
   @Test
@@ -419,7 +451,8 @@ public class TestHttpFSServer extends HFSTestCase {
   @TestHdfs
   public void testMkdirs() throws Exception {
     createHttpFSServer(false, false);
-
+    long oldMkdirOpsStat =
+        metricsGetter.get("MKDIRS").call();
     String user = HadoopUsersConfTestHelper.getHadoopUsers()[0];
     URL url = new URL(TestJettyHelper.getJettyURL(), MessageFormat.format(
         "/webhdfs/v1/tmp/sub-tmp?user.name={0}&op=MKDIRS", user));
@@ -427,8 +460,10 @@ public class TestHttpFSServer extends HFSTestCase {
     conn.setRequestMethod("PUT");
     conn.connect();
     Assert.assertEquals(conn.getResponseCode(), HttpURLConnection.HTTP_OK);
-
     getStatus("/tmp/sub-tmp", "LISTSTATUS");
+    long opsStat =
+        metricsGetter.get("MKDIRS").call();
+    Assert.assertEquals(1 + oldMkdirOpsStat, opsStat);
   }
 
   @Test
@@ -437,7 +472,8 @@ public class TestHttpFSServer extends HFSTestCase {
   @TestHdfs
   public void testGlobFilter() throws Exception {
     createHttpFSServer(false, false);
-
+    long oldOpsListStatus =
+        metricsGetter.get("LISTSTATUS").call();
     FileSystem fs = FileSystem.get(TestHdfsHelper.getHdfsConf());
     fs.mkdirs(new Path("/tmp"));
     fs.create(new Path("/tmp/foo.txt")).close();
@@ -452,6 +488,8 @@ public class TestHttpFSServer extends HFSTestCase {
         new InputStreamReader(conn.getInputStream()));
     reader.readLine();
     reader.close();
+    Assert.assertEquals(1 + oldOpsListStatus,
+        (long) metricsGetter.get("LISTSTATUS").call());
   }
 
   /**
@@ -511,6 +549,9 @@ public class TestHttpFSServer extends HFSTestCase {
    */
   private void createDirWithHttp(String dirname, String perms,
       String unmaskedPerms) throws Exception {
+    // get the createDirMetrics
+    long oldOpsMkdir =
+        metricsGetter.get("MKDIRS").call();
     String user = HadoopUsersConfTestHelper.getHadoopUsers()[0];
     // Remove leading / from filename
     if (dirname.charAt(0) == '/') {
@@ -534,6 +575,8 @@ public class TestHttpFSServer extends HFSTestCase {
     conn.setRequestMethod("PUT");
     conn.connect();
     Assert.assertEquals(HttpURLConnection.HTTP_OK, conn.getResponseCode());
+    Assert.assertEquals(1 + oldOpsMkdir,
+        (long) metricsGetter.get("MKDIRS").call());
   }
 
   /**
@@ -547,6 +590,8 @@ public class TestHttpFSServer extends HFSTestCase {
    */
   private String getStatus(String filename, String command)
           throws Exception {
+    long oldOpsStat =
+        metricsGetter.getOrDefault(command, defaultEntryMetricGetter).call();
     String user = HadoopUsersConfTestHelper.getHadoopUsers()[0];
     // Remove leading / from filename
     if (filename.charAt(0) == '/') {
@@ -562,7 +607,9 @@ public class TestHttpFSServer extends HFSTestCase {
 
     BufferedReader reader =
             new BufferedReader(new InputStreamReader(conn.getInputStream()));
-
+    long opsStat =
+        metricsGetter.getOrDefault(command, defaultExitMetricGetter).call();
+    Assert.assertEquals(oldOpsStat + 1L, opsStat);
     return reader.readLine();
   }
 
@@ -1508,6 +1555,23 @@ public class TestHttpFSServer extends HFSTestCase {
     Assert.assertEquals(dirLst, JsonUtil.toJsonString(dfsDirLst));
   }
 
+  private void verifyGetSnapshotList(DistributedFileSystem dfs, Path path)
+      throws Exception {
+    // Send a request
+    HttpURLConnection conn = sendRequestToHttpFSServer(path.toString(),
+        "GETSNAPSHOTLIST", "");
+    // Should return HTTP_OK
+    Assert.assertEquals(conn.getResponseCode(), HttpURLConnection.HTTP_OK);
+    // Verify the response
+    BufferedReader reader =
+        new BufferedReader(new InputStreamReader(conn.getInputStream()));
+    // The response should be a one-line JSON string.
+    String dirLst = reader.readLine();
+    // Verify the content of status with DFS API.
+    SnapshotStatus[] dfsDirLst = dfs.getSnapshotListing(path);
+    Assert.assertEquals(dirLst, JsonUtil.toJsonString(dfsDirLst));
+  }
+
   @Test
   @TestDir
   @TestJetty
@@ -1541,6 +1605,35 @@ public class TestHttpFSServer extends HFSTestCase {
     verifyGetSnapshottableDirectoryList(dfs);
     dfs.delete(path1, true);
     verifyGetSnapshottableDirectoryList(dfs);
+  }
+
+
+  @Test
+  @TestDir
+  @TestJetty
+  @TestHdfs
+  public void testGetSnapshotList() throws Exception {
+    createHttpFSServer(false, false);
+    // Create test directories
+    String pathStr = "/tmp/tmp-snap-list-test-1";
+    createDirWithHttp(pathStr, "700", null);
+    Path path = new Path(pathStr);
+    DistributedFileSystem dfs = (DistributedFileSystem) FileSystem.get(
+        path.toUri(), TestHdfsHelper.getHdfsConf());
+    // Enable snapshot for path1
+    dfs.allowSnapshot(path);
+    Assert.assertTrue(dfs.getFileStatus(path).isSnapshotEnabled());
+    // Verify response when there is one snapshottable directory
+    verifyGetSnapshotList(dfs, path);
+    // Create a file and take a snapshot
+    String file1 = pathStr + "/file1";
+    createWithHttp(file1, null);
+    dfs.createSnapshot(path, "snap1");
+    // Create another file and take a snapshot
+    String file2 = pathStr + "/file2";
+    createWithHttp(file2, null);
+    dfs.createSnapshot(path, "snap2");
+    verifyGetSnapshotList(dfs, path);
   }
 
   @Test
@@ -1618,8 +1711,7 @@ public class TestHttpFSServer extends HFSTestCase {
     conn.connect();
     // Verify that we read what we wrote
     Assert.assertEquals(HttpURLConnection.HTTP_OK, conn.getResponseCode());
-    String content = IOUtils.toString(
-        conn.getInputStream(), Charset.defaultCharset());
+    String content = IOUtils.toString(conn.getInputStream(), StandardCharsets.UTF_8);
     Assert.assertEquals(testContent, content);
 
 

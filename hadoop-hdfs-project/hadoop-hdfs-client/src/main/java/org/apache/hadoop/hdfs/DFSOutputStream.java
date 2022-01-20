@@ -36,6 +36,7 @@ import org.apache.hadoop.fs.FileEncryptionInfo;
 import org.apache.hadoop.fs.ParentNotDirectoryException;
 import org.apache.hadoop.fs.StreamCapabilities;
 import org.apache.hadoop.fs.Syncable;
+import org.apache.hadoop.fs.impl.StoreImplementationUtils;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hdfs.client.HdfsClientConfigKeys;
 import org.apache.hadoop.hdfs.client.HdfsDataOutputStream;
@@ -66,15 +67,16 @@ import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.util.DataChecksum;
 import org.apache.hadoop.util.DataChecksum.Type;
 import org.apache.hadoop.util.Progressable;
-import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.util.Time;
-import org.apache.htrace.core.TraceScope;
+import org.apache.hadoop.tracing.TraceScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.util.Preconditions;
 
+import static org.apache.hadoop.hdfs.client.HdfsClientConfigKeys.Write.RECOVER_LEASE_ON_CLOSE_EXCEPTION_DEFAULT;
+import static org.apache.hadoop.hdfs.client.HdfsClientConfigKeys.Write.RECOVER_LEASE_ON_CLOSE_EXCEPTION_KEY;
 
 /****************************************************************
  * DFSOutputStream creates files from a stream of bytes.
@@ -126,6 +128,7 @@ public class DFSOutputStream extends FSOutputSummer
   protected final AtomicReference<CachingStrategy> cachingStrategy;
   private FileEncryptionInfo fileEncryptionInfo;
   private int writePacketSize;
+  private boolean leaseRecovered = false;
 
   /** Use {@link ByteArrayManager} to create buffer for non-heartbeat packets.*/
   protected DFSPacket createPacket(int packetSize, int chunksPerPkt,
@@ -480,9 +483,10 @@ public class DFSOutputStream extends FSOutputSummer
       currentPacket = createPacket(packetSize, chunksPerPacket, getStreamer()
           .getBytesCurBlock(), getStreamer().getAndIncCurrentSeqno(), false);
       DFSClient.LOG.debug("WriteChunk allocating new packet seqno={},"
-              + " src={}, packetSize={}, chunksPerPacket={}, bytesCurBlock={}",
+              + " src={}, packetSize={}, chunksPerPacket={}, bytesCurBlock={},"
+              + " output stream={}",
           currentPacket.getSeqno(), src, packetSize, chunksPerPacket,
-          getStreamer().getBytesCurBlock() + ", " + this);
+          getStreamer().getBytesCurBlock(), this);
     }
   }
 
@@ -560,13 +564,7 @@ public class DFSOutputStream extends FSOutputSummer
 
   @Override
   public boolean hasCapability(String capability) {
-    switch (StringUtils.toLowerCase(capability)) {
-    case StreamCapabilities.HSYNC:
-    case StreamCapabilities.HFLUSH:
-      return true;
-    default:
-      return false;
-    }
+    return StoreImplementationUtils.isProbeForSyncable(capability);
   }
 
   /**
@@ -861,7 +859,14 @@ public class DFSOutputStream extends FSOutputSummer
   }
 
   protected synchronized void closeImpl() throws IOException {
+    boolean recoverLeaseOnCloseException = dfsClient.getConfiguration()
+        .getBoolean(RECOVER_LEASE_ON_CLOSE_EXCEPTION_KEY,
+            RECOVER_LEASE_ON_CLOSE_EXCEPTION_DEFAULT);
     if (isClosed()) {
+      if (!leaseRecovered) {
+        recoverLease(recoverLeaseOnCloseException);
+      }
+
       LOG.debug("Closing an already closed stream. [Stream:{}, streamer:{}]",
           closed, getStreamer().streamerClosed());
       try {
@@ -896,6 +901,9 @@ public class DFSOutputStream extends FSOutputSummer
       }
       completeFile();
     } catch (ClosedChannelException ignored) {
+    } catch (IOException ioe) {
+      recoverLease(recoverLeaseOnCloseException);
+      throw ioe;
     } finally {
       // Failures may happen when flushing data.
       // Streamers may keep waiting for the new block information.
@@ -906,11 +914,27 @@ public class DFSOutputStream extends FSOutputSummer
     }
   }
 
-  private void completeFile() throws IOException {
+  /**
+   * If recoverLeaseOnCloseException is true and an exception occurs when
+   * closing a file, recover lease.
+   */
+  protected void recoverLease(boolean recoverLeaseOnCloseException) {
+    if (recoverLeaseOnCloseException) {
+      try {
+        dfsClient.endFileLease(fileId);
+        dfsClient.recoverLease(src);
+        leaseRecovered = true;
+      } catch (Exception e) {
+        LOG.warn("Fail to recover lease for {}", src, e);
+      }
+    }
+  }
+
+  void completeFile() throws IOException {
     // get last block before destroying the streamer
     ExtendedBlock lastBlock = getStreamer().getBlock();
-    try (TraceScope ignored =
-        dfsClient.getTracer().newScope("completeFile")) {
+    try (TraceScope ignored = dfsClient.getTracer()
+        .newScope("DFSOutputStream#completeFile")) {
       completeFile(lastBlock);
     }
   }
@@ -966,7 +990,10 @@ public class DFSOutputStream extends FSOutputSummer
           DFSClient.LOG.info(msg);
           throw new IOException(msg);
         }
-        try {
+        try (TraceScope scope = dfsClient.getTracer()
+            .newScope("DFSOutputStream#completeFile: Retry")) {
+          scope.addKVAnnotation("retries left", retries);
+          scope.addKVAnnotation("sleeptime (sleeping for)", sleeptime);
           if (retries == 0) {
             throw new IOException("Unable to close file because the last block "
                 + last + " does not have enough number of replicas.");
@@ -1074,6 +1101,11 @@ public class DFSOutputStream extends FSOutputSummer
   @Override
   public String toString() {
     return getClass().getSimpleName() + ":" + streamer;
+  }
+
+  @VisibleForTesting
+  boolean isLeaseRecovered() {
+    return leaseRecovered;
   }
 
   static LocatedBlock addBlock(DatanodeInfo[] excludedNodes,

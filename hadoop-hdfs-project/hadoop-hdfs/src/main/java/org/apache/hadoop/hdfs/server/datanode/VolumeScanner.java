@@ -30,10 +30,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.util.Preconditions;
+import org.apache.hadoop.thirdparty.com.google.common.cache.Cache;
+import org.apache.hadoop.thirdparty.com.google.common.cache.CacheBuilder;
 import org.apache.hadoop.hdfs.protocol.Block;
 import org.apache.hadoop.hdfs.protocol.BlockLocalPathInfo;
 import org.apache.hadoop.hdfs.protocol.ExtendedBlock;
@@ -451,7 +451,7 @@ public class VolumeScanner extends Thread {
     } catch (IOException e) {
       resultHandler.handle(block, e);
     } finally {
-      IOUtils.cleanup(null, blockSender);
+      IOUtils.cleanupWithLogger(null, blockSender);
     }
     metrics.incrBlockVerificationFailures();
     return -1;
@@ -670,15 +670,17 @@ public class VolumeScanner extends Thread {
         LOG.error("{} exiting because of exception ", this, e);
       }
       LOG.info("{} exiting.", this);
+      VolumeScannerCBInjector.get().preSavingBlockIteratorTask(this);
       // Save the current position of all block iterators and close them.
       for (BlockIterator iter : blockIters) {
         saveBlockIterator(iter);
-        IOUtils.cleanup(null, iter);
+        IOUtils.cleanupWithLogger(null, iter);
       }
     } finally {
+      VolumeScannerCBInjector.get().terminationCallBack(this);
       // When the VolumeScanner exits, release the reference we were holding
       // on the volume.  This will allow the volume to be removed later.
-      IOUtils.cleanup(null, ref);
+      IOUtils.cleanupWithLogger(null, ref);
     }
   }
 
@@ -695,6 +697,7 @@ public class VolumeScanner extends Thread {
     stopping = true;
     notify();
     this.interrupt();
+    VolumeScannerCBInjector.get().shutdownCallBack(this);
   }
 
 
@@ -764,7 +767,7 @@ public class VolumeScanner extends Thread {
       if (iter.getBlockPoolId().equals(bpid)) {
         LOG.trace("{}: disabling scanning on block pool {}", this, bpid);
         i.remove();
-        IOUtils.cleanup(null, iter);
+        IOUtils.cleanupWithLogger(null, iter);
         if (curBlockIter == iter) {
           curBlockIter = null;
         }

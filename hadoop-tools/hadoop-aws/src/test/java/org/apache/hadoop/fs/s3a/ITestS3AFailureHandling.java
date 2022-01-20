@@ -19,15 +19,13 @@
 package org.apache.hadoop.fs.s3a;
 
 import com.amazonaws.services.s3.model.DeleteObjectsRequest;
-import com.amazonaws.services.s3.model.MultiObjectDeleteException;
-import com.google.common.collect.Lists;
+
 import org.junit.Assume;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
-import org.apache.hadoop.fs.s3a.impl.MultiObjectDeleteSupport;
+import org.apache.hadoop.fs.statistics.StoreStatisticNames;
+import org.apache.hadoop.fs.store.audit.AuditSpan;
 
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -41,7 +39,6 @@ import java.nio.file.AccessDeniedException;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.*;
 import static org.apache.hadoop.fs.s3a.test.ExtraAssertions.failIf;
 import static org.apache.hadoop.fs.s3a.impl.MultiObjectDeleteSupport.*;
-import static org.apache.hadoop.fs.s3a.impl.TestPartialDeleteFailures.keysToDelete;
 import static org.apache.hadoop.test.LambdaTestUtils.*;
 
 /**
@@ -77,7 +74,9 @@ public class ITestS3AFailureHandling extends AbstractS3ATestBase {
 
   private void removeKeys(S3AFileSystem fileSystem, String... keys)
       throws IOException {
-    fileSystem.removeKeys(buildDeleteRequest(keys), false, null);
+    try (AuditSpan span = span()) {
+      fileSystem.removeKeys(buildDeleteRequest(keys), false);
+    }
   }
 
   private List<DeleteObjectsRequest.KeyVersion> buildDeleteRequest(
@@ -118,54 +117,15 @@ public class ITestS3AFailureHandling extends AbstractS3ATestBase {
     Path csvPath = maybeGetCsvPath();
     S3AFileSystem fs = (S3AFileSystem) csvPath.getFileSystem(
         getConfiguration());
+    // create a span, expect it to be activated.
+    fs.getAuditSpanSource().createSpan(StoreStatisticNames.OP_DELETE,
+        csvPath.toString(), null);
     List<DeleteObjectsRequest.KeyVersion> keys
         = buildDeleteRequest(
             new String[]{
                 fs.pathToKey(csvPath),
                 "missing-key.csv"
             });
-    MultiObjectDeleteException ex = intercept(
-        MultiObjectDeleteException.class,
-        () -> fs.removeKeys(keys, false, null));
-
-    final List<Path> undeleted
-        = extractUndeletedPaths(ex, fs::keyToQualifiedPath);
-    String undeletedFiles = join(undeleted);
-    failIf(undeleted.size() != 2,
-        "undeleted list size wrong: " + undeletedFiles,
-        ex);
-    assertTrue("no CSV in " +undeletedFiles, undeleted.contains(csvPath));
-
-    // and a full split, after adding a new key
-    String marker = "/marker";
-    Path markerPath = fs.keyToQualifiedPath(marker);
-    keys.add(new DeleteObjectsRequest.KeyVersion(marker));
-
-    Pair<List<Path>, List<Path>> pair =
-        new MultiObjectDeleteSupport(fs.createStoreContext(), null)
-        .splitUndeletedKeys(ex, keys);
-    assertEquals(undeleted, pair.getLeft());
-    List<Path> right = pair.getRight();
-    assertEquals("Wrong size for " + join(right), 1, right.size());
-    assertEquals(markerPath, right.get(0));
-  }
-
-  /**
-   * See what happens when you delete two entries which do not exist.
-   * It must not raise an exception.
-   */
-  @Test
-  public void testMultiObjectDeleteMissingEntriesSucceeds() throws Throwable {
-    describe("Delete keys which don't exist");
-    Path base = path("missing");
-    S3AFileSystem fs = getFileSystem();
-    List<DeleteObjectsRequest.KeyVersion> keys = keysToDelete(
-        Lists.newArrayList(new Path(base, "1"), new Path(base, "2")));
-    fs.removeKeys(keys, false, null);
-  }
-
-  private String join(final Iterable iterable) {
-    return "[" + StringUtils.join(iterable, ",") + "]";
   }
 
   /**

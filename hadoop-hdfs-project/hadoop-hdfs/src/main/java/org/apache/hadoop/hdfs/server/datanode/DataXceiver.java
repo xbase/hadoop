@@ -17,11 +17,12 @@
  */
 package org.apache.hadoop.hdfs.server.datanode;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.util.Preconditions;
 import org.apache.hadoop.thirdparty.protobuf.ByteString;
 import javax.crypto.SecretKey;
 import org.apache.commons.logging.Log;
+import org.apache.hadoop.fs.FsTracer;
 import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdfs.DFSUtilClient;
 import org.apache.hadoop.hdfs.ExtendedBlockId;
@@ -135,7 +136,7 @@ class DataXceiver extends Receiver implements Runnable {
   
   private DataXceiver(Peer peer, DataNode datanode,
       DataXceiverServer dataXceiverServer) throws IOException {
-    super(datanode.getTracer());
+    super(FsTracer.get(null));
     this.peer = peer;
     this.dnConf = datanode.getDnConf();
     this.socketIn = peer.getInputStream();
@@ -431,7 +432,7 @@ class DataXceiver extends Receiver implements Runnable {
             blk.getBlockId(), dnR.getDatanodeUuid(), success));
       }
       if (fis != null) {
-        IOUtils.cleanup(null, fis);
+        IOUtils.cleanupWithLogger(null, fis);
       }
     }
   }
@@ -554,7 +555,7 @@ class DataXceiver extends Receiver implements Runnable {
           LOG.warn("Failed to shut down socket in error handler", e);
         }
       }
-      IOUtils.cleanup(null, shmInfo);
+      IOUtils.cleanupWithLogger(null, shmInfo);
     }
   }
 
@@ -586,7 +587,7 @@ class DataXceiver extends Receiver implements Runnable {
     final String clientTraceFmt =
       clientName.length() > 0 && ClientTraceLog.isInfoEnabled()
         ? String.format(DN_CLIENTTRACE_FORMAT, localAddress, remoteAddress,
-            "%d", "HDFS_READ", clientName, "%d",
+            "", "%d", "HDFS_READ", clientName, "%d",
             dnR.getDatanodeUuid(), block, "%d")
         : dnR + " Served block " + block + " to " +
             remoteAddress;
@@ -877,11 +878,11 @@ class DataXceiver extends Receiver implements Runnable {
           IOUtils.closeSocket(mirrorSock);
           mirrorSock = null;
           if (isClient) {
-            LOG.error("{}:Exception transfering block {} to mirror {}",
+            LOG.error("{}:Exception transferring block {} to mirror {}",
                 datanode, block, mirrorNode, e);
             throw e;
           } else {
-            LOG.info("{}:Exception transfering {} to mirror {}- continuing " +
+            LOG.info("{}:Exception transferring {} to mirror {}- continuing " +
                 "without the mirror", datanode, block, mirrorNode, e);
             incrDatanodeNetworkErrors();
           }
@@ -928,8 +929,9 @@ class DataXceiver extends Receiver implements Runnable {
       if (isDatanode ||
           stage == BlockConstructionStage.PIPELINE_CLOSE_RECOVERY) {
         datanode.closeBlock(block, null, storageUuid, isOnTransientStorage);
-        LOG.info("Received {} src: {} dest: {} of size {}",
-            block, remoteAddress, localAddress, block.getNumBytes());
+        LOG.info("Received {} src: {} dest: {} volume: {} of size {}",
+            block, remoteAddress, localAddress, replica.getVolume(),
+            block.getNumBytes());
       }
 
       if(isClient) {
@@ -1091,7 +1093,7 @@ class DataXceiver extends Receiver implements Runnable {
     if (!dataXceiverServer.balanceThrottler.acquire()) { // not able to start
       String msg = "Not able to copy block " + block.getBlockId() + " " +
           "to " + peer.getRemoteAddressString() + " because threads " +
-          "quota is exceeded.";
+          "quota=" + dataXceiverServer.balanceThrottler.getMaxConcurrentMovers() + " is exceeded.";
       LOG.info(msg);
       sendResponse(ERROR, msg);
       return;
@@ -1165,7 +1167,7 @@ class DataXceiver extends Receiver implements Runnable {
     if (!dataXceiverServer.balanceThrottler.acquire()) { // not able to start
       String msg = "Not able to receive block " + block.getBlockId() +
           " from " + peer.getRemoteAddressString() + " because threads " +
-          "quota is exceeded.";
+          "quota=" + dataXceiverServer.balanceThrottler.getMaxConcurrentMovers() + " is exceeded.";
       LOG.warn(msg);
       sendResponse(ERROR, msg);
       return;
@@ -1249,6 +1251,8 @@ class DataXceiver extends Receiver implements Runnable {
         
         LOG.info("Moved {} from {}, delHint={}",
             block, peer.getRemoteAddressString(), delHint);
+
+        datanode.metrics.incrReplaceBlockOpToOtherHost();
       }
     } catch (IOException ioe) {
       opStatus = ERROR;

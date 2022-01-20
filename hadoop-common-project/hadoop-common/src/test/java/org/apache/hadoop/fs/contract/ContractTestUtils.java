@@ -233,8 +233,8 @@ public class ContractTestUtils extends Assert {
   public static void verifyFileContents(FileSystem fs,
                                         Path path,
                                         byte[] original) throws IOException {
-    assertIsFile(fs, path);
     FileStatus stat = fs.getFileStatus(path);
+    assertIsFile(path, stat);
     String statText = stat.toString();
     assertEquals("wrong length " + statText, original.length, stat.getLen());
     byte[] bytes = readDataset(fs, path, original.length);
@@ -399,9 +399,7 @@ public class ContractTestUtils extends Assert {
       IOException {
     if (fileSystem != null) {
       rejectRootOperation(path, allowRootDelete);
-      if (fileSystem.exists(path)) {
-        return fileSystem.delete(path, recursive);
-      }
+      return fileSystem.delete(path, recursive);
     }
     return false;
 
@@ -728,8 +726,10 @@ public class ContractTestUtils extends Assert {
       assertPathExists(fs, "about to be deleted file", file);
     }
     boolean deleted = fs.delete(file, recursive);
-    String dir = ls(fs, file.getParent());
-    assertTrue("Delete failed on " + file + ": " + dir, deleted);
+    if (!deleted) {
+      String dir = ls(fs, file.getParent());
+      assertTrue("Delete failed on " + file + ": " + dir, deleted);
+    }
     assertPathDoesNotExist(fs, "Deleted file", file);
   }
 
@@ -1455,6 +1455,52 @@ public class ContractTestUtils extends Assert {
 
   /**
    * Convert a remote iterator over file status results into a list.
+   * The utility equivalents in commons collection and guava cannot be
+   * used here, as this is a different interface, one whose operators
+   * can throw IOEs.
+   * @param iterator input iterator
+   * @return the file status entries as a list.
+   * @throws IOException
+   */
+  public static <T extends FileStatus> List<T> iteratorToList(
+          RemoteIterator<T> iterator) throws IOException {
+    List<T> list = new ArrayList<>();
+    while (iterator.hasNext()) {
+      list.add(iterator.next());
+    }
+    return list;
+  }
+
+
+  /**
+   * Convert a remote iterator over file status results into a list.
+   * This uses {@link RemoteIterator#next()} calls only, expecting
+   * a raised {@link NoSuchElementException} exception to indicate that
+   * the end of the listing has been reached. This iteration strategy is
+   * designed to verify that the implementation of the remote iterator
+   * generates results and terminates consistently with the {@code hasNext/next}
+   * iteration. More succinctly "verifies that the {@code next()} operator
+   * isn't relying on {@code hasNext()} to always be called during an iteration.
+   * @param iterator input iterator
+   * @return the status entries as a list.
+   * @throws IOException IO problems
+   */
+  @SuppressWarnings("InfiniteLoopStatement")
+  public static <T extends FileStatus> List<T> iteratorToListThroughNextCallsAlone(
+          RemoteIterator<T> iterator) throws IOException {
+    List<T> list = new ArrayList<>();
+    try {
+      while (true) {
+        list.add(iterator.next());
+      }
+    } catch (NoSuchElementException expected) {
+      // ignored
+    }
+    return list;
+  }
+
+  /**
+   * Convert a remote iterator over file status results into a list.
    * This uses {@link RemoteIterator#next()} calls only, expecting
    * a raised {@link NoSuchElementException} exception to indicate that
    * the end of the listing has been reached. This iteration strategy is
@@ -1496,17 +1542,47 @@ public class ContractTestUtils extends Assert {
     StreamCapabilities source = (StreamCapabilities) stream;
     if (shouldHaveCapabilities != null) {
       for (String shouldHaveCapability : shouldHaveCapabilities) {
-        assertTrue("Should have capability: " + shouldHaveCapability,
+        assertTrue("Should have capability: " + shouldHaveCapability
+                + " in " + source,
             source.hasCapability(shouldHaveCapability));
       }
     }
 
     if (shouldNotHaveCapabilities != null) {
       for (String shouldNotHaveCapability : shouldNotHaveCapabilities) {
-        assertFalse("Should not have capability: " + shouldNotHaveCapability,
+        assertFalse("Should not have capability: " + shouldNotHaveCapability
+                + " in " + source,
             source.hasCapability(shouldNotHaveCapability));
       }
     }
+  }
+
+
+  /**
+   * Custom assert to verify capabilities supported by
+   * an object through {@link StreamCapabilities}.
+   *
+   * @param source The object to test for StreamCapabilities
+   * @param capabilities The list of expected capabilities
+   */
+  public static void assertHasStreamCapabilities(
+      final Object source,
+      final String... capabilities) {
+    assertCapabilities(source, capabilities, null);
+  }
+
+  /**
+   * Custom assert to verify capabilities NOT supported by
+   * an object through {@link StreamCapabilities}.
+   *
+   * @param source The object to test for StreamCapabilities
+   * @param capabilities The list of capabilities which must not be
+   * supported.
+   */
+  public static void assertLacksStreamCapabilities(
+      final Object source,
+      final String... capabilities) {
+    assertCapabilities(source, null, capabilities);
   }
 
   /**
@@ -1523,7 +1599,8 @@ public class ContractTestUtils extends Assert {
 
     for (String shouldHaveCapability: capabilities) {
       assertTrue("Should have capability: " + shouldHaveCapability
-              + " under " + path,
+              + " under " + path
+              + " in " + source,
           source.hasPathCapability(path, shouldHaveCapability));
     }
   }
@@ -1602,7 +1679,7 @@ public class ContractTestUtils extends Assert {
      * @param results results of the listFiles/listStatus call.
      * @throws IOException IO problems during the iteration.
      */
-    public TreeScanResults(RemoteIterator<LocatedFileStatus> results)
+    public TreeScanResults(RemoteIterator<? extends FileStatus> results)
         throws IOException {
       while (results.hasNext()) {
         add(results.next());

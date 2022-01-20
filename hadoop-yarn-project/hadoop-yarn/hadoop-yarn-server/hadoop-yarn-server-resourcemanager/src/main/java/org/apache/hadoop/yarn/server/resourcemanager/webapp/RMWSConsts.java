@@ -81,6 +81,10 @@ public final class RMWSConsts {
   /** Path for {@code RMWebServiceProtocol#getActivities}. */
   public static final String SCHEDULER_ACTIVITIES = "/scheduler/activities";
 
+  /** Path for {@code RMWebServiceProtocol#getBulkActivities}. */
+  public static final String SCHEDULER_BULK_ACTIVITIES =
+      "/scheduler/bulk-activities";
+
   /** Path for {@code RMWebServiceProtocol#getAppActivities}. */
   public static final String SCHEDULER_APP_ACTIVITIES =
       "/scheduler/app-activities/{appid}";
@@ -122,7 +126,7 @@ public final class RMWSConsts {
   /** Path for {@code RMWebServiceProtocol#addToClusterNodeLabels}. */
   public static final String ADD_NODE_LABELS = "/add-node-labels";
 
-  /** Path for {@code RMWebServiceProtocol#removeFromCluserNodeLabels}. */
+  /** Path for {@code RMWebServiceProtocol#removeFromClusterNodeLabels}. */
   public static final String REMOVE_NODE_LABELS = "/remove-node-labels";
 
   /** Path for {@code RMWebServiceProtocol#getLabelsOnNode}. */
@@ -252,6 +256,7 @@ public final class RMWSConsts {
   public static final String ACTIONS = "actions";
   public static final String SUMMARIZE = "summarize";
   public static final String NAME = "name";
+  public static final String ACTIVITIES_COUNT = "activitiesCount";
 
   private RMWSConsts() {
     // not called
