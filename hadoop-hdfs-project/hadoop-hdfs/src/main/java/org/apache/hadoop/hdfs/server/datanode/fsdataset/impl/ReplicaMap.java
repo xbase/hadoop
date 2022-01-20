@@ -28,11 +28,12 @@ import org.apache.hadoop.hdfs.server.datanode.ReplicaInfo;
 /**
  * Maintains the replica map. 
  */
-class ReplicaMap {
+class ReplicaMap { // 此DN上的所有副本
   // Object using which this class is synchronized
   private final Object mutex;
   
   // Map of block pool Id to another map of block Id to ReplicaInfo.
+  // <bpid, <blockid, ReplicaInfo>>
   private final Map<String, Map<Long, ReplicaInfo>> map =
     new HashMap<String, Map<Long, ReplicaInfo>>();
   
@@ -44,7 +45,7 @@ class ReplicaMap {
     this.mutex = mutex;
   }
   
-  String[] getBlockPoolList() {
+  String[] getBlockPoolList() { // 所有的block pool
     synchronized(mutex) {
       return map.keySet().toArray(new String[map.keySet().size()]);   
     }
@@ -70,7 +71,7 @@ class ReplicaMap {
    * @return the replica's meta information
    * @throws IllegalArgumentException if the input block or block pool is null
    */
-  ReplicaInfo get(String bpid, Block block) {
+  ReplicaInfo get(String bpid, Block block) { // 获取一个replica
     checkBlockPool(bpid);
     checkBlock(block);
     ReplicaInfo replicaInfo = get(bpid, block.getBlockId());
@@ -88,7 +89,7 @@ class ReplicaMap {
    * @param blockId a block's id
    * @return the replica's meta information
    */
-  ReplicaInfo get(String bpid, long blockId) {
+  ReplicaInfo get(String bpid, long blockId) { // 获取一个replica
     checkBlockPool(bpid);
     synchronized(mutex) {
       Map<Long, ReplicaInfo> m = map.get(bpid);
@@ -104,7 +105,7 @@ class ReplicaMap {
    * @return previous meta information of the replica
    * @throws IllegalArgumentException if the input parameter is null
    */
-  ReplicaInfo add(String bpid, ReplicaInfo replicaInfo) {
+  ReplicaInfo add(String bpid, ReplicaInfo replicaInfo) { // 添加一个replica
     checkBlockPool(bpid);
     checkBlock(replicaInfo);
     synchronized(mutex) {
@@ -133,7 +134,7 @@ class ReplicaMap {
    * @return the removed replica's meta information
    * @throws IllegalArgumentException if the input block is null
    */
-  ReplicaInfo remove(String bpid, Block block) {
+  ReplicaInfo remove(String bpid, Block block) { // 删除一个replica
     checkBlockPool(bpid);
     checkBlock(block);
     synchronized(mutex) {
@@ -157,7 +158,7 @@ class ReplicaMap {
    * @param blockId block id of the replica to be removed
    * @return the removed replica's meta information
    */
-  ReplicaInfo remove(String bpid, long blockId) {
+  ReplicaInfo remove(String bpid, long blockId) { // 删除一个replica
     checkBlockPool(bpid);
     synchronized(mutex) {
       Map<Long, ReplicaInfo> m = map.get(bpid);
@@ -173,7 +174,7 @@ class ReplicaMap {
    * @param bpid block pool id
    * @return the number of replicas in the map
    */
-  int size(String bpid) {
+  int size(String bpid) { // 指定pool下的replica数量
     Map<Long, ReplicaInfo> m = null;
     synchronized(mutex) {
       m = map.get(bpid);
@@ -191,7 +192,7 @@ class ReplicaMap {
    * @param bpid block pool id
    * @return a collection of the replicas belonging to the block pool
    */
-  Collection<ReplicaInfo> replicas(String bpid) {
+  Collection<ReplicaInfo> replicas(String bpid) { // 指定pool下的所有replica
     Map<Long, ReplicaInfo> m = null;
     m = map.get(bpid);
     return m != null ? m.values() : null;

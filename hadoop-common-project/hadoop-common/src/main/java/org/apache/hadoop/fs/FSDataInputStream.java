@@ -44,7 +44,7 @@ public class FSDataInputStream extends DataInputStream
     extendedReadBuffers
       = new IdentityHashStore<ByteBuffer, ByteBufferPool>(0);
 
-  public FSDataInputStream(InputStream in) {
+  public FSDataInputStream(InputStream in) { // DistributedFileSystem 使用 DFSInputStream
     super(in);
     if( !(in instanceof Seekable) || !(in instanceof PositionedReadable) ) {
       throw new IllegalArgumentException(
@@ -83,6 +83,7 @@ public class FSDataInputStream extends DataInputStream
    *         if there is no more data because the end of the stream has been
    *         reached
    */
+  // pread
   @Override
   public int read(long position, byte[] buffer, int offset, int length)
     throws IOException {

@@ -88,7 +88,7 @@ public class FsVolumeImpl implements FsVolumeSpi {
   private final File currentDir;    // <StorageDirectory>/current
   private final DF usage;           
   private final long reserved;
-  private CloseableReferenceCount reference = new CloseableReferenceCount();
+  private CloseableReferenceCount reference = new CloseableReferenceCount();  // 维护此volume正在执行IO的个数
 
   // Disk space reserved for open blocks.
   private AtomicLong reservedForRbw;

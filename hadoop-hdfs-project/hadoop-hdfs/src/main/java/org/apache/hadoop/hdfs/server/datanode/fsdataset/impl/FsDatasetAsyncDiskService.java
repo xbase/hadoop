@@ -135,7 +135,7 @@ class FsDatasetAsyncDiskService {
    * Stops AsyncDiskService for a volume.
    * @param volume the root of the volume.
    */
-  synchronized void removeVolume(File volume) {
+  synchronized void removeVolume(File volume) { // 停止volume对应的异步线程
     if (executors == null) {
       throw new RuntimeException("AsyncDiskService is already shutdown");
     }

@@ -649,7 +649,8 @@ public class Journal implements Closeable {
     checkFormatted();
     
     List<RemoteEditLog> logs = fjm.getRemoteEditLogs(sinceTxId, inProgressOk);
-    
+
+    // 找到in progress edit log文件，并把endTxId由HdfsConstants.INVALID_TXID修改为getHighestWrittenTxId()
     if (inProgressOk) {
       RemoteEditLog log = null;
       for (Iterator<RemoteEditLog> iter = logs.iterator(); iter.hasNext();) {
@@ -659,7 +660,7 @@ public class Journal implements Closeable {
           break;
         }
       }
-      // 只添加最后一个 edit_inprogress 文件
+      // 修改endTxId
       if (log != null && log.isInProgress()) {
         logs.add(new RemoteEditLog(log.getStartTxId(), getHighestWrittenTxId(),
             true));

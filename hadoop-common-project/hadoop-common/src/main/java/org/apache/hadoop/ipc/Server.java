@@ -1913,7 +1913,7 @@ public abstract class Server {
         }
         // read and authorize the user
         processConnectionContext(dis); // 构造客户端ugi，并认证
-      } else if (callId == AuthProtocol.SASL.callId) {
+      } else if (callId == AuthProtocol.SASL.callId) {  // 通过hadoop.security.authentication配置认证方式，默认simple
         // if client was switched to simple, ignore first SASL message
         if (authProtocol != AuthProtocol.SASL) {
           throw new WrappedRpcServerException(

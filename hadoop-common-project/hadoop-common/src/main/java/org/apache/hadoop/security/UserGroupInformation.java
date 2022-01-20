@@ -630,7 +630,7 @@ public class UserGroupInformation {
     AccessControlContext context = AccessController.getContext();
     Subject subject = Subject.getSubject(context);
     if (subject == null || subject.getPrincipals(User.class).isEmpty()) {
-      return getLoginUser();
+      return getLoginUser(); // simpler认证方式，走这个逻辑
     } else {
       return new UserGroupInformation(subject);
     }

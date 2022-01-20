@@ -23,6 +23,11 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 
 /** Stream that permits positional reading. */
+/*
+read和readFully区别：
+read尽量读length个数据，如果stream到达末尾，就可能读不够length个数据
+readFully确保读length个数据，如果读不够会抛异常
+ */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 public interface PositionedReadable {

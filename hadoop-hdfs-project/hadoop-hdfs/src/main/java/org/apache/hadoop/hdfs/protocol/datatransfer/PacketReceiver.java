@@ -262,7 +262,7 @@ public class PacketReceiver implements Closeable {
     }
   }
   
-  private void reallocPacketBuf(int atLeastCapacity) {
+  private void reallocPacketBuf(int atLeastCapacity) { // 分配buffer
     // Realloc the buffer if this packet is longer than the previous
     // one.
     if (curPacketBuf == null ||

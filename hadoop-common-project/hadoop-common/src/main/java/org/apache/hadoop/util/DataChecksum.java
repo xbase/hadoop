@@ -35,7 +35,7 @@ import org.apache.hadoop.fs.ChecksumException;
  */
 @InterfaceAudience.LimitedPrivate({"HDFS", "MapReduce"})
 @InterfaceStability.Evolving
-public class DataChecksum implements Checksum {
+public class DataChecksum implements Checksum { // checksum工具类
   
   // checksum types
   public static final int CHECKSUM_NULL    = 0;
@@ -53,7 +53,7 @@ public class DataChecksum implements Checksum {
     MIXED (CHECKSUM_MIXED, 0); // This cannot be used to create DataChecksum
 
     public final int id;
-    public final int size;
+    public final int size; // 一个checksum几个字节
     
     private Type(int id, int size) {
       this.id = id;
@@ -215,9 +215,9 @@ public class DataChecksum implements Checksum {
      return type.size == 0;
    }
    
-  private final Type type;
+  private final Type type; // checksum算法
   private final Checksum summer;
-  private final int bytesPerChecksum;
+  private final int bytesPerChecksum; // chunk大小（默认：512B，一个chunk算一个checksum）
   private int inSum = 0;
   
   private DataChecksum( Type type, Checksum checksum, int chunkSize ) {

@@ -1082,6 +1082,7 @@ public abstract class FileSystem extends Configured implements Closeable {
    * @see #setPermission(Path, FsPermission)
    * @deprecated API only for 0.20-append
    */
+  // createParent设置为false
   @Deprecated
   public FSDataOutputStream createNonRecursive(Path f,
       boolean overwrite,

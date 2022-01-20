@@ -54,6 +54,13 @@ public abstract class FSInputStream extends InputStream
   @Override
   public abstract boolean seekToNewSource(long targetPos) throws IOException;
 
+  /*
+   position read和readFully区别：
+   position read尽量读length个数据，如果stream到达末尾，就可能读不够length个数据
+   readFully确保读length个数据，如果读不够会抛异常
+  */
+
+  // seek到指定position，读完数据之后，再seek回之前的position
   @Override
   public int read(long position, byte[] buffer, int offset, int length)
     throws IOException {
@@ -69,7 +76,8 @@ public abstract class FSInputStream extends InputStream
       return nread;
     }
   }
-    
+
+  // 必须要读指定length的数据，否则抛EOFException
   @Override
   public void readFully(long position, byte[] buffer, int offset, int length)
     throws IOException {

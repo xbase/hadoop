@@ -448,7 +448,7 @@ public class Client {
       UserGroupInformation ticket = remoteId.getTicket();
       // try SASL if security is enabled or if the ugi contains tokens.
       // this causes a SIMPLE client with tokens to attempt SASL
-      boolean trySasl = UserGroupInformation.isSecurityEnabled() ||
+      boolean trySasl = UserGroupInformation.isSecurityEnabled() || // 通过hadoop.security.authentication配置认证方式，默认simple
                         (ticket != null && !ticket.getTokens().isEmpty());
       this.authProtocol = trySasl ? AuthProtocol.SASL : AuthProtocol.NONE;
       
@@ -920,7 +920,7 @@ public class Client {
       IpcConnectionContextProto message = ProtoUtil.makeIpcConnectionContext(
           RPC.getProtocolName(remoteId.getProtocol()),
           remoteId.getTicket(),
-          authMethod);
+          authMethod); // 构造认证消息
       RpcRequestHeaderProto connectionContextHeader = ProtoUtil
           .makeRpcRequestHeader(RpcKind.RPC_PROTOCOL_BUFFER,
               OperationProto.RPC_FINAL_PACKET, CONNECTION_CONTEXT_CALL_ID,

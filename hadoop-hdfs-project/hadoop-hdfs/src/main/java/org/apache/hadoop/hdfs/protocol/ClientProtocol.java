@@ -489,7 +489,7 @@ public interface ClientProtocol {
    *           contains a symlink
    * @throws SnapshotAccessControlException if path is in RO snapshot
    */
-  // source文件的inode加入到target文件中，source文件的inode删除
+  // source文件的block加入到target文件中，source文件的inode删除
   @AtMostOnce
   public void concat(String trg, String[] srcs) 
       throws IOException, UnresolvedLinkException, SnapshotAccessControlException;

@@ -51,14 +51,15 @@ abstract public class ReplicaInfo extends Block implements Replica {
    * Base directory containing numerically-identified sub directories and
    * possibly blocks.
    */
-  private File baseDir;
+  private File baseDir; // 存储replica的前缀目录
   
   /**
    * Whether or not this replica's parent directory includes subdirs, in which
    * case we can generate them based on the replica's block ID
    */
-  private boolean hasSubdirs;
-  
+  private boolean hasSubdirs; // 是否有32*32类型的子目录
+
+  // baseDir对应的File对象（每个盘都有一个baseDir） <baseDirString, baseDirFile>
   private static final Map<String, File> internedBaseDirs = new HashMap<String, File>();
 
   /**
@@ -99,7 +100,7 @@ abstract public class ReplicaInfo extends Block implements Replica {
    * Get the full path of this replica's data file
    * @return the full path of this replica's data file
    */
-  public File getBlockFile() {
+  public File getBlockFile() { // 获取replica对应的文件
     return new File(getDir(), getBlockName());
   }
   
@@ -107,7 +108,7 @@ abstract public class ReplicaInfo extends Block implements Replica {
    * Get the full path of this replica's meta file
    * @return the full path of this replica's meta file
    */
-  public File getMetaFile() {
+  public File getMetaFile() { // 获取meta对应的文件
     return new File(getDir(),
         DatanodeUtil.getMetaName(getBlockName(), getGenerationStamp()));
   }
@@ -116,14 +117,14 @@ abstract public class ReplicaInfo extends Block implements Replica {
    * Get the volume where this replica is located on disk
    * @return the volume where this replica is located on disk
    */
-  public FsVolumeSpi getVolume() {
+  public FsVolumeSpi getVolume() { // 所在的盘
     return volume;
   }
   
   /**
    * Set the volume where this replica is located on disk
    */
-  void setVolume(FsVolumeSpi vol) {
+  void setVolume(FsVolumeSpi vol) { // 所在的盘
     this.volume = vol;
   }
 
@@ -139,7 +140,7 @@ abstract public class ReplicaInfo extends Block implements Replica {
    * Return the parent directory path where this replica is located
    * @return the parent directory path where this replica is located
    */
-  File getDir() {
+  File getDir() { // replica所在的目录前缀
     return hasSubdirs ? DatanodeUtil.idToBlockDir(baseDir,
         getBlockId()) : baseDir;
   }
@@ -162,13 +163,13 @@ abstract public class ReplicaInfo extends Block implements Replica {
     this.hasSubdirs = dirInfo.hasSubidrs;
     
     synchronized (internedBaseDirs) {
-      if (!internedBaseDirs.containsKey(dirInfo.baseDirPath)) {
+      if (!internedBaseDirs.containsKey(dirInfo.baseDirPath)) { // 放到internedBaseDirs Map中
         // Create a new String path of this file and make a brand new File object
         // to guarantee we drop the reference to the underlying char[] storage.
         File baseDir = new File(dirInfo.baseDirPath);
         internedBaseDirs.put(dirInfo.baseDirPath, baseDir);
       }
-      this.baseDir = internedBaseDirs.get(dirInfo.baseDirPath);
+      this.baseDir = internedBaseDirs.get(dirInfo.baseDirPath); // 对应的baseDir
     }
   }
 
@@ -184,7 +185,7 @@ abstract public class ReplicaInfo extends Block implements Replica {
   }
   
   @VisibleForTesting
-  public static ReplicaDirInfo parseBaseDir(File dir) {
+  public static ReplicaDirInfo parseBaseDir(File dir) { // 解析出baseDir
     
     File currentDir = dir;
     boolean hasSubdirs = false;

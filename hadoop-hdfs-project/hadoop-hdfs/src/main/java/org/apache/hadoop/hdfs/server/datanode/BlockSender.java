@@ -182,6 +182,9 @@ class BlockSender implements java.io.Closeable {
    * @param clientTraceFmt format string used to print client trace logs
    * @throws IOException
    */
+  // 核心功能：
+  // 1、检查：block是否存在、长度、GS是否对
+  // 2、对齐chunk，确保发送的是一个完整的chunk
   BlockSender(ExtendedBlock block, long startOffset, long length,
               boolean corruptChecksumOk, boolean verifyChecksum,
               boolean sendChecksum, DataNode datanode, String clientTraceFmt,
@@ -268,7 +271,7 @@ class BlockSender implements java.io.Closeable {
         (!is32Bit || length <= Integer.MAX_VALUE); // 是否允许零拷贝
 
       // Obtain a reference before reading data
-      this.volumeRef = datanode.data.getVolume(block).obtainReference();
+      this.volumeRef = datanode.data.getVolume(block).obtainReference(); // 维护此volume正在执行IO
 
       /* 
        * (corruptChecksumOK, meta_file_exist): operation
@@ -277,7 +280,7 @@ class BlockSender implements java.io.Closeable {
        * False,  True: will verify checksum
        * False, False: throws IOException file not found
        */
-      DataChecksum csum = null;
+      DataChecksum csum = null; // 本replica使用的checksum类型
       if (verifyChecksum || sendChecksum) {
         LengthInputStream metaIn = null;
         boolean keepMetaInOpen = false;
@@ -325,15 +328,15 @@ class BlockSender implements java.io.Closeable {
        * If chunkSize is very large, then the metadata file is mostly
        * corrupted. For now just truncate bytesPerchecksum to blockLength.
        */       
-      int size = csum.getBytesPerChecksum();
-      if (size > 10*1024*1024 && size > replicaVisibleLength) { // 修正校验块长度
+      int size = csum.getBytesPerChecksum(); // chunk大小，一个chunk算一个checksum
+      if (size > 10*1024*1024 && size > replicaVisibleLength) { // chunk最大10MB
         csum = DataChecksum.newDataChecksum(csum.getChecksumType(),
             Math.max((int)replicaVisibleLength, 10*1024*1024));
         size = csum.getBytesPerChecksum();        
       }
-      chunkSize = size; // 校验块长度
+      chunkSize = size; // chunk大小
       checksum = csum; // 校验和类型
-      checksumSize = checksum.getChecksumSize(); // 校验和长度
+      checksumSize = checksum.getChecksumSize(); // 一个checksum几个字节
       length = length < 0 ? replicaVisibleLength : length;
 
       // end is either last byte on disk or the length for which we have a 
@@ -352,12 +355,12 @@ class BlockSender implements java.io.Closeable {
       // offset: 标识读取的开始位置
       // endOffset: 标识读取的结束位置
       // Ensure read offset is position at the beginning of chunk
-      offset = startOffset - (startOffset % chunkSize); // 确保offset在一个校验块的开始位置
+      offset = startOffset - (startOffset % chunkSize); // 对齐到一个chunk的开始位置
       if (length >= 0) {
         // Ensure endOffset points to end of chunk.
         long tmpLen = startOffset + length;
         if (tmpLen % chunkSize != 0) {
-          tmpLen += (chunkSize - tmpLen % chunkSize);
+          tmpLen += (chunkSize - tmpLen % chunkSize); // 对齐到一个chunk的结束位置
         }
         if (tmpLen < end) {
           // will use on-disk checksum here since the end is a stable chunk
@@ -367,18 +370,18 @@ class BlockSender implements java.io.Closeable {
           this.lastChunkChecksum = chunkChecksum;
         }
       }
-      endOffset = end; // 确保endOffset在一个校验块的结束位置
+      endOffset = end; // 确保endOffset在一个chunk的结束位置
 
       // seek to the right offsets
       if (offset > 0 && checksumIn != null) {
-        long checksumSkip = (offset / chunkSize) * checksumSize;
+        long checksumSkip = (offset / chunkSize) * checksumSize; // 对齐到一个完整的checksum
         // note blockInStream is seeked when created below
         if (checksumSkip > 0) {
           // Should we use seek() for checksum file as well?
           IOUtils.skipFully(checksumIn, checksumSkip); // seek到meta文件的offset位置
         }
       }
-      seqno = 0;
+      seqno = 0; // packet序列号
 
       if (DataNode.LOG.isDebugEnabled()) {
         DataNode.LOG.debug("replica=" + replica);
@@ -386,7 +389,7 @@ class BlockSender implements java.io.Closeable {
       // seek到block文件的offset位置
       blockIn = datanode.data.getBlockInputStream(block, offset); // seek to offset
       if (blockIn instanceof FileInputStream) {
-        blockInFd = ((FileInputStream)blockIn).getFD(); // 获取文件描述符
+        blockInFd = ((FileInputStream)blockIn).getFD(); // 获取文件描述符，维护os cache时使用
       } else {
         blockInFd = null;
       }
@@ -520,8 +523,8 @@ class BlockSender implements java.io.Closeable {
   private int sendPacket(ByteBuffer pkt, int maxChunks, OutputStream out,
       boolean transferTo, DataTransferThrottler throttler) throws IOException {
     int dataLen = (int) Math.min(endOffset - offset,
-                             (chunkSize * (long) maxChunks)); // 校验块的总长度
-    // 有多少个校验块(chunk)
+                             (chunkSize * (long) maxChunks)); // chunk的总长度
+    // 有多少个chunk
     int numChunks = numberOfChunks(dataLen); // Number of chunks be sent in the packet
     int checksumDataLen = numChunks * checksumSize; // 校验和的总长度
     int packetLen = dataLen + checksumDataLen + 4; // 数据包的总长度
@@ -564,7 +567,7 @@ class BlockSender implements java.io.Closeable {
     if (!transferTo) { // normal transfer
       IOUtils.readFully(blockIn, buf, dataOff, dataLen); // 读取数据块到buffer
 
-      if (verifyChecksum) {
+      if (verifyChecksum) { // DN是否校验checksum
         verifyChecksum(buf, dataOff, dataLen, numChunks, checksumOff); // 验证校验和
       }
     }
@@ -614,7 +617,7 @@ class BlockSender implements java.io.Closeable {
         if (!ioem.startsWith("Broken pipe") && !ioem.startsWith("Connection reset")) {
           LOG.error("BlockSender.sendChunks() exception: ", e);
         }
-        datanode.getBlockScanner().markSuspectBlock(
+        datanode.getBlockScanner().markSuspectBlock( // 标记这个block可能有问题
               volumeRef.getVolume().getStorageID(),
               block);
       }
@@ -671,7 +674,7 @@ class BlockSender implements java.io.Closeable {
    */
   public void verifyChecksum(final byte[] buf, final int dataOffset,
       final int datalen, final int numChunks, final int checksumOffset)
-      throws ChecksumException {
+      throws ChecksumException { // 校验checksum
     int dOff = dataOffset;
     int cOff = checksumOffset;
     int dLeft = datalen;
@@ -738,8 +741,8 @@ class BlockSender implements java.io.Closeable {
 
     final long startTime = ClientTraceLog.isDebugEnabled() ? System.nanoTime() : 0;
     try {
-      int maxChunksPerPacket;
-      int pktBufSize = PacketHeader.PKT_MAX_HEADER_LEN;
+      int maxChunksPerPacket; // 一个packet里有几个chunk
+      int pktBufSize = PacketHeader.PKT_MAX_HEADER_LEN; // packet buffer大小
       boolean transferTo = transferToAllowed && !verifyChecksum
           && baseStream instanceof SocketOutputStream
           && blockIn instanceof FileInputStream; // 零拷贝模式
@@ -758,12 +761,12 @@ class BlockSender implements java.io.Closeable {
         pktBufSize += (chunkSize + checksumSize) * maxChunksPerPacket; // 普通模式，packet buffer大小
       }
 
-      ByteBuffer pktBuf = ByteBuffer.allocate(pktBufSize);
+      ByteBuffer pktBuf = ByteBuffer.allocate(pktBufSize); // packet buffer
 
       while (endOffset > offset && !Thread.currentThread().isInterrupted()) {
         manageOsCache();
         long len = sendPacket(pktBuf, maxChunksPerPacket, streamForSendChunks,
-            transferTo, throttler);
+            transferTo, throttler); // 发送packet
         offset += len;
         totalRead += len + (numberOfChunks(len) * checksumSize);
         seqno++;

@@ -83,7 +83,7 @@ public class ConfiguredFailoverProxyProvider<T> extends
         maxRetriesOnSocketTimeouts);
     
     try {
-      ugi = UserGroupInformation.getCurrentUser();
+      ugi = UserGroupInformation.getCurrentUser(); // 获取ugi
 
       // a map(nameserviceId to map(namenodeId to InetSocketAddress))
       Map<String, Map<String, InetSocketAddress>> map = DFSUtil.getHaNnRpcAddresses(

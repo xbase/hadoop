@@ -150,16 +150,16 @@ class BlockReceiver implements Closeable {
       final boolean pinning) throws IOException {
     try{
       this.block = block;
-      this.in = in;
-      this.inAddr = inAddr;
-      this.myAddr = myAddr;
-      this.srcDataNode = srcDataNode;
+      this.in = in; // 输入流
+      this.inAddr = inAddr; // 输入流的地址
+      this.myAddr = myAddr; // 本机地址
+      this.srcDataNode = srcDataNode; // 上游DN（如果上游是DN的话）
       this.datanode = datanode;
 
       this.clientname = clientname;
-      this.isDatanode = clientname.length() == 0;
-      this.isClient = !this.isDatanode;
-      this.restartBudget = datanode.getDnConf().restartReplicaExpiry;
+      this.isDatanode = clientname.length() == 0; // 上游是否是DN
+      this.isClient = !this.isDatanode; // 上游是否是Client
+      this.restartBudget = datanode.getDnConf().restartReplicaExpiry; // DN restart时使用
       this.datanodeSlowLogThresholdMs = datanode.getDnConf().datanodeSlowIoWarningThresholdMs;
       // For replaceBlock() calls response should be sent to avoid socketTimeout
       // at clients. So sending with the interval of 0.5 * socketTimeout
@@ -192,12 +192,12 @@ class BlockReceiver implements Closeable {
       //
       // Open local disk out
       //
-      if (isDatanode) { //replication or move
+      if (isDatanode) { //replication or move 上游如果是DN，写到tmp目录?
         replicaHandler = datanode.data.createTemporary(storageType, block);
       } else {
         switch (stage) {
         case PIPELINE_SETUP_CREATE:
-          replicaHandler = datanode.data.createRbw(storageType, block, allowLazyPersist);
+          replicaHandler = datanode.data.createRbw(storageType, block, allowLazyPersist); // 创建RBW文件
           datanode.notifyNamenodeReceivingBlock(
               block, replicaHandler.getReplica().getStorageUuid());
           break;
@@ -242,24 +242,24 @@ class BlockReceiver implements Closeable {
       assert streams != null : "null streams!";
 
       // read checksum meta information
-      this.clientChecksum = requestedChecksum;
-      this.diskChecksum = streams.getChecksum();
-      this.needsChecksumTranslation = !clientChecksum.equals(diskChecksum); // 客户端和DN的checksum算法不同，需要转换
-      this.bytesPerChecksum = diskChecksum.getBytesPerChecksum();
-      this.checksumSize = diskChecksum.getChecksumSize();
+      this.clientChecksum = requestedChecksum; // client使用的checksum算法
+      this.diskChecksum = streams.getChecksum(); // 如果是append，本地已经存在的meta文件使用的checksum算法
+      this.needsChecksumTranslation = !clientChecksum.equals(diskChecksum); // checksum算法不同，需要转换
+      this.bytesPerChecksum = diskChecksum.getBytesPerChecksum(); // DN的chunk大小
+      this.checksumSize = diskChecksum.getChecksumSize(); // 一个checksum几个字节
 
-      this.out = streams.getDataOut();
+      this.out = streams.getDataOut(); // DN写data使用的stream
       if (out instanceof FileOutputStream) {
         this.outFd = ((FileOutputStream)out).getFD();
       } else {
         LOG.warn("Could not get file descriptor for outputstream of class " +
             out.getClass());
       }
-      this.checksumOut = new DataOutputStream(new BufferedOutputStream(
+      this.checksumOut = new DataOutputStream(new BufferedOutputStream( // DN写checksum使用的stream
           streams.getChecksumOut(), HdfsConstants.SMALL_BUFFER_SIZE));
       // write data chunk header if creating a new replica
       if (isCreate) {
-        BlockMetadataHeader.writeHeader(checksumOut, diskChecksum);
+        BlockMetadataHeader.writeHeader(checksumOut, diskChecksum); // 写data文件和meta文件的header
       } 
     } catch (ReplicaAlreadyExistsException bae) {
       throw bae;
@@ -529,7 +529,7 @@ class BlockReceiver implements Closeable {
     long offsetInBlock = header.getOffsetInBlock(); // 在block中的偏移量
     long seqno = header.getSeqno(); // packet 序号
     boolean lastPacketInBlock = header.isLastPacketInBlock(); // 是否是最后一个packet
-    final int len = header.getDataLen();
+    final int len = header.getDataLen(); // 数据的长度
     boolean syncBlock = header.getSyncBlock(); // 是否需要sync
 
     // avoid double sync'ing on close
@@ -541,7 +541,7 @@ class BlockReceiver implements Closeable {
     final long firstByteInBlock = offsetInBlock;
     offsetInBlock += len;
     if (replicaInfo.getNumBytes() < offsetInBlock) {
-      replicaInfo.setNumBytes(offsetInBlock);
+      replicaInfo.setNumBytes(offsetInBlock); // 当前读到的block长度
     }
     
     // put in queue for pending acks, unless sync was requested
@@ -579,7 +579,7 @@ class BlockReceiver implements Closeable {
     ByteBuffer dataBuf = packetReceiver.getDataSlice();
     ByteBuffer checksumBuf = packetReceiver.getChecksumSlice();
     
-    if (lastPacketInBlock || len == 0) {
+    if (lastPacketInBlock || len == 0) { // packet中data长度为0，可能客户端仅仅发了一个sync操作
       if(LOG.isDebugEnabled()) {
         LOG.debug("Receiving an empty packet or the end of the block " + block);
       }
@@ -588,8 +588,8 @@ class BlockReceiver implements Closeable {
         flushOrSync(true);
       }
     } else {
-      final int checksumLen = diskChecksum.getChecksumSize(len);
-      final int checksumReceivedLen = checksumBuf.capacity();
+      final int checksumLen = diskChecksum.getChecksumSize(len); // checksum的总长度
+      final int checksumReceivedLen = checksumBuf.capacity(); // 上游发送的checksum总长度
 
       if (checksumReceivedLen > 0 && checksumReceivedLen != checksumLen) {
         throw new IOException("Invalid checksum length: received length is "
@@ -604,7 +604,7 @@ class BlockReceiver implements Closeable {
           // checksum error detected locally. there is no reason to continue.
           if (responder != null) {
             try {
-              // pipeline最后一个节点，自己enqueue一个Ack
+              // pipeline最后一个节点，现在enqueue一个Ack
               ((PacketResponder) responder.getRunnable()).enqueue(seqno,
                   lastPacketInBlock, offsetInBlock,
                   Status.ERROR_CHECKSUM);
@@ -623,7 +623,7 @@ class BlockReceiver implements Closeable {
         }
       }
 
-      // TODOWXY: 什么时候会发生 checksum is missing ?
+      // 客户端没有发送checksum
       if (checksumReceivedLen == 0 && !streams.isTransientStorage()) {
         // checksum is missing, need to calculate it
         checksumBuf = ByteBuffer.allocate(checksumLen);
@@ -632,11 +632,11 @@ class BlockReceiver implements Closeable {
       
       // by this point, the data in the buffer uses the disk checksum
 
-      final boolean shouldNotWriteChecksum = checksumReceivedLen == 0
+      final boolean shouldNotWriteChecksum = checksumReceivedLen == 0 // 这种情况，不需要写checksum
           && streams.isTransientStorage();
       try {
-        long onDiskLen = replicaInfo.getBytesOnDisk();
-        if (onDiskLen<offsetInBlock) {
+        long onDiskLen = replicaInfo.getBytesOnDisk(); // 在磁盘上的block长度
+        if (onDiskLen<offsetInBlock) { // 写data和checksum到文件
           // Normally the beginning of an incoming packet is aligned with the
           // existing data on disk. If the beginning packet data offset is not
           // checksum chunk aligned, the end of packet will not go beyond the
@@ -646,10 +646,10 @@ class BlockReceiver implements Closeable {
           // resend part of data that is already on disk. Correct number of
           // bytes should be skipped when writing the data and checksum
           // buffers out to disk.
-          long partialChunkSizeOnDisk = onDiskLen % bytesPerChecksum;
-          long lastChunkBoundary = onDiskLen - partialChunkSizeOnDisk;
+          long partialChunkSizeOnDisk = onDiskLen % bytesPerChecksum; // 最后一个不完整chunk，缺少的长度
+          long lastChunkBoundary = onDiskLen - partialChunkSizeOnDisk; // 最后一个不完整的chunk长度
           boolean alignedOnDisk = partialChunkSizeOnDisk == 0;
-          boolean alignedInPacket = firstByteInBlock % bytesPerChecksum == 0;
+          boolean alignedInPacket = firstByteInBlock % bytesPerChecksum == 0; // alignedOnDisk和alignedInPacket，有什么不同?
 
           // If the end of the on-disk data is not chunk-aligned, the last
           // checksum needs to be overwritten.
@@ -797,7 +797,7 @@ class BlockReceiver implements Closeable {
     // (after the fsync finished)
     // 如果是pipeline的最后一个节点，或者syncBlock=true，则在数据落盘之后再处理Ack
     if (responder != null && (syncBlock || shouldVerifyChecksum())) {
-      // step 4：处理Ack
+      // step 4：处理Ack: pipeline最后一个节点，现在enqueue一个Ack
       ((PacketResponder) responder.getRunnable()).enqueue(seqno,
           lastPacketInBlock, offsetInBlock, Status.SUCCESS);
     }
@@ -906,10 +906,10 @@ class BlockReceiver implements Closeable {
       syncOnClose = datanode.getDnConf().syncOnClose;
       boolean responderClosed = false;
       mirrorOut = mirrOut;
-      mirrorAddr = mirrAddr;
+      mirrorAddr = mirrAddr; // 下游DN地址
       throttler = throttlerArg;
 
-      this.replyOut = replyOut;
+      this.replyOut = replyOut; // 响应上游
       this.isReplaceBlock = isReplaceBlock;
 
     try {
@@ -935,7 +935,7 @@ class BlockReceiver implements Closeable {
       // If this write is for a replication or transfer-RBW/Finalized,
       // then finalize block or convert temporary to RBW.
       // For client-writes, the block is finalized in the PacketResponder.
-      if (isDatanode || isTransfer) {
+      if (isDatanode || isTransfer) { // 如果是DN或复制时
         // Hold a volume reference to finalize block.
         try (ReplicaHandler handler = claimReplicaHandler()) {
           // close the block/crc files
@@ -949,7 +949,7 @@ class BlockReceiver implements Closeable {
           } else {
             // for isDatnode or TRANSFER_FINALIZED
             // Finalize the block.
-            datanode.data.finalizeBlock(block);
+            datanode.data.finalizeBlock(block); // 从RBW目录移动到finalize目录
           }
         }
         datanode.metrics.incrBlocksWritten();
@@ -976,7 +976,7 @@ class BlockReceiver implements Closeable {
         if (responder != null) {
           // In case this datanode is shutting down for quick restart,
           // send a special ack upstream.
-          if (datanode.isRestarting() && isClient && !isTransfer) {
+          if (datanode.isRestarting() && isClient && !isTransfer) { // DN将要重启
             File blockFile = ((ReplicaInPipeline)replicaInfo).getBlockFile();
             File restartMeta = new File(blockFile.getParent()  + 
                 File.pathSeparator + "." + blockFile.getName() + ".restart");
@@ -1191,6 +1191,7 @@ class BlockReceiver implements Closeable {
      * @param lastPacketInBlock if true, this is the last packet in block
      * @param offsetInBlock offset of this packet in block
      */
+    // 添加到ackQueue，等待下游ack
     void enqueue(final long seqno, final boolean lastPacketInBlock,
         final long offsetInBlock, final Status ackStatus) {
       final Packet p = new Packet(seqno, lastPacketInBlock, offsetInBlock,

@@ -88,7 +88,7 @@ public abstract class ProtoUtil {
     if (protocol != null) {
       result.setProtocol(protocol);
     }
-    UserInformationProto.Builder ugiProto =  UserInformationProto.newBuilder();
+    UserInformationProto.Builder ugiProto =  UserInformationProto.newBuilder(); // 构造ugi信息
     if (ugi != null) {
       /*
        * In the connection context we send only additional user info that

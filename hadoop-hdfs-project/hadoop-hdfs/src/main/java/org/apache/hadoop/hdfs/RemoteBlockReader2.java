@@ -237,8 +237,8 @@ public class RemoteBlockReader2  implements BlockReader {
     
     // First packet will include some data prior to the first byte
     // the user requested. Skip it.
-    if (curHeader.getOffsetInBlock() < startOffset) {
-      int newPos = (int) (startOffset - curHeader.getOffsetInBlock());
+    if (curHeader.getOffsetInBlock() < startOffset) { // 由于DN为了保证发送一个完整的chunk，向前对齐了
+      int newPos = (int) (startOffset - curHeader.getOffsetInBlock()); // 去掉多余的字节
       curDataSlice.position(newPos);
     }
 

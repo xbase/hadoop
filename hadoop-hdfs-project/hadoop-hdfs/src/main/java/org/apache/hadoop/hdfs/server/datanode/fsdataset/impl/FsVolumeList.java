@@ -44,7 +44,7 @@ import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.util.DiskChecker.DiskErrorException;
 import org.apache.hadoop.util.Time;
 
-class FsVolumeList {
+class FsVolumeList { // 管理盘
   private final AtomicReference<FsVolumeImpl[]> volumes =
       new AtomicReference<>(new FsVolumeImpl[0]);
   // Tracks volume failures, sorted by volume path.

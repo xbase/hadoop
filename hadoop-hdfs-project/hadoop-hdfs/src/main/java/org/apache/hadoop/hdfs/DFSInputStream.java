@@ -105,8 +105,8 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
   /////
   private DatanodeInfo currentNode = null;
   private LocatedBlock currentLocatedBlock = null;
-  private long pos = 0;
-  private long blockEnd = -1;
+  private long pos = 0; // 当前文件读取到的位置
+  private long blockEnd = -1; // 当前block结束的位置在整个文件中的位置，-1代表当前block已经读完
   private BlockReader blockReader = null;
   ////
 
@@ -665,7 +665,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
             setStartOffset(offsetIntoBlock).
             setVerifyChecksum(verifyChecksum).
             setClientName(dfsClient.clientName).
-            setLength(blk.getNumBytes() - offsetIntoBlock).
+            setLength(blk.getNumBytes() - offsetIntoBlock). // 顺序读的时候，length设置为block的length
             setCachingStrategy(curCachingStrategy).
             setAllowShortCircuitLocalReads(!shortCircuitForbidden).
             setClientCacheContext(dfsClient.getClientContext()).
@@ -1128,6 +1128,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
     };
   }
 
+  // pread时使用，读完数据马上关闭DN连接
   private void actualGetFromOneDataNode(final DNAddrPair datanode,
       LocatedBlock block, final long start, final long end, byte[] buf,
       int offset, Map<ExtendedBlock, Set<DatanodeInfo>> corruptedBlockMap)
@@ -1167,7 +1168,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
             setStartOffset(start).
             setVerifyChecksum(verifyChecksum).
             setClientName(dfsClient.clientName).
-            setLength(len).
+            setLength(len). // pread的时候，length为实际要读的长度
             setCachingStrategy(curCachingStrategy).
             setAllowShortCircuitLocalReads(allowShortCircuitLocalReads).
             setClientCacheContext(dfsClient.getClientContext()).
@@ -1542,7 +1543,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
       // the TCP buffer, then just eat up the intervening data.
       //
       int diff = (int)(targetPos - pos);
-      if (diff <= blockReader.available()) {
+      if (diff <= blockReader.available()) { // 满足条件才会执行skip操作
         try {
           pos += blockReader.skip(diff); // 跳到指定位置
           if (pos == targetPos) {
@@ -1565,9 +1566,9 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
         }
       }
     }
-    if (!done) {
+    if (!done) { // 没有执行skip操作，直接修改pos
       pos = targetPos;
-      blockEnd = -1;
+      blockEnd = -1; // blockEnd设置为-1，代表当前block已经读完
     }
   }
 

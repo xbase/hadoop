@@ -40,7 +40,7 @@ class BlockReaderUtil {
 
   /* See {@link BlockReader#readFully(byte[], int, int)} */
   public static void readFully(BlockReader reader,
-      byte[] buf, int off, int len) throws IOException {
+      byte[] buf, int off, int len) throws IOException { // 确保读到len个数据
     int toRead = len;
     while (toRead > 0) {
       int ret = reader.read(buf, off, toRead);

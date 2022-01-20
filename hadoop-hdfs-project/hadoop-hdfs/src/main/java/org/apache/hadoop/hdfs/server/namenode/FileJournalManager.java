@@ -192,7 +192,7 @@ public class FileJournalManager implements JournalManager {
       }
       if (elf.isInProgress()) {
         try {
-          elf.validateLog();
+          elf.validateLog(); // 逐条校验in progress edit log，这里可能会有性能问题
         } catch (IOException e) {
           LOG.error("got IOException while trying to validate header of " +
               elf + ".  Skipping.", e);
