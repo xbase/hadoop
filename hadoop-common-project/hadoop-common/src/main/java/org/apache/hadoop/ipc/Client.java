@@ -1522,7 +1522,7 @@ public class Client {
   private Connection getConnection(ConnectionId remoteId,
       Call call, int serviceClass, AtomicBoolean fallbackToSimpleAuth)
       throws IOException {
-    if (!running.get()) {
+    if (!running.get()) { // client是否还在运行
       // the client is stopped
       throw new IOException("The client is stopped");
     }

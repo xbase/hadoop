@@ -1265,7 +1265,7 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
       throws IOException {
     ReplicaInfo replicaInfo = volumeMap.get(b.getBlockPoolId(),
         b.getBlockId());
-    if (replicaInfo != null) {
+    if (replicaInfo != null) { // 此replica已经存在
       throw new ReplicaAlreadyExistsException("Block " + b +
       " already exists in state " + replicaInfo.getState() +
       " and thus cannot be created.");

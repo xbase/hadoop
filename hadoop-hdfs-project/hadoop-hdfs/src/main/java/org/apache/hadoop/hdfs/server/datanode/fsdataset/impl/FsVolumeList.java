@@ -98,10 +98,10 @@ class FsVolumeList { // 管理盘
   FsVolumeReference getNextVolume(StorageType storageType, long blockSize)
       throws IOException {
     // Get a snapshot of currently available volumes.
-    final FsVolumeImpl[] curVolumes = volumes.get();
+    final FsVolumeImpl[] curVolumes = volumes.get(); // 所有可用的盘
     final List<FsVolumeImpl> list = new ArrayList<>(curVolumes.length);
     for(FsVolumeImpl v : curVolumes) {
-      if (v.getStorageType() == storageType) {
+      if (v.getStorageType() == storageType) { // 符合storageType的盘
         list.add(v);
       }
     }

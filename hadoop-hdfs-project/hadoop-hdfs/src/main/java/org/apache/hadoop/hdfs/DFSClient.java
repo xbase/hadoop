@@ -885,7 +885,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
    * client has been closed or has no files open.
    **/
   boolean renewLease() throws IOException {
-    if (clientRunning && !isFilesBeingWrittenEmpty()) {
+    if (clientRunning && !isFilesBeingWrittenEmpty()) { // 如果有正在写的文件
       try {
         namenode.renewLease(clientName);
         updateLastLeaseRenewal();
@@ -893,7 +893,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
       } catch (IOException e) {
         // Abort if the lease has already expired.
         final long elapsed = Time.monotonicNow() - getLastLeaseRenewal();
-        if (elapsed > HdfsConstants.LEASE_HARDLIMIT_PERIOD) {
+        if (elapsed > HdfsConstants.LEASE_HARDLIMIT_PERIOD) { // client上一次更新租约的时间，超过1个小时
           LOG.warn("Failed to renew lease for " + clientName + " for "
               + (elapsed/1000) + " seconds (>= hard-limit ="
               + (HdfsConstants.LEASE_HARDLIMIT_PERIOD/1000) + " seconds.) "

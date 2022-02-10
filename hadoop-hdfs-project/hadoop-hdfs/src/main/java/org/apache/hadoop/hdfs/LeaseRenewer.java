@@ -455,9 +455,9 @@ class LeaseRenewer {
           LOG.warn("Failed to renew lease for " + clientsString() + " for "
               + (elapsed/1000) + " seconds.  Aborting ...", ie);
           synchronized (this) {
-            while (!dfsclients.isEmpty()) {
+            while (!dfsclients.isEmpty()) { // 关闭所有正在写的文件
               DFSClient dfsClient = dfsclients.get(0);
-              dfsClient.closeAllFilesBeingWritten(true);
+              dfsClient.closeAllFilesBeingWritten(true); // 中断或关闭所有正在写的文件
               closeClient(dfsClient);
             }
             //Expire the current LeaseRenewer thread.

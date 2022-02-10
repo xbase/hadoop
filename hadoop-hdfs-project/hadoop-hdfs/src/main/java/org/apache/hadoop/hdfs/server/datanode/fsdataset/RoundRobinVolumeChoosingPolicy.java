@@ -48,13 +48,13 @@ public class RoundRobinVolumeChoosingPolicy<V extends FsVolumeSpi>
     }
     
     int startVolume = curVolume;
-    long maxAvailable = 0;
+    long maxAvailable = 0; // 可用磁盘空间最多的那个磁盘的磁盘空间
     
     while (true) {
       final V volume = volumes.get(curVolume);
       curVolume = (curVolume + 1) % volumes.size();
       long availableVolumeSize = volume.getAvailable();
-      if (availableVolumeSize > blockSize) {
+      if (availableVolumeSize > blockSize) { // 磁盘空间满足要求
         return volume;
       }
       
@@ -62,7 +62,7 @@ public class RoundRobinVolumeChoosingPolicy<V extends FsVolumeSpi>
         maxAvailable = availableVolumeSize;
       }
       
-      if (curVolume == startVolume) {
+      if (curVolume == startVolume) { // 所有磁盘都没有足够的空间
         throw new DiskOutOfSpaceException("Out of space: "
             + "The volume with the most available space (=" + maxAvailable
             + " B) is less than the block size (=" + blockSize + " B).");

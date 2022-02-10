@@ -679,11 +679,11 @@ public class IPCLoggerChannel implements AsyncLogger {
 
   @Override
   public synchronized void appendReport(StringBuilder sb) {
-    sb.append("Written txid ").append(highestAckedTxId);
+    sb.append("Written txid ").append(highestAckedTxId); // 成功写到对应JN的tx id
     long behind = getLagTxns();
     if (behind > 0) {
       if (lastAckNanos != 0) {
-        long lagMillis = getLagTimeMillis();
+        long lagMillis = getLagTimeMillis(); // 最后一次写edit成功，到现在有多长时间
         sb.append(" (" + behind + " txns/" + lagMillis + "ms behind)");
       } else {
         sb.append(" (never written");

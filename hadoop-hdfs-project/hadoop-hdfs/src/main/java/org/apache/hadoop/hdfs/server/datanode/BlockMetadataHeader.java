@@ -185,7 +185,7 @@ public class BlockMetadataHeader {
   public static void writeHeader(DataOutputStream out, 
                                   BlockMetadataHeader header) 
                                   throws IOException {
-    out.writeShort(header.getVersion()); // data文件header
+    out.writeShort(header.getVersion()); // meta文件version
     header.getChecksum().writeHeader(out); // meta文件header
   }
   
@@ -194,7 +194,7 @@ public class BlockMetadataHeader {
    * @throws IOException on error
    */
   public static void writeHeader(DataOutputStream out, DataChecksum checksum)
-                         throws IOException {
+                         throws IOException { // meta文件header
     writeHeader(out, new BlockMetadataHeader(VERSION, checksum));
   }
 

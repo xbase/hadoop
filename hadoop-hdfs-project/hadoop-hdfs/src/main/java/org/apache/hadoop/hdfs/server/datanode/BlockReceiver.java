@@ -229,6 +229,7 @@ class BlockReceiver implements Closeable {
         }
       }
       replicaInfo = replicaHandler.getReplica();
+      // OS缓存相关
       this.dropCacheBehindWrites = (cachingStrategy.getDropBehind() == null) ?
         datanode.getDnConf().dropCacheBehindWrites :
           cachingStrategy.getDropBehind();
@@ -252,14 +253,13 @@ class BlockReceiver implements Closeable {
       if (out instanceof FileOutputStream) {
         this.outFd = ((FileOutputStream)out).getFD();
       } else {
-        LOG.warn("Could not get file descriptor for outputstream of class " +
-            out.getClass());
+        LOG.warn("Could not get file descriptor for outputstream of class " + out.getClass());
       }
       this.checksumOut = new DataOutputStream(new BufferedOutputStream( // DN写checksum使用的stream
           streams.getChecksumOut(), HdfsConstants.SMALL_BUFFER_SIZE));
       // write data chunk header if creating a new replica
       if (isCreate) {
-        BlockMetadataHeader.writeHeader(checksumOut, diskChecksum); // 写data文件和meta文件的header
+        BlockMetadataHeader.writeHeader(checksumOut, diskChecksum); // 写meta文件的header
       } 
     } catch (ReplicaAlreadyExistsException bae) {
       throw bae;

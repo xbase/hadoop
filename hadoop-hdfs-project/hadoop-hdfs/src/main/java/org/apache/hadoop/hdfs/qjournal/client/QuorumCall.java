@@ -110,7 +110,7 @@ class QuorumCall<KEY, RESULT> {
       throws InterruptedException, TimeoutException {
     long st = Time.monotonicNow();
     long nextLogTime = st + (long)(millis * WAIT_PROGRESS_INFO_THRESHOLD);
-    long et = st + millis;
+    long et = st + millis; // 超时时间
     while (true) {
       checkAssertionErrors();
       // 有足够的响应则返回
@@ -121,7 +121,7 @@ class QuorumCall<KEY, RESULT> {
       if (maxExceptions >= 0 && countExceptions() > maxExceptions) return;
       long now = Time.monotonicNow();
       
-      if (now > nextLogTime) {
+      if (now > nextLogTime) { // 超过nextLogTime，打log
         long waited = now - st;
         String msg = String.format(
             "Waited %s ms (timeout=%s ms) for a response for %s",
@@ -143,7 +143,7 @@ class QuorumCall<KEY, RESULT> {
         nextLogTime = now + WAIT_PROGRESS_INTERVAL_MILLIS;
       }
       long rem = et - now;
-      if (rem <= 0) {
+      if (rem <= 0) { // 超时，抛异常
         throw new TimeoutException();
       }
       rem = Math.min(rem, nextLogTime - now);

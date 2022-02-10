@@ -31,8 +31,8 @@ import org.apache.hadoop.io.DataOutputBuffer;
 class QuorumOutputStream extends EditLogOutputStream {
   private final AsyncLoggerSet loggers;
   private EditsDoubleBuffer buf;
-  private final long segmentTxId;
-  private final int writeTimeoutMs;
+  private final long segmentTxId; // 这个edit log文件，从这个tx id开始
+  private final int writeTimeoutMs; // 写一条edit log的超时时间
 
   public QuorumOutputStream(AsyncLoggerSet loggers,
       long txId, int outputBufferCapacity,
