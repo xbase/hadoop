@@ -72,7 +72,7 @@ class GlobalStateIdContext implements AlignmentContext {
     // against ClientProtocol.
     for (Method method : ClientProtocol.class.getDeclaredMethods()) {
       if (method.isAnnotationPresent(ReadOnly.class) &&
-          method.getAnnotationsByType(ReadOnly.class)[0].isCoordinated()) {
+          method.getAnnotationsByType(ReadOnly.class)[0].isCoordinated()) { // NN需要追上msync，才能处理这个请求
         coordinatedMethods.add(method.getName());
       }
     }
@@ -128,7 +128,7 @@ class GlobalStateIdContext implements AlignmentContext {
   public long receiveRequestState(RpcRequestHeaderProto header,
       long clientWaitTime) throws IOException {
     if (!header.hasStateId() &&
-        HAServiceState.OBSERVER.equals(namesystem.getState())) {
+        HAServiceState.OBSERVER.equals(namesystem.getState())) { // observer接收到的这个请求，没有state id，抛异常
       // This could happen if client configured with non-observer proxy provider
       // (e.g., ConfiguredFailoverProxyProvider) is accessing a cluster with
       // observers. In this case, we should let the client failover to the
@@ -136,15 +136,15 @@ class GlobalStateIdContext implements AlignmentContext {
       // stateId is 0 if not set).
       throw new StandbyException("Observer Node received request without "
           + "stateId. This mostly likely is because client is not configured "
-          + "with " + ObserverReadProxyProvider.class.getSimpleName());
+          + "with " + ObserverReadProxyProvider.class.getSimpleName()); // 使客户端fail over到其他NN
     }
-    long serverStateId = getLastSeenStateId();
-    long clientStateId = header.getStateId();
+    long serverStateId = getLastSeenStateId(); // NN 最新的state id
+    long clientStateId = header.getStateId(); // client 需要的state id
     FSNamesystem.LOG.trace("Client State ID= {} and Server State ID= {}",
         clientStateId, serverStateId);
 
     if (clientStateId > serverStateId &&
-        HAServiceState.ACTIVE.equals(namesystem.getState())) {
+        HAServiceState.ACTIVE.equals(namesystem.getState())) { // active收到一个大于当前最新state id的client请求，返回NN最新的state id
       FSNamesystem.LOG.warn("The client stateId: {} is greater than "
           + "the server stateId: {} This is unexpected. "
           + "Resetting client stateId to server stateId",
@@ -155,10 +155,10 @@ class GlobalStateIdContext implements AlignmentContext {
         clientStateId - serverStateId >
         ESTIMATED_TRANSACTIONS_PER_SECOND
             * TimeUnit.MILLISECONDS.toSeconds(clientWaitTime)
-            * ESTIMATED_SERVER_TIME_MULTIPLIER) {
+            * ESTIMATED_SERVER_TIME_MULTIPLIER) { // observer state id和client需要的state id相差太远，直接抛异常
       throw new RetriableException(
           "Observer Node is too far behind: serverStateId = "
-              + serverStateId + " clientStateId = " + clientStateId);
+              + serverStateId + " clientStateId = " + clientStateId); // 使客户端过会儿重试
     }
     return clientStateId;
   }

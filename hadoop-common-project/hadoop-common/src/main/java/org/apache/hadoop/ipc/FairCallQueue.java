@@ -67,16 +67,17 @@ public class FairCallQueue<E extends Schedulable> extends AbstractQueue<E>
    * not contend with consumers and consumers do not block other consumers
    * while polling.
    */
+  // 许可数等于queue中call的数量，当许可数等于0的时候，会阻塞handler take
   private final Semaphore semaphore = new Semaphore(0);
   private void signalNotEmpty() {
-    semaphore.release();
+    semaphore.release(); // 增加一个许可，每次在queue中添加一个call，就会增加一个许可
   }
 
   /* Multiplexer picks which queue to draw from */
-  private RpcMultiplexer multiplexer;
+  private RpcMultiplexer multiplexer; // 选择器，决定从哪个queue中提取call
 
   /* Statistic tracking */
-  private final ArrayList<AtomicLong> overflowedCalls;
+  private final ArrayList<AtomicLong> overflowedCalls; // queue满，导致添加新元素失败计数
 
   /* Failover if queue is filled up */
   private boolean serverFailOverEnabled;
@@ -101,7 +102,9 @@ public class FairCallQueue<E extends Schedulable> extends AbstractQueue<E>
 
     this.queues = new ArrayList<BlockingQueue<E>>(numQueues);
     this.overflowedCalls = new ArrayList<AtomicLong>(numQueues);
+    // 每个优先级的queue大小
     int queueCapacity = capacity / numQueues;
+    // 使所有优先级queue的大小总和等于capacity
     int capacityForFirstQueue = queueCapacity + (capacity % numQueues);
     for(int i=0; i < numQueues; i++) {
       if (i == 0) {
@@ -132,13 +135,13 @@ public class FairCallQueue<E extends Schedulable> extends AbstractQueue<E>
    * everything was empty
    */
   private E removeNextElement() {
-    int priority = multiplexer.getAndAdvanceCurrentIndex();
+    int priority = multiplexer.getAndAdvanceCurrentIndex(); // queue下标，决定从这个queue中提取call
     E e = queues.get(priority).poll();
     // a semaphore permit has been acquired, so an element MUST be extracted
     // or the semaphore and queued elements will go out of sync.  loop to
     // avoid race condition if elements are added behind the current position,
     // awakening other threads that poll the elements ahead of our position.
-    while (e == null) {
+    while (e == null) { // 确保返回一个非null元素
       for (int idx = 0; e == null && idx < queues.size(); idx++) {
         e = queues.get(idx).poll();
       }
@@ -166,6 +169,7 @@ public class FairCallQueue<E extends Schedulable> extends AbstractQueue<E>
     // try offering to all queues.
     if (!offerQueues(priorityLevel, e, true)) {
 
+      // 添加失败，决定抛什么异常
       CallQueueOverflowException ex;
       if (serverFailOverEnabled) {
         // Signal clients to failover and try a separate server.
@@ -185,6 +189,7 @@ public class FairCallQueue<E extends Schedulable> extends AbstractQueue<E>
   public void put(E e) throws InterruptedException {
     final int priorityLevel = e.getPriorityLevel();
     // try offering to all but last queue, put on last.
+    // 先尝试添加到指定优先级，失败的话，添加到最后一个queue里
     if (!offerQueues(priorityLevel, e, false)) {
       putQueue(queues.size() - 1, e);
     }
@@ -209,7 +214,7 @@ public class FairCallQueue<E extends Schedulable> extends AbstractQueue<E>
    */
   @VisibleForTesting
   boolean offerQueue(int priority, E e) {
-    boolean ret = queues.get(priority).offer(e);
+    boolean ret = queues.get(priority).offer(e); // 插入成功返回true，否则返回false，不会阻塞
     if (ret) {
       signalNotEmpty();
     }
@@ -230,7 +235,7 @@ public class FairCallQueue<E extends Schedulable> extends AbstractQueue<E>
         return true;
       }
       // Update stats
-      overflowedCalls.get(i).getAndIncrement();
+      overflowedCalls.get(i).getAndIncrement(); // 插入失败，更新overflow计数
     }
     return false;
   }
@@ -297,7 +302,7 @@ public class FairCallQueue<E extends Schedulable> extends AbstractQueue<E>
    * control queue IO.
    */
   @Override
-  public int size() {
+  public int size() { // call queue整体大小，不区分优先级
     return semaphore.availablePermits();
   }
 
@@ -343,7 +348,7 @@ public class FairCallQueue<E extends Schedulable> extends AbstractQueue<E>
    * decisions.
    */
   @Override
-  public int remainingCapacity() {
+  public int remainingCapacity() { // call queue剩余空间，不区分优先级
     int sum = 0;
     for (BlockingQueue<E> q : this.queues) {
       sum += q.remainingCapacity();

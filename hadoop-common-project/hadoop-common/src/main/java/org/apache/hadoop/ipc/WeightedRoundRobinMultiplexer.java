@@ -48,10 +48,10 @@ public class WeightedRoundRobinMultiplexer implements RpcMultiplexer {
 
   private final int numQueues; // The number of queues under our provisioning
 
-  private final AtomicInteger currentQueueIndex; // Current queue we're serving
-  private final AtomicInteger requestsLeft; // Number of requests left for this queue
+  private final AtomicInteger currentQueueIndex; // Current queue we're serving 当前queue下标
+  private final AtomicInteger requestsLeft; // Number of requests left for this queue 从当前queue取多少个元素
 
-  private int[] queueWeights; // The weights for each queue
+  private int[] queueWeights; // The weights for each queue 每个queue的权重，每次从每个queue中取多少个元素
 
   public WeightedRoundRobinMultiplexer(int aNumQueues, String ns,
     Configuration conf) {
@@ -65,7 +65,7 @@ public class WeightedRoundRobinMultiplexer implements RpcMultiplexer {
       IPC_CALLQUEUE_WRRMUX_WEIGHTS_KEY);
 
     if (this.queueWeights.length == 0) {
-      this.queueWeights = getDefaultQueueWeights(this.numQueues);
+      this.queueWeights = getDefaultQueueWeights(this.numQueues); // 默认权重：[1,2,4,8,16]
     } else if (this.queueWeights.length != this.numQueues) {
       throw new IllegalArgumentException(ns + "." +
         IPC_CALLQUEUE_WRRMUX_WEIGHTS_KEY + " must specify exactly " +
@@ -81,7 +81,7 @@ public class WeightedRoundRobinMultiplexer implements RpcMultiplexer {
   /**
    * Creates default weights for each queue. The weights are 2^N.
    */
-  private int[] getDefaultQueueWeights(int aNumQueues) {
+  private int[] getDefaultQueueWeights(int aNumQueues) { // 默认权重：[1,2,4,8,16]
     int[] weights = new int[aNumQueues];
 
     int weight = 1; // Start low
@@ -95,16 +95,16 @@ public class WeightedRoundRobinMultiplexer implements RpcMultiplexer {
   /**
    * Move to the next queue.
    */
-  private void moveToNextQueue() {
+  private void moveToNextQueue() { // 下一个queue
     int thisIdx = this.currentQueueIndex.get();
 
     // Wrap to fit in our bounds
-    int nextIdx = (thisIdx + 1) % this.numQueues;
+    int nextIdx = (thisIdx + 1) % this.numQueues; // 下一个queue下标
 
     // Set to next index: once this is called, requests will start being
     // drawn from nextIdx, but requestsLeft will continue to decrement into
     // the negatives
-    this.currentQueueIndex.set(nextIdx);
+    this.currentQueueIndex.set(nextIdx); // 设置下一个queue下标为当前
 
     // Finally, reset requestsLeft. This will enable moveToNextQueue to be
     // called again, for the new currentQueueIndex
@@ -142,7 +142,7 @@ public class WeightedRoundRobinMultiplexer implements RpcMultiplexer {
   /**
    * Use the mux by getting and advancing index.
    */
-  public int getAndAdvanceCurrentIndex() {
+  public int getAndAdvanceCurrentIndex() { // 当前queue下标
     int idx = this.getCurrentIndex();
     this.advanceIndex();
     return idx;

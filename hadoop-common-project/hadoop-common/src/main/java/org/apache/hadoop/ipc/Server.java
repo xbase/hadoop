@@ -716,7 +716,7 @@ public abstract class Server {
     return serviceAuthorizationManager;
   }
 
-  private String getQueueClassPrefix() {
+  private String getQueueClassPrefix() { // ipc.$port
     return CommonConfigurationKeys.IPC_NAMESPACE + "." + port;
   }
 
@@ -797,7 +797,7 @@ public abstract class Server {
     private int priorityLevel;
     // the priority level assigned by scheduler, 0 by default
     private long clientStateId;
-    private boolean isCallCoordinated;
+    private boolean isCallCoordinated; // 这个请求，是否需要追上state id之后，才能处理
 
     Call() {
       this(RpcConstants.INVALID_CALL_ID, RpcConstants.INVALID_RETRY_COUNT,
@@ -2728,10 +2728,10 @@ public abstract class Server {
         try {
           methodName = req.getRequestHeader().getMethodName();
           protoName = req.getRequestHeader().getDeclaringClassProtocolName();
-          if (alignmentContext.isCoordinatedCall(protoName, methodName)) {
+          if (alignmentContext.isCoordinatedCall(protoName, methodName)) { // 这个请求，是否需要追上state id之后，才能处理
             call.markCallCoordinated(true);
             long stateId;
-            stateId = alignmentContext.receiveRequestState(
+            stateId = alignmentContext.receiveRequestState( // 判断一下state id
                 header, getMaxIdleTime());
             call.setClientStateId(stateId);
           }
@@ -2897,9 +2897,9 @@ public abstract class Server {
     try {
       // queue the call, may be blocked if blocking is true.
       if (blocking) {
-        callQueue.put(call);
+        callQueue.put(call); // 如果queue满，则等待，直到成功
       } else {
-        callQueue.add(call);
+        callQueue.add(call); // 如果queue满，则抛异常
       }
       long deltaNanos = Time.monotonicNowNanos() - call.timestampNanos;
       call.getProcessingDetails().set(Timing.ENQUEUE, deltaNanos,
@@ -2942,7 +2942,7 @@ public abstract class Server {
           call = callQueue.take(); // pop the queue; maybe blocked here
           startTimeNanos = Time.monotonicNowNanos();
           if (alignmentContext != null && call.isCallCoordinated() &&
-              call.getClientStateId() > alignmentContext.getLastSeenStateId()) {
+              call.getClientStateId() > alignmentContext.getLastSeenStateId()) { // client需要的state id，大于当前NN的state id
             /*
              * The call processing should be postponed until the client call's
              * state id is aligned (<=) with the server state id.
@@ -2956,7 +2956,7 @@ public abstract class Server {
              * commutative.
              */
             // Re-queue the call and continue
-            requeueCall(call);
+            requeueCall(call); // 重新放回队列
             call = null;
             continue;
           }
@@ -3109,7 +3109,7 @@ public abstract class Server {
         CommonConfigurationKeys.IPC_SERVER_RPC_READ_CONNECTION_QUEUE_SIZE_DEFAULT);
 
     // Setup appropriate callqueue
-    final String prefix = getQueueClassPrefix();
+    final String prefix = getQueueClassPrefix(); // ipc.$port
     this.callQueue = new CallQueueManager<Call>(getQueueClass(prefix, conf),
         getSchedulerClass(prefix, conf),
         getClientBackoffEnable(prefix, conf), maxQueueSize, prefix, conf);

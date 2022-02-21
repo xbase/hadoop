@@ -62,24 +62,25 @@ public class CallQueueManager<E extends Schedulable>
   }
 
   private volatile boolean clientBackOffEnabled;
-  private boolean serverFailOverEnabled;
+  private boolean serverFailOverEnabled; // 是否抛StandbyException，使client重试其他NN
 
   // Atomic refs point to active callQueue
   // We have two so we can better control swapping
+  // 之所以同一个bq，用两个引用，是为了动态刷新时使用
   private final AtomicReference<BlockingQueue<E>> putRef;
   private final AtomicReference<BlockingQueue<E>> takeRef;
 
-  private RpcScheduler scheduler;
+  private RpcScheduler scheduler; // 用于决定请求的优先级
 
   public CallQueueManager(Class<? extends BlockingQueue<E>> backingClass,
                           Class<? extends RpcScheduler> schedulerClass,
       boolean clientBackOffEnabled, int maxQueueSize, String namespace,
       Configuration conf) {
-    int priorityLevels = parseNumLevels(namespace, conf);
+    int priorityLevels = parseNumLevels(namespace, conf); // 一共几个优先级
     this.scheduler = createScheduler(schedulerClass, priorityLevels,
         namespace, conf);
     BlockingQueue<E> bq = createCallQueueInstance(backingClass,
-        priorityLevels, maxQueueSize, namespace, conf);
+        priorityLevels, maxQueueSize, namespace, conf); // call queue
     this.clientBackOffEnabled = clientBackOffEnabled;
     this.serverFailOverEnabled = conf.getBoolean(
         namespace + "." +
@@ -102,7 +103,7 @@ public class CallQueueManager<E extends Schedulable>
     this.serverFailOverEnabled = serverFailOverEnabled;
   }
 
-  private static <T extends RpcScheduler> T createScheduler(
+  private static <T extends RpcScheduler> T createScheduler( // 实例化RpcScheduler
       Class<T> theClass, int priorityLevels, String ns, Configuration conf) {
     // Used for custom, configurable scheduler
     try {
@@ -145,7 +146,7 @@ public class CallQueueManager<E extends Schedulable>
         " could not be constructed.");
   }
 
-  private <T extends BlockingQueue<E>> T createCallQueueInstance(
+  private <T extends BlockingQueue<E>> T createCallQueueInstance( // 实例化CallQueue
       Class<T> theClass, int priorityLevels, int maxLen, String ns,
       Configuration conf) {
 
@@ -196,27 +197,27 @@ public class CallQueueManager<E extends Schedulable>
   }
 
   // Based on policy to determine back off current call
-  boolean shouldBackOff(Schedulable e) {
+  boolean shouldBackOff(Schedulable e) { // 是否应该backoff
     return scheduler.shouldBackOff(e);
   }
 
-  void addResponseTime(String name, Schedulable e, ProcessingDetails details) {
+  void addResponseTime(String name, Schedulable e, ProcessingDetails details) { // 记录处理时间
     scheduler.addResponseTime(name, e, details);
   }
 
   // This should be only called once per call and cached in the call object
-  int getPriorityLevel(Schedulable e) {
+  int getPriorityLevel(Schedulable e) { // 获取优先级
     return scheduler.getPriorityLevel(e);
   }
 
-  int getPriorityLevel(UserGroupInformation user) {
+  int getPriorityLevel(UserGroupInformation user) { // 获取优先级
     if (scheduler instanceof DecayRpcScheduler) {
       return ((DecayRpcScheduler)scheduler).getPriorityLevel(user);
     }
     return 0;
   }
 
-  void setPriorityLevel(UserGroupInformation user, int priority) {
+  void setPriorityLevel(UserGroupInformation user, int priority) { // 指定优先级
     if (scheduler instanceof DecayRpcScheduler) {
       ((DecayRpcScheduler)scheduler).setPriorityLevel(user, priority);
     }
@@ -234,10 +235,10 @@ public class CallQueueManager<E extends Schedulable>
    * queue is drained.
    */
   @Override
-  public void put(E e) throws InterruptedException {
-    if (!isClientBackoffEnabled()) {
+  public void put(E e) throws InterruptedException { // 如果queue满，则等待，直到成功
+    if (!isClientBackoffEnabled()) { // 是否开启backoff，如果没开就等待put成功
       putRef.get().put(e);
-    } else if (shouldBackOff(e)) {
+    } else if (shouldBackOff(e)) { // 是否要backoff
       throwBackoff();
     } else {
       // No need to re-check backoff criteria since they were just checked
@@ -246,13 +247,13 @@ public class CallQueueManager<E extends Schedulable>
   }
 
   @Override
-  public boolean add(E e) {
+  public boolean add(E e) { // 如果queue满，则抛异常
     return addInternal(e, true);
   }
 
   @VisibleForTesting
   boolean addInternal(E e, boolean checkBackoff) {
-    if (checkBackoff && isClientBackoffEnabled() && shouldBackOff(e)) {
+    if (checkBackoff && isClientBackoffEnabled() && shouldBackOff(e)) { // 是否要backoff
       throwBackoff();
     }
     try {
@@ -280,13 +281,13 @@ public class CallQueueManager<E extends Schedulable>
    * Return false if the queue is full.
    */
   @Override
-  public boolean offer(E e) {
+  public boolean offer(E e) { // 如果queue满，返回false
     return putRef.get().offer(e);
   }
 
   @Override
   public boolean offer(E e, long timeout, TimeUnit unit)
-      throws InterruptedException {
+      throws InterruptedException { // 如果queue满，先等待一会儿，如果queue还是满，返回false
     return putRef.get().offer(e, timeout, unit);
   }
 
@@ -313,7 +314,7 @@ public class CallQueueManager<E extends Schedulable>
   public E take() throws InterruptedException {
     E e = null;
 
-    while (e == null) {
+    while (e == null) { // 确保获取一个非null元素
       e = takeRef.get().poll(1000L, TimeUnit.MILLISECONDS);
     }
 
@@ -321,12 +322,12 @@ public class CallQueueManager<E extends Schedulable>
   }
 
   @Override
-  public int size() {
+  public int size() { // call queue整体大小，不区分优先级
     return takeRef.get().size();
   }
 
   @Override
-  public int remainingCapacity() {
+  public int remainingCapacity() { // call queue剩余空间，不区分优先级
     return takeRef.get().remainingCapacity();
   }
 
@@ -336,7 +337,7 @@ public class CallQueueManager<E extends Schedulable>
    * @throws IllegalArgumentException on invalid queue count
    */
   @SuppressWarnings("deprecation")
-  private static int parseNumLevels(String ns, Configuration conf) {
+  private static int parseNumLevels(String ns, Configuration conf) { // 一共分几个优先级
     // Fair call queue levels (IPC_CALLQUEUE_PRIORITY_LEVELS_KEY)
     // takes priority over the scheduler level key
     // (IPC_SCHEDULER_PRIORITY_LEVELS_KEY)
@@ -361,11 +362,11 @@ public class CallQueueManager<E extends Schedulable>
    * Replaces active queue with the newly requested one and transfers
    * all calls to the newQ before returning.
    */
-  public synchronized void swapQueue(
+  public synchronized void swapQueue( // 动态刷新call queue
       Class<? extends RpcScheduler> schedulerClass,
       Class<? extends BlockingQueue<E>> queueClassToUse, int maxSize,
       String ns, Configuration conf) {
-    int priorityLevels = parseNumLevels(ns, conf);
+    int priorityLevels = parseNumLevels(ns, conf); // 一共几个优先级
     this.scheduler.stop();
     RpcScheduler newScheduler = createScheduler(schedulerClass, priorityLevels,
         ns, conf);
@@ -379,7 +380,7 @@ public class CallQueueManager<E extends Schedulable>
     putRef.set(newQ);
 
     // Wait for handlers to drain the oldQ
-    while (!queueIsReallyEmpty(oldQ)) {}
+    while (!queueIsReallyEmpty(oldQ)) {} // 等待old queue中没有元素
 
     // Swap takeRef to handle new calls
     takeRef.set(newQ);
@@ -397,9 +398,9 @@ public class CallQueueManager<E extends Schedulable>
    * it should decrease the probability that we lose a call this way.
    */
   private boolean queueIsReallyEmpty(BlockingQueue<?> q) {
-    for (int i = 0; i < CHECKPOINT_NUM; i++) {
+    for (int i = 0; i < CHECKPOINT_NUM; i++) { // 检查20此，确保queue为空
       try {
-        Thread.sleep(CHECKPOINT_INTERVAL_MS);
+        Thread.sleep(CHECKPOINT_INTERVAL_MS); // sleep 10ms
       } catch (InterruptedException ie) {
         return false;
       }
@@ -410,7 +411,7 @@ public class CallQueueManager<E extends Schedulable>
     return true;
   }
 
-  private String stringRepr(Object o) {
+  private String stringRepr(Object o) { // 打印log用
     return o.getClass().getName() + '@' + Integer.toHexString(o.hashCode());
   }
 
