@@ -1480,7 +1480,7 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
    * @throws IOException If the location for this path cannot be determined.
    */
   protected List<RemoteLocation> getLocationsForPath(String path,
-      boolean failIfLocked) throws IOException {
+      boolean failIfLocked) throws IOException {  // 获取path对应的NS地址
     return getLocationsForPath(path, failIfLocked, true);
   }
 
@@ -1495,20 +1495,20 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
    * @throws IOException If the location for this path cannot be determined.
    */
   protected List<RemoteLocation> getLocationsForPath(String path,
-      boolean failIfLocked, boolean needQuotaVerify) throws IOException {
+      boolean failIfLocked, boolean needQuotaVerify) throws IOException { // 获取path对应的NS地址
     try {
-      if (failIfLocked) {
+      if (failIfLocked) { // 检查这个path的子目录，是否已经有挂载点
         // check if there is any mount point under the path
         final List<String> mountPoints =
             this.subclusterResolver.getMountPoints(path);
         if (mountPoints != null) {
           StringBuilder sb = new StringBuilder();
           sb.append("The operation is not allowed because ");
-          if (mountPoints.isEmpty()) {
+          if (mountPoints.isEmpty()) { // 这个path就是挂载点
             sb.append("the path: ")
                 .append(path)
                 .append(" is a mount point");
-          } else {
+          } else { // 这个path的子目录，有挂载点
             sb.append("there are mount points: ")
                 .append(String.join(",", mountPoints))
                 .append(" under the path: ")
@@ -1527,9 +1527,9 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
       }
 
       // We may block some write operations
-      if (opCategory.get() == OperationCategory.WRITE) {
+      if (opCategory.get() == OperationCategory.WRITE) { // 写操作，需要做一些检查
         // Check if the path is in a read only mount point
-        if (isPathReadOnly(path)) {
+        if (isPathReadOnly(path)) { // 这个path是否只读
           if (this.rpcMonitor != null) {
             this.rpcMonitor.routerFailureReadOnly();
           }
@@ -1537,7 +1537,7 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
         }
 
         // Check quota
-        if (this.router.isQuotaEnabled() && needQuotaVerify) {
+        if (this.router.isQuotaEnabled() && needQuotaVerify) { // 是否超quota
           RouterQuotaUsage quotaUsage = this.router.getQuotaManager()
               .getQuotaUsage(path);
           if (quotaUsage != null) {
@@ -1551,7 +1551,7 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
       // Filter disabled subclusters
       Set<String> disabled = namenodeResolver.getDisabledNamespaces();
       List<RemoteLocation> locs = new ArrayList<>();
-      for (RemoteLocation loc : location.getDestinations()) {
+      for (RemoteLocation loc : location.getDestinations()) { // 过滤掉disabled NS
         if (!disabled.contains(loc.getNameserviceId())) {
           locs.add(loc);
         }
@@ -1684,7 +1684,7 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
    * @param path Path to check.
    * @return If a path should be in all subclusters.
    */
-  boolean isPathAll(final String path) {
+  boolean isPathAll(final String path) { // 这个path对应的所有NS，都需要操作
     if (subclusterResolver instanceof MountTableResolver) {
       try {
         MountTableResolver mountTable = (MountTableResolver) subclusterResolver;

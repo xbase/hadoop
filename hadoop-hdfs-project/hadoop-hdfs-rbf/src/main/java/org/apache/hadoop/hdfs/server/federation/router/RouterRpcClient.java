@@ -393,7 +393,7 @@ public class RouterRpcClient {
    * @throws StandbyException If all Namenodes are in Standby.
    * @throws IOException If it cannot invoke the method.
    */
-  private Object invokeMethod(
+  private Object invokeMethod( // 按顺序调用每一个NN，只要一个NN返回成功（或者错误的异常），即可返回
       final UserGroupInformation ugi,
       final List<? extends FederationNamenodeContext> namenodes,
       final Class<?> protocol, final Method method, final Object... params)
@@ -411,6 +411,7 @@ public class RouterRpcClient {
     }
     boolean failover = false;
     Map<FederationNamenodeContext, IOException> ioes = new LinkedHashMap<>();
+    // 按顺序调用每一个NN，只要一个NN返回成功，即可返回
     for (FederationNamenodeContext namenode : namenodes) {
       ConnectionContext connection = null;
       String nsId = namenode.getNameserviceId();
@@ -443,7 +444,7 @@ public class RouterRpcClient {
             this.rpcMonitor.proxyOpFailureCommunicate();
           }
           failover = true;
-        } else if (ioe instanceof RemoteException) {
+        } else if (ioe instanceof RemoteException) { // RemoteException直接抛给client
           if (this.rpcMonitor != null) {
             this.rpcMonitor.proxyOpComplete(true);
           }
@@ -489,6 +490,7 @@ public class RouterRpcClient {
       this.rpcMonitor.proxyOpComplete(false);
     }
 
+    // 所有的NN都没有成功
     // All namenodes were unavailable or in standby
     String msg = "No namenode available to invoke " + method.getName() + " " +
         Arrays.deepToString(params) + " in " + namenodes + " from " +
@@ -536,7 +538,7 @@ public class RouterRpcClient {
    * @throws InterruptedException
    */
   private Object invoke(String nsId, int retryCount, final Method method,
-      final Object obj, final Object... params) throws IOException {
+      final Object obj, final Object... params) throws IOException { // 调用对应的方法
     try {
       return method.invoke(obj, params);
     } catch (IllegalAccessException e) {
@@ -604,7 +606,7 @@ public class RouterRpcClient {
    * @return
    * @throws IOException
    */
-  private boolean isClusterUnAvailable(String nsId) throws IOException {
+  private boolean isClusterUnAvailable(String nsId) throws IOException { // 指定的ns，是否不可用
     List<? extends FederationNamenodeContext> nnState = this.namenodeResolver
         .getNamenodesForNameserviceId(nsId);
 
@@ -613,7 +615,7 @@ public class RouterRpcClient {
         // Once we find one NN is in active state, we assume this
         // cluster is available.
         if (nnContext.getState() == FederationNamenodeServiceState.ACTIVE) {
-          return false;
+          return false; // ns有active即为可用
         }
       }
     }
@@ -846,7 +848,7 @@ public class RouterRpcClient {
    * @throws IOException if the success condition is not met, return the first
    *                     remote exception generated.
    */
-  public <T> T invokeSequential(
+  public <T> T invokeSequential( // 顺序调用每一个NS，有一个成功，即可返回
       final List<? extends RemoteLocationContext> locations,
       final RemoteMethod remoteMethod, Class<T> expectedResultClass,
       Object expectedResultValue) throws IOException {
@@ -856,17 +858,17 @@ public class RouterRpcClient {
     List<IOException> thrownExceptions = new ArrayList<>();
     Object firstResult = null;
     // Invoke in priority order
-    for (final RemoteLocationContext loc : locations) {
+    for (final RemoteLocationContext loc : locations) { // 按顺序调用每一个NS
       String ns = loc.getNameserviceId();
       List<? extends FederationNamenodeContext> namenodes =
-          getNamenodesForNameservice(ns);
+          getNamenodesForNameservice(ns); // 获取这个ns的所有NN
       try {
         Class<?> proto = remoteMethod.getProtocol();
         Object[] params = remoteMethod.getParams(loc);
-        Object result = invokeMethod(ugi, namenodes, proto, m, params);
+        Object result = invokeMethod(ugi, namenodes, proto, m, params); // 按顺序调用每一个NN
         // Check if the result is what we expected
-        if (isExpectedClass(expectedResultClass, result) &&
-            isExpectedValue(expectedResultValue, result)) {
+        if (isExpectedClass(expectedResultClass, result) && // result是期望的class
+            isExpectedValue(expectedResultValue, result)) { // result是期望的value
           // Valid result, stop here
           @SuppressWarnings("unchecked")
           T ret = (T)result;
@@ -986,7 +988,7 @@ public class RouterRpcClient {
    * @return True if the result is an instance of the required class or if the
    *         expected class is null.
    */
-  private static boolean isExpectedClass(Class<?> expectedClass, Object clazz) {
+  private static boolean isExpectedClass(Class<?> expectedClass, Object clazz) { // 是否是期望的class
     if (expectedClass == null) {
       return true;
     } else if (clazz == null) {
@@ -1004,7 +1006,7 @@ public class RouterRpcClient {
    * @return True if the result is equals to the expected value or if the
    *         expected value is null.
    */
-  private static boolean isExpectedValue(Object expectedValue, Object value) {
+  private static boolean isExpectedValue(Object expectedValue, Object value) { // 是否是期望的value
     if (expectedValue == null) {
       return true;
     } else if (value == null) {
@@ -1025,7 +1027,7 @@ public class RouterRpcClient {
    */
   public <T extends RemoteLocationContext> boolean invokeAll(
       final Collection<T> locations, final RemoteMethod method)
-      throws IOException {
+      throws IOException { // 并行调用每一个NS，有一个NS成功，即算成功
     Map<T, Boolean> results =
         invokeConcurrent(locations, method, false, false, Boolean.class);
     return results.containsValue(true);
@@ -1142,7 +1144,8 @@ public class RouterRpcClient {
    * @throws IOException If requiredResponse=true and any of the calls throw an
    *           exception.
    */
-  public <T extends RemoteLocationContext, R> Map<T, R> invokeConcurrent(
+  // 返回值为 map<RemoteLocationContext, RemoteResult>
+  public <T extends RemoteLocationContext, R> Map<T, R> invokeConcurrent( // 并行调用每一个NS，所有NS都返回，才能返回
       final Collection<T> locations, final RemoteMethod method,
       boolean requireResponse, boolean standby, long timeOutMs, Class<R> clazz)
           throws IOException {
@@ -1205,14 +1208,14 @@ public class RouterRpcClient {
   public <T extends RemoteLocationContext, R> List<RemoteResult<T, R>>
       invokeConcurrent(final Collection<T> locations,
           final RemoteMethod method, boolean standby, long timeOutMs,
-          Class<R> clazz) throws IOException {
+          Class<R> clazz) throws IOException { // 并行调用每一个NS，所有NS都返回，才能返回
 
     final UserGroupInformation ugi = RouterRpcServer.getRemoteUser();
     final Method m = method.getMethod();
 
     if (locations.isEmpty()) {
       throw new IOException("No remote locations available");
-    } else if (locations.size() == 1 && timeOutMs <= 0) {
+    } else if (locations.size() == 1 && timeOutMs <= 0) { // 只有一个NS
       // Shortcut, just one call
       T location = locations.iterator().next();
       String ns = location.getNameserviceId();
@@ -1221,7 +1224,7 @@ public class RouterRpcClient {
       try {
         Class<?> proto = method.getProtocol();
         Object[] paramList = method.getParams(location);
-        R result = (R) invokeMethod(ugi, namenodes, proto, m, paramList);
+        R result = (R) invokeMethod(ugi, namenodes, proto, m, paramList); // 按顺序调用每一个NN
         RemoteResult<T, R> remoteResult = new RemoteResult<>(location, result);
         return Collections.singletonList(remoteResult);
       } catch (IOException ioe) {
@@ -1235,10 +1238,10 @@ public class RouterRpcClient {
     for (final T location : locations) {
       String nsId = location.getNameserviceId();
       final List<? extends FederationNamenodeContext> namenodes =
-          getNamenodesForNameservice(nsId);
+          getNamenodesForNameservice(nsId); // 获取这个ns的所有NN
       final Class<?> proto = method.getProtocol();
       final Object[] paramList = method.getParams(location);
-      if (standby) {
+      if (standby) { // 并行粒度是NN
         // Call the objectGetter to all NNs (including standby)
         for (final FederationNamenodeContext nn : namenodes) {
           String nnId = nn.getNamenodeId();
@@ -1251,7 +1254,7 @@ public class RouterRpcClient {
           orderedLocations.add(nnLocation);
           callables.add(() -> invokeMethod(ugi, nnList, proto, m, paramList));
         }
-      } else {
+      } else { // 并行粒度是NS
         // Call the objectGetter in order of nameservices in the NS list
         orderedLocations.add(location);
         callables.add(() ->  invokeMethod(ugi, namenodes, proto, m, paramList));
@@ -1264,7 +1267,7 @@ public class RouterRpcClient {
 
     try {
       List<Future<Object>> futures = null;
-      if (timeOutMs > 0) {
+      if (timeOutMs > 0) { // 提交到线程池
         futures = executorService.invokeAll(
             callables, timeOutMs, TimeUnit.MILLISECONDS);
       } else {
@@ -1283,7 +1286,7 @@ public class RouterRpcClient {
               + method.getMethodName() + "\" timed out";
           LOG.error(msg);
           IOException ioe = new SubClusterTimeoutException(msg);
-          results.add(new RemoteResult<>(location, ioe));
+          results.add(new RemoteResult<>(location, ioe)); // 标记对应NS返回异常
         } catch (ExecutionException ex) {
           Throwable cause = ex.getCause();
           LOG.debug("Canot execute {} in {}: {}",
@@ -1299,7 +1302,7 @@ public class RouterRpcClient {
           }
 
           // Store the exceptions
-          results.add(new RemoteResult<>(location, ioe));
+          results.add(new RemoteResult<>(location, ioe)); // 标记对应NS返回异常
         }
       }
 
@@ -1330,7 +1333,7 @@ public class RouterRpcClient {
    * @throws IOException If a NN cannot be located for the nameservice ID.
    */
   private List<? extends FederationNamenodeContext> getNamenodesForNameservice(
-      final String nsId) throws IOException {
+      final String nsId) throws IOException { // 获取这个ns的所有NN
 
     final List<? extends FederationNamenodeContext> namenodes =
         namenodeResolver.getNamenodesForNameserviceId(nsId);
@@ -1351,7 +1354,7 @@ public class RouterRpcClient {
    * @throws IOException If a NN cannot be located for the block pool ID.
    */
   private List<? extends FederationNamenodeContext> getNamenodesForBlockPoolId(
-      final String bpId) throws IOException {
+      final String bpId) throws IOException { // 通过bpId获取这个ns的所有NN
 
     List<? extends FederationNamenodeContext> namenodes =
         namenodeResolver.getNamenodesForBlockPoolId(bpId);
@@ -1370,11 +1373,11 @@ public class RouterRpcClient {
    * @return Nameservice identifier.
    * @throws IOException If a NN cannot be located for the block pool ID.
    */
-  private String getNameserviceForBlockPoolId(final String bpId)
+  private String getNameserviceForBlockPoolId(final String bpId) // 通过bpId获取nsId
       throws IOException {
     List<? extends FederationNamenodeContext> namenodes =
         getNamenodesForBlockPoolId(bpId);
     FederationNamenodeContext namenode = namenodes.get(0);
-    return namenode.getNameserviceId();
+    return namenode.getNameserviceId(); //TODO：nsId是什么？
   }
 }

@@ -37,13 +37,13 @@ public class RemoteMethod {
 
 
   /** List of parameters: static and dynamic values, matchings types. */
-  private final Object[] params;
+  private final Object[] params; // 参数列表
   /** List of method parameters types, matches parameters. */
-  private final Class<?>[] types;
+  private final Class<?>[] types; // 参数类型列表
   /** Class of the protocol for the method. */
-  private final Class<?> protocol;
+  private final Class<?> protocol; // 协议
   /** String name of the ClientProtocol method. */
-  private final String methodName;
+  private final String methodName; // 方法名
 
   /**
    * Create a remote method generator for the ClientProtocol with no parameters.
@@ -134,7 +134,7 @@ public class RemoteMethod {
    * @return Method
    * @throws IOException If the method cannot be found.
    */
-  public Method getMethod() throws IOException {
+  public Method getMethod() throws IOException { // 获取方法
     try {
       if (types != null) {
         return protocol.getDeclaredMethod(methodName, types);
@@ -192,7 +192,7 @@ public class RemoteMethod {
    * @param context The context identifying the location.
    * @return A list of parameters for the method customized for the location.
    */
-  public Object[] getParams(RemoteLocationContext context) {
+  public Object[] getParams(RemoteLocationContext context) { // 获取参数列表
     if (this.params == null) {
       return new Object[] {};
     }

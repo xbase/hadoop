@@ -175,7 +175,7 @@ public class MembershipNamenodeResolver
 
   @Override
   public List<? extends FederationNamenodeContext> getNamenodesForNameserviceId(
-      final String nsId) throws IOException {
+      final String nsId) throws IOException { // 获取这个ns的所有NN
 
     List<? extends FederationNamenodeContext> ret = cacheNS.get(nsId);
     if (ret != null) {
@@ -208,7 +208,7 @@ public class MembershipNamenodeResolver
       } else {
         for (MembershipState nn : result) {
           if (disabled.contains(nn.getNameserviceId())) {
-            nn.setState(FederationNamenodeServiceState.DISABLED);
+            nn.setState(FederationNamenodeServiceState.DISABLED); // 设置NN状态为disabled
           }
         }
       }

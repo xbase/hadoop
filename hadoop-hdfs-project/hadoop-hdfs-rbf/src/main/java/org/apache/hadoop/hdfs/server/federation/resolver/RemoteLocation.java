@@ -26,13 +26,13 @@ import org.apache.hadoop.hdfs.server.federation.router.RemoteLocationContext;
 public class RemoteLocation extends RemoteLocationContext {
 
   /** Identifier of the remote namespace for this location. */
-  private final String nameserviceId;
+  private final String nameserviceId; // 确定一个NS
   /** Identifier of the namenode in the namespace for this location. */
-  private final String namenodeId;
+  private final String namenodeId; // 确定一个NN
   /** Path in the remote location. */
-  private final String dstPath;
+  private final String dstPath; // 目标地址
   /** Original path in federation. */
-  private final String srcPath;
+  private final String srcPath; // 源地址
 
   /**
    * Create a new remote location.

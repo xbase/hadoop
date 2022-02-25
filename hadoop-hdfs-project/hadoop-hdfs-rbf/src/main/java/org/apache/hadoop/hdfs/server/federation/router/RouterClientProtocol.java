@@ -233,7 +233,7 @@ public class RouterClientProtocol implements ClientProtocol {
     rpcServer.checkOperation(NameNode.OperationCategory.READ);
 
     List<RemoteLocation> locations =
-        rpcServer.getLocationsForPath(src, false, false);
+        rpcServer.getLocationsForPath(src, false, false); // 获取path对应的NS地址
     RemoteMethod remoteMethod = new RemoteMethod("getBlockLocations",
         new Class<?>[] {String.class, long.class, long.class},
         new RemoteParam(), offset, length);
