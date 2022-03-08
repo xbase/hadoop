@@ -325,7 +325,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
               Long.toHexString(storageInfo.getLastBlockReportId()) +
               ", but curBlockReportId = 0x" +
               Long.toHexString(curBlockReportId));
-          iter.remove();
+          iter.remove(); // 移除问题磁盘
           if (zombies == null) {
             zombies = new LinkedList<DatanodeStorageInfo>();
           }

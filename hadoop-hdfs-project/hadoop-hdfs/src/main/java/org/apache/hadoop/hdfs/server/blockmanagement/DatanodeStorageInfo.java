@@ -138,8 +138,11 @@ public class DatanodeStorageInfo {
    * will be processed for this block. See HDFS-1972.
    */
   // 如果一个block中有一个replica所在的dn storage为stale状态，那么这个block不允许执行删除操作，以防止误删除
-  // (只有)切主的时候，会把所有DN的storage stale状态标记为true
+  // 切主的时候，会把所有DN的storage stale状态标记为true
   // 直到DN发送过一次心跳和全量块汇报，才会把此DN的storage stale状态改为false
+
+  // 默认为true，说明新注册DN或者添加新盘时，这个storage的stale状态也为true
+  // remove dead dn不会改变这个字段，remove zombie storage会改变这个字段
   private boolean blockContentsStale = true;
   DatanodeStorageInfo(DatanodeDescriptor dn, DatanodeStorage s) {
     this.dn = dn;
@@ -170,7 +173,7 @@ public class DatanodeStorageInfo {
     heartbeatedSinceFailover = true;
   }
 
-  void receivedBlockReport() {
+  void receivedBlockReport() { // FBR时调用
     if (heartbeatedSinceFailover) {
       blockContentsStale = false;
     }

@@ -1823,7 +1823,7 @@ public class BlockManager {
       // that we receive while still in startup phase.
       DatanodeStorageInfo storageInfo = node.getStorageInfo(storage.getStorageID()); // NN端描述DN一个存储目录，包括此目录中存储的块
 
-      if (storageInfo == null) {
+      if (storageInfo == null) { // NN之前没有初始化这个storage
         // We handle this for backwards compatibility.
         storageInfo = node.updateStorage(storage);
       }
