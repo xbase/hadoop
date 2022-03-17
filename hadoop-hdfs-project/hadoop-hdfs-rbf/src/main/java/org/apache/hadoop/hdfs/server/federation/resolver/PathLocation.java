@@ -38,12 +38,12 @@ public class PathLocation {
 
 
   /** Source path in global namespace. */
-  private final String sourcePath;
+  private final String sourcePath; // 命中的挂载点path
 
   /** Remote paths in the target name spaces. */
-  private final List<RemoteLocation> destinations;
+  private final List<RemoteLocation> destinations; // 挂载点对应的NS path
   /** Order for the destinations. */
-  private final DestinationOrder destOrder;
+  private final DestinationOrder destOrder; // 挂载策略
 
 
   /**
@@ -103,14 +103,14 @@ public class PathLocation {
    * @return Prioritized list of detinations that cannot be modified.
    */
   private static List<RemoteLocation> orderedNamespaces(
-      final List<RemoteLocation> original, final String nsId) {
+      final List<RemoteLocation> original, final String nsId) { // 把nsId对应的RemoteLocation放在第一个
     if (original.size() <= 1) {
       return original;
     }
 
     LinkedList<RemoteLocation> newDestinations = new LinkedList<>();
     boolean found = false;
-    for (RemoteLocation dest : original) {
+    for (RemoteLocation dest : original) { // 把nsId对应的RemoteLocation放在第一个
       if (dest.getNameserviceId().equals(nsId)) {
         found = true;
         newDestinations.addFirst(dest);

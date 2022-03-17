@@ -38,7 +38,7 @@ public class NamenodePriorityComparator
 
   @Override
   public int compare(FederationNamenodeContext o1,
-      FederationNamenodeContext o2) {
+      FederationNamenodeContext o2) { // 同一个NS下，多个NN排序
     FederationNamenodeServiceState state1 = o1.getState();
     FederationNamenodeServiceState state2 = o2.getState();
 

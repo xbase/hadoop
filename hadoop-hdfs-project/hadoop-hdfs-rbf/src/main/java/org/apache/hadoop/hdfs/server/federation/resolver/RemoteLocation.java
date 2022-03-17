@@ -30,9 +30,9 @@ public class RemoteLocation extends RemoteLocationContext {
   /** Identifier of the namenode in the namespace for this location. */
   private final String namenodeId; // 确定一个NN
   /** Path in the remote location. */
-  private final String dstPath; // 目标地址
+  private final String dstPath; // 目标path
   /** Original path in federation. */
-  private final String srcPath; // 源地址
+  private final String srcPath; // 源path
 
   /**
    * Create a new remote location.

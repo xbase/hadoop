@@ -189,7 +189,7 @@ public class MembershipNamenodeResolver
       partial.setNameserviceId(nsId);
       GetNamenodeRegistrationsRequest request =
           GetNamenodeRegistrationsRequest.newInstance(partial);
-      result = getRecentRegistrationForQuery(request, true, false);
+      result = getRecentRegistrationForQuery(request, true, false); // 按优先级顺序返回NN
     } catch (StateStoreUnavailableException e) {
       LOG.error("Cannot get active NN for {}, State Store unavailable", nsId);
       return null;
@@ -351,7 +351,7 @@ public class MembershipNamenodeResolver
    */
   private List<MembershipState> getRecentRegistrationForQuery(
       GetNamenodeRegistrationsRequest request, boolean addUnavailable,
-      boolean addExpired) throws IOException {
+      boolean addExpired) throws IOException { // 按优先级顺序返回NN
 
     // Retrieve a list of all registrations that match this query.
     // This may include all NN records for a namespace/blockpool, including
@@ -375,7 +375,7 @@ public class MembershipNamenodeResolver
 
     List<MembershipState> priorityList = new ArrayList<>();
     priorityList.addAll(memberships);
-    Collections.sort(priorityList, new NamenodePriorityComparator());
+    Collections.sort(priorityList, new NamenodePriorityComparator()); // 按优先级顺序返回NN
 
     LOG.debug("Selected most recent NN {} for query", priorityList);
     return priorityList;

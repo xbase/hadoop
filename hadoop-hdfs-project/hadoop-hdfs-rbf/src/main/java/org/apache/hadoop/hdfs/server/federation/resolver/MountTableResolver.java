@@ -379,12 +379,12 @@ public class MountTableResolver
 
   @Override
   public PathLocation getDestinationForPath(final String path)
-      throws IOException {
+      throws IOException { // 获取path对应的所有的ns
     verifyMountTable();
     readLock.lock();
     try {
       if (this.locationCache == null) {
-        return lookupLocation(path);
+        return lookupLocation(path); // 获取PathLocation
       }
       Callable<? extends PathLocation> meh = new Callable<PathLocation>() {
         @Override
@@ -416,11 +416,11 @@ public class MountTableResolver
    */
   public PathLocation lookupLocation(final String str) throws IOException {
     PathLocation ret = null;
-    final String path = RouterAdmin.normalizeFileSystemPath(str);
+    final String path = RouterAdmin.normalizeFileSystemPath(str); // 规范化path
     MountTable entry = findDeepest(path);
     if (entry != null) {
-      ret = buildLocation(path, entry);
-    } else {
+      ret = buildLocation(path, entry); // 封装为PathLocation
+    } else { // 如果没有发现挂载点，则使用默认的ns
       // Not found, use default location
       if (!defaultNSEnable) {
         throw new RouterResolveException("Cannot find locations for " + path
@@ -442,7 +442,7 @@ public class MountTableResolver
    * @return Mount table entry the path belongs.
    * @throws IOException If the State Store could not be reached.
    */
-  public MountTable getMountPoint(final String path) throws IOException {
+  public MountTable getMountPoint(final String path) throws IOException { // 获取挂载点信息
     verifyMountTable();
     return findDeepest(RouterAdmin.normalizeFileSystemPath(path));
   }
@@ -538,19 +538,20 @@ public class MountTableResolver
    */
   private PathLocation buildLocation(
       final String path, final MountTable entry) throws IOException {
-    String srcPath = entry.getSourcePath();
+    String srcPath = entry.getSourcePath(); // 挂载点上配置的path
     if (!path.startsWith(srcPath)) {
       LOG.error("Cannot build location, {} not a child of {}", path, srcPath);
       return null;
     }
 
     List<RemoteLocation> dests = entry.getDestinations();
-    if (getClass() == MountTableResolver.class && dests.size() > 1) {
+    if (getClass() == MountTableResolver.class && dests.size() > 1) { // MountTableResolver类只能处理，一个path对应一个ns
       throw new IOException("Cannnot build location, "
           + getClass().getSimpleName()
           + " should not resolve multiple destinations for " + path);
     }
 
+    // 获取挂载点之外的字符串，比如 挂载点是 /a/b 访问的是 /a/b/c/d，则 remainingPath= c/d
     String remainingPath = path.substring(srcPath.length());
     if (remainingPath.startsWith(Path.SEPARATOR)) {
       remainingPath = remainingPath.substring(1);
@@ -559,12 +560,12 @@ public class MountTableResolver
     List<RemoteLocation> locations = new LinkedList<>();
     for (RemoteLocation oneDst : dests) {
       String nsId = oneDst.getNameserviceId();
-      String dest = oneDst.getDest();
+      String dest = oneDst.getDest(); // 目标path前缀
       String newPath = dest;
       if (!newPath.endsWith(Path.SEPARATOR) && !remainingPath.isEmpty()) {
         newPath += Path.SEPARATOR;
       }
-      newPath += remainingPath;
+      newPath += remainingPath; // 拼出目标全path
       RemoteLocation remoteLocation = new RemoteLocation(nsId, newPath, path);
       locations.add(remoteLocation);
     }

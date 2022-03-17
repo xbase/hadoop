@@ -76,10 +76,10 @@ public class HashResolver implements OrderedResolver {
    */
   @Override
   public String getFirstNamespace(final String path, final PathLocation loc) {
-    String finalPath = extractTempFileName(path);
+    String finalPath = extractTempFileName(path); // 提取临时文件的文件名
     Set<String> namespaces = loc.getNamespaces();
-    ConsistentHashRing locator = getHashResolver(namespaces);
-    String hashedSubcluster = locator.getLocation(finalPath);
+    ConsistentHashRing locator = getHashResolver(namespaces); // 一致性哈希
+    String hashedSubcluster = locator.getLocation(finalPath); // 通过哈希方式，返回一个ns
     if (hashedSubcluster == null) {
       String srcPath = loc.getSourcePath();
       LOG.error("Cannot find subcluster for {} ({} -> {})",
@@ -111,6 +111,8 @@ public class HashResolver implements OrderedResolver {
    * @param input Input string.
    * @return Final file name.
    */
+  // 提取临时文件的文件名，例如：testfile1.txt._COPYING_  -> testfile1.txt
+  // 更多例子，参见单测
   @VisibleForTesting
   public static String extractTempFileName(final String input) {
     StringBuilder sb = new StringBuilder();

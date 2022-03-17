@@ -1118,7 +1118,7 @@ public class RouterRpcClient {
   public <T extends RemoteLocationContext, R> Map<T, R> invokeConcurrent(
       final Collection<T> locations, final RemoteMethod method,
       boolean requireResponse, boolean standby, Class<R> clazz)
-          throws IOException {
+          throws IOException { // 并行调用每一个NS，所有NS都返回，才能返回
     return invokeConcurrent(
         locations, method, requireResponse, standby, -1, clazz);
   }

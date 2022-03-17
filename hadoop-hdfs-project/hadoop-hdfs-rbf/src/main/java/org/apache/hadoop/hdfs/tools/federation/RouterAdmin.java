@@ -1307,7 +1307,7 @@ public class RouterAdmin extends Configured implements Tool {
    * @param str Path to normalize. The path doesn't have scheme or authority.
    * @return Normalized path.
    */
-  public static String normalizeFileSystemPath(final String str) {
+  public static String normalizeFileSystemPath(final String str) { // 如果path以 / 结尾，则去掉最后一个 /
     String path = SLASHES.matcher(str).replaceAll("/");
     if (path.length() > 1 && path.endsWith("/")) {
       path = path.substring(0, path.length()-1);

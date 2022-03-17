@@ -82,20 +82,21 @@ public class MultipleDestinationMountTableResolver extends MountTableResolver {
         new AvailableSpaceResolver(conf, router));
   }
 
+  // 如果一个path挂载到了多个ns，根据挂载策略重新排序
   @Override
   public PathLocation getDestinationForPath(String path) throws IOException {
-    PathLocation mountTableResult = super.getDestinationForPath(path);
+    PathLocation mountTableResult = super.getDestinationForPath(path); // 获取path对应的所有的ns
     if (mountTableResult == null) {
       LOG.error("The {} cannot find a location for {}",
           super.getClass().getSimpleName(), path);
-    } else if (mountTableResult.hasMultipleDestinations()) {
+    } else if (mountTableResult.hasMultipleDestinations()) { // 这个path是否挂载到多个NS
       DestinationOrder order = mountTableResult.getDestinationOrder();
-      OrderedResolver orderedResolver = orderedResolvers.get(order);
+      OrderedResolver orderedResolver = orderedResolvers.get(order); // 具体的挂载策略
       if (orderedResolver == null) {
         LOG.error("Cannot find resolver for order {}", order);
-      } else {
+      } else { // 如果一个path挂载到了多个ns，根据挂载策略重新排序
         String firstNamespace =
-            orderedResolver.getFirstNamespace(path, mountTableResult);
+            orderedResolver.getFirstNamespace(path, mountTableResult); // 根据挂载策略返回一个ns
 
         // Change the order of the name spaces according to the policy
         if (firstNamespace != null) {

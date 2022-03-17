@@ -264,7 +264,7 @@ public class RouterClientProtocol implements ClientProtocol {
       throws IOException {
     rpcServer.checkOperation(NameNode.OperationCategory.WRITE);
 
-    if (createParent && rpcServer.isPathAll(src)) {
+    if (createParent && rpcServer.isPathAll(src)) { // 是否需要在所有的挂载点创建父目录
       int index = src.lastIndexOf(Path.SEPARATOR);
       String parent = src.substring(0, index);
       LOG.debug("Creating {} requires creating parent {}", src, parent);
@@ -284,13 +284,14 @@ public class RouterClientProtocol implements ClientProtocol {
         new RemoteParam(), masked, clientName, flag, createParent,
         replication, blockSize, supportedVersions, ecPolicyName, storagePolicy);
     final List<RemoteLocation> locations =
-        rpcServer.getLocationsForPath(src, true);
+        rpcServer.getLocationsForPath(src, true); // 获取path对应的所有NS
     RemoteLocation createLocation = null;
     try {
+      // 获取create的目标ns，如果这个path已经存在于某个ns，则使用这个ns，否则使用第一个ns
       createLocation = rpcServer.getCreateLocation(src);
       return rpcClient.invokeSingle(createLocation, method,
           HdfsFileStatus.class);
-    } catch (IOException ioe) {
+    } catch (IOException ioe) { // 是否可以重试其他ns
       final List<RemoteLocation> newLocations = checkFaultTolerantRetry(
           method, src, ioe, createLocation, locations);
       return rpcClient.invokeSequential(
@@ -306,7 +307,7 @@ public class RouterClientProtocol implements ClientProtocol {
    *         retried (e.g., NSQuotaExceededException).
    */
   private static boolean isUnavailableSubclusterException(
-      final IOException ioe) {
+      final IOException ioe) { // 这几个异常代表NN不可用
     if (ioe instanceof ConnectException ||
         ioe instanceof ConnectTimeoutException ||
         ioe instanceof NoNamenodesAvailableException) {
@@ -337,12 +338,12 @@ public class RouterClientProtocol implements ClientProtocol {
       final RemoteLocation excludeLoc, final List<RemoteLocation> locations)
           throws IOException {
 
-    if (!isUnavailableSubclusterException(ioe)) {
+    if (!isUnavailableSubclusterException(ioe)) { // 如果是NN不可用异常之外的其他异常，则抛异常
       LOG.debug("{} exception cannot be retried",
           ioe.getClass().getSimpleName());
       throw ioe;
     }
-    if (!rpcServer.isPathFaultTolerant(src)) {
+    if (!rpcServer.isPathFaultTolerant(src)) { // 这个path对应的挂载点是否支持容错，默认为false
       LOG.debug("{} does not allow retrying a failed subcluster", src);
       throw ioe;
     }
@@ -356,7 +357,7 @@ public class RouterClientProtocol implements ClientProtocol {
           method, src, excludeLoc, ioe.getMessage());
       newLocations = new ArrayList<>();
       for (final RemoteLocation loc : locations) {
-        if (!loc.equals(excludeLoc)) {
+        if (!loc.equals(excludeLoc)) { // 排除掉excludeLoc
           newLocations.add(loc);
         }
       }

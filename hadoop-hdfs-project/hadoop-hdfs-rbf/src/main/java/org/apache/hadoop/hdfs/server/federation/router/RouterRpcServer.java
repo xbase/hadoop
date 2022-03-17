@@ -644,6 +644,7 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
    * @return The remote location for this file.
    * @throws IOException If the file has no creation location.
    */
+  // 获取create的目标ns，如果这个path已经存在于某个ns，则返回这个ns，否则返回第一个ns
   RemoteLocation getCreateLocation(
       final String src, final List<RemoteLocation> locations)
       throws IOException {
@@ -653,7 +654,7 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
     }
 
     RemoteLocation createLocation = locations.get(0);
-    if (locations.size() > 1) {
+    if (locations.size() > 1) { // 判断path是否已经存在于某个NS
       try {
         RemoteLocation existingLocation = getExistingLocation(src, locations);
         // Forward to the existing location and let the NN handle the error
@@ -676,7 +677,7 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
    * @throws IOException in case of any exception.
    */
   private RemoteLocation getExistingLocation(String src,
-      List<RemoteLocation> locations) throws IOException {
+      List<RemoteLocation> locations) throws IOException { // 判断path是否已经存在于某个NS
     RemoteMethod method = new RemoteMethod("getFileInfo",
         new Class<?>[] {String.class}, new RemoteParam());
     Map<RemoteLocation, HdfsFileStatus> results = rpcClient.invokeConcurrent(
@@ -1480,7 +1481,7 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
    * @throws IOException If the location for this path cannot be determined.
    */
   protected List<RemoteLocation> getLocationsForPath(String path,
-      boolean failIfLocked) throws IOException {  // 获取path对应的NS地址
+      boolean failIfLocked) throws IOException { // 获取path对应的所有NS
     return getLocationsForPath(path, failIfLocked, true);
   }
 
@@ -1494,8 +1495,11 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
    * @return Prioritized list of locations in the federated cluster.
    * @throws IOException If the location for this path cannot be determined.
    */
+  // 获取path对应的NS地址
+  // 1、根据挂载策略，把优先级高的放在第一个
+  // 2、过滤掉disabled NS
   protected List<RemoteLocation> getLocationsForPath(String path,
-      boolean failIfLocked, boolean needQuotaVerify) throws IOException { // 获取path对应的NS地址
+      boolean failIfLocked, boolean needQuotaVerify) throws IOException {
     try {
       if (failIfLocked) { // 检查这个path的子目录，是否已经有挂载点
         // check if there is any mount point under the path
@@ -1520,7 +1524,7 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
 
       // Check the location for this path
       final PathLocation location =
-          this.subclusterResolver.getDestinationForPath(path);
+          this.subclusterResolver.getDestinationForPath(path); // 获取path对应的所有的ns
       if (location == null) {
         throw new IOException("Cannot find locations for " + path + " in " +
             this.subclusterResolver.getClass().getSimpleName());
@@ -1705,13 +1709,13 @@ public class RouterRpcServer extends AbstractService implements ClientProtocol,
    * @param path Path to check.
    * @return If a path should support failed subclusters.
    */
-  boolean isPathFaultTolerant(final String path) {
+  boolean isPathFaultTolerant(final String path) { // 这个path对应的挂载点是否支持容错
     if (subclusterResolver instanceof MountTableResolver) {
       try {
         MountTableResolver mountTable = (MountTableResolver) subclusterResolver;
-        MountTable entry = mountTable.getMountPoint(path);
+        MountTable entry = mountTable.getMountPoint(path); // 获取挂载点信息
         if (entry != null) {
-          return entry.isFaultTolerant();
+          return entry.isFaultTolerant(); // 这个挂载点是否支持容错
         }
       } catch (IOException e) {
         LOG.error("Cannot get mount point", e);
