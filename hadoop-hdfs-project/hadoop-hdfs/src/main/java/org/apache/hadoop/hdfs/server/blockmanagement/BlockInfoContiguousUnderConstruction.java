@@ -367,7 +367,8 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
         // we allow Datanodes to choose the target storage. Update our
         // state by removing the stale entry and adding a new one.
 
-        // 如果副本存放的位置，不是NN指定的目录，那么以DN汇报的为准
+        // 如果副本存放的位置，不是NN指定的DN，那么以DN汇报的为准
+        // updatePipeline时，standby不会更新block的location信息，这时就会出现NN期望的location和DN汇报的不一致
         it.remove();
         break;
       }

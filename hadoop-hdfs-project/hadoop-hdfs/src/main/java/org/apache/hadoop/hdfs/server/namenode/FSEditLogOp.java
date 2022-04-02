@@ -970,7 +970,7 @@ public abstract class FSEditLogOp {
         blocks[0] = penultimateBlock;
       }
       blocks[size - 1] = lastBlock;
-      FSImageSerialization.writeCompactBlockArray(blocks, out);
+      FSImageSerialization.writeCompactBlockArray(blocks, out); // 序列化block信息，不包含location
       // clientId and callId
       writeRpcIds(rpcClientId, rpcCallId, out);
     }

@@ -162,6 +162,7 @@ public class FSEditLog implements LogsPurgeable {
 
   // the first txid of the log that's currently open for writing.
   // If this value is N, we are currently writing to edits_inprogress_N
+  // 最后一个edit log文件(in progress edit文件)，它的第一个txid
   private long curSegmentTxId = HdfsConstants.INVALID_TXID;
 
   // the time of printing the statistics to the log file.

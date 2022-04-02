@@ -311,8 +311,8 @@ public class EditLogTailer {
           // There's no point in triggering a log roll if the Standby hasn't
           // read any more transactions since the last time a roll was
           // triggered.
-          if (tooLongSinceLastLoad() &&
-              lastRollTriggerTxId < lastLoadedTxnId) { // 默认：2分钟
+          if (tooLongSinceLastLoad() &&  // 默认：2分钟
+              lastRollTriggerTxId < lastLoadedTxnId) { // 上次roll edit之后，是否有新的edit被回放
             // 周期性触发Active NameNode roll editlog文件
             triggerActiveLogRoll();
           }

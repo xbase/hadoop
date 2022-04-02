@@ -477,7 +477,7 @@ public class FSImageSerialization {
    * and size is equal for all but the last block of a file.
    */
   public static void writeCompactBlockArray(
-      Block[] blocks, DataOutputStream out) throws IOException {
+      Block[] blocks, DataOutputStream out) throws IOException { // edit log中并没有记录location信息
     WritableUtils.writeVInt(out, blocks.length);
     Block prev = null;
     for (Block b : blocks) {

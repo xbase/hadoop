@@ -989,14 +989,15 @@ public class FSEditLogLoader {
   private void updateBlocks(FSDirectory fsDir, BlockListUpdatingOp op,
       INodesInPath iip, INodeFile file) throws IOException {
     // Update its block list
-    BlockInfoContiguous[] oldBlocks = file.getBlocks();
-    Block[] newBlocks = op.getBlocks();
+    BlockInfoContiguous[] oldBlocks = file.getBlocks(); // 原文件的block列表
+    Block[] newBlocks = op.getBlocks(); // 需要更新的block列表
     String path = op.getPath();
     
     // Are we only updating the last block's gen stamp.
-    boolean isGenStampUpdate = oldBlocks.length == newBlocks.length;
+    boolean isGenStampUpdate = oldBlocks.length == newBlocks.length; // block列表长度一致，只更新GS
     
     // First, update blocks in common
+    // Step 1: 更新block的length和GS
     for (int i = 0; i < oldBlocks.length && i < newBlocks.length; i++) {
       BlockInfoContiguous oldBlock = oldBlocks[i];
       Block newBlock = newBlocks[i];
@@ -1004,7 +1005,7 @@ public class FSEditLogLoader {
       boolean isLastBlock = i == newBlocks.length - 1;
       if (oldBlock.getBlockId() != newBlock.getBlockId() ||
           (oldBlock.getGenerationStamp() != newBlock.getGenerationStamp() && 
-              !(isGenStampUpdate && isLastBlock))) {
+              !(isGenStampUpdate && isLastBlock))) { // 常规检查
         throw new IOException("Mismatched block IDs or generation stamps, " +
             "attempting to replace block " + oldBlock + " with " + newBlock +
             " as block # " + i + "/" + newBlocks.length + " of " +
@@ -1017,7 +1018,7 @@ public class FSEditLogLoader {
       oldBlock.setGenerationStamp(newBlock.getGenerationStamp()); // 更新block的GS
       
       if (oldBlock instanceof BlockInfoContiguousUnderConstruction &&
-          (!isLastBlock || op.shouldCompleteLastBlock())) {
+          (!isLastBlock || op.shouldCompleteLastBlock())) { // 非最后一个block，判读是否需要强制complete
         changeMade = true;
         fsNamesys.getBlockManager().forceCompleteBlock(file,
             (BlockInfoContiguousUnderConstruction) oldBlock); // complete block
@@ -1033,7 +1034,7 @@ public class FSEditLogLoader {
     
     if (newBlocks.length < oldBlocks.length) { // abandonBlock逻辑
       // We're removing a block from the file, e.g. abandonBlock(...)
-      if (!file.isUnderConstruction()) {
+      if (!file.isUnderConstruction()) { // 只有UC block可以abandon最后一个block
         throw new IOException("Trying to remove a block from file " +
             path + " which is not under construction.");
       }

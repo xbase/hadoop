@@ -807,14 +807,14 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       this.standbyShouldCheckpoint = conf.getBoolean(
           DFS_HA_STANDBY_CHECKPOINTS_KEY, DFS_HA_STANDBY_CHECKPOINTS_DEFAULT);
       // # edit autoroll threshold is a multiple of the checkpoint threshold 
-      this.editLogRollerThreshold = (long)
+      this.editLogRollerThreshold = (long) // 默认：ckpt的edit阈值 * 2
           (conf.getFloat(
               DFS_NAMENODE_EDIT_LOG_AUTOROLL_MULTIPLIER_THRESHOLD,
               DFS_NAMENODE_EDIT_LOG_AUTOROLL_MULTIPLIER_THRESHOLD_DEFAULT) *
           conf.getLong(
               DFS_NAMENODE_CHECKPOINT_TXNS_KEY,
               DFS_NAMENODE_CHECKPOINT_TXNS_DEFAULT));
-      this.editLogRollerInterval = conf.getInt(
+      this.editLogRollerInterval = conf.getInt( // 默认：5分钟
           DFS_NAMENODE_EDIT_LOG_AUTOROLL_CHECK_INTERVAL_MS,
           DFS_NAMENODE_EDIT_LOG_AUTOROLL_CHECK_INTERVAL_MS_DEFAULT);
 
@@ -4706,8 +4706,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   class NameNodeEditLogRoller implements Runnable {
 
     private boolean shouldRun = true;
-    private final long rollThreshold;
-    private final long sleepIntervalMs;
+    private final long rollThreshold; // 默认：ckpt的edit阈值 * 2
+    private final long sleepIntervalMs; // 默认：5分钟
 
     public NameNodeEditLogRoller(long rollThreshold, int sleepIntervalMs) {
         this.rollThreshold = rollThreshold;
@@ -4720,7 +4720,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         try {
           FSEditLog editLog = getFSImage().getEditLog();
           long numEdits =
-              editLog.getLastWrittenTxId() - editLog.getCurSegmentTxId();
+              editLog.getLastWrittenTxId() - editLog.getCurSegmentTxId(); // 最后一个edit log(in progress)，写了多少条edit log
           if (numEdits > rollThreshold) {
             FSNamesystem.LOG.info("NameNode rolling its own edit log because"
                 + " number of edits in open segment exceeds threshold of "
