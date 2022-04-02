@@ -368,7 +368,9 @@ public class BlockInfoContiguousUnderConstruction extends BlockInfoContiguous {
         // state by removing the stale entry and adding a new one.
 
         // 如果副本存放的位置，不是NN指定的DN，那么以DN汇报的为准
-        // updatePipeline时，standby不会更新block的location信息，这时就会出现NN期望的location和DN汇报的不一致
+        // addBlock、updatePipeline时，edit log中没有block的location信息
+        // 这时standby不知道最后一个uc block的location信息，需要通过receiving消息，告知standby
+        // 由于上面这个case，updatePipeline时，可能会出现NN期望的location和实际location不一致的问题
         it.remove();
         break;
       }

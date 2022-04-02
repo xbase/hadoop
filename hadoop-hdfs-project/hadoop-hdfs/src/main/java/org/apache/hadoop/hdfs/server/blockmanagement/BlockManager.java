@@ -2227,7 +2227,7 @@ public class BlockManager {
   // 判断副本状态，并添加到不同的集合中
   private BlockInfoContiguous processReportedBlock(
       final DatanodeStorageInfo storageInfo,
-      final Block block, final ReplicaState reportedState, 
+      final Block block, final ReplicaState reportedState,
       final Collection<BlockInfoContiguous> toAdd,
       final Collection<Block> toInvalidate, 
       final Collection<BlockToMarkCorrupt> toCorrupt,
@@ -3294,6 +3294,9 @@ public class BlockManager {
         addBlock(storageInfo, rdbi.getBlock(), rdbi.getDelHints());
         received++;
         break;
+        // addBlock、updatePipeline时，edit log中没有block的location信息
+        // 这时standby不知道最后一个uc block的location信息，需要通过receiving消息，告知standby
+        // 由于上面这个case，updatePipeline时，可能会出现NN期望的location和实际location不一致的问题
       case RECEIVING_BLOCK: // DN正在接收的replica（RBW状态）
         receiving++;
         processAndHandleReportedBlock(storageInfo, rdbi.getBlock(),
