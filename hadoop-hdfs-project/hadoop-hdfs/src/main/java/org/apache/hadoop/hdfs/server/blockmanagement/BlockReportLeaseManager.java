@@ -81,7 +81,7 @@ class BlockReportLeaseManager {
      */
     NodeData next;
 
-    static NodeData ListHead(String name) {
+    static NodeData ListHead(String name) { // head节点
       NodeData node = new NodeData(name);
       node.next = node;
       node.prev = node;
@@ -92,7 +92,7 @@ class BlockReportLeaseManager {
       this.datanodeUuid = datanodeUuid;
     }
 
-    void removeSelf() {
+    void removeSelf() { // 移除当前node，并维护指针
       if (this.prev != null) {
         this.prev.next = this.next;
       }
@@ -103,7 +103,7 @@ class BlockReportLeaseManager {
       this.prev = null;
     }
 
-    void addToEnd(NodeData node) {
+    void addToEnd(NodeData node) { // 把当前node，添加到指定node的后面
       Preconditions.checkState(node.next == null);
       Preconditions.checkState(node.prev == null);
       node.prev = this.prev;
@@ -112,7 +112,7 @@ class BlockReportLeaseManager {
       this.prev = node;
     }
 
-    void addToBeginning(NodeData node) {
+    void addToBeginning(NodeData node) { // 把当前node，添加到指定node的前面
       Preconditions.checkState(node.next == null);
       Preconditions.checkState(node.prev == null);
       node.next = this.next;
@@ -184,24 +184,24 @@ class BlockReportLeaseManager {
     return ++nextId == 0L ? ++nextId : nextId;
   }
 
-  public synchronized void register(DatanodeDescriptor dn) {
+  public synchronized void register(DatanodeDescriptor dn) { // DN连接NN时，会注册到这里
     registerNode(dn);
   }
 
   private synchronized NodeData registerNode(DatanodeDescriptor dn) {
-    if (nodes.containsKey(dn.getDatanodeUuid())) {
+    if (nodes.containsKey(dn.getDatanodeUuid())) { // 已经注册过
       LOG.info("Can't register DN {} because it is already registered.",
           dn.getDatanodeUuid());
       return null;
     }
     NodeData node = new NodeData(dn.getDatanodeUuid());
-    deferredHead.addToBeginning(node);
+    deferredHead.addToBeginning(node); // 添加到deferred列表head的后面
     nodes.put(dn.getDatanodeUuid(), node);
     LOG.info("Registered DN {} ({}).", dn.getDatanodeUuid(), dn.getXferAddr());
     return node;
   }
 
-  private synchronized void remove(NodeData node) {
+  private synchronized void remove(NodeData node) { // 删除这个node
     if (node.leaseId != 0) {
       numPending--;
       node.leaseId = 0;
@@ -210,19 +210,19 @@ class BlockReportLeaseManager {
     node.removeSelf();
   }
 
-  public synchronized void unregister(DatanodeDescriptor dn) {
+  public synchronized void unregister(DatanodeDescriptor dn) { // 取消注册，NN移除DN时，会调用
     NodeData node = nodes.remove(dn.getDatanodeUuid());
     if (node == null) {
       LOG.info("Can't unregister DN {} because it is not currently " +
           "registered.", dn.getDatanodeUuid());
       return;
     }
-    remove(node);
+    remove(node); // 从所在队列移除
   }
 
-  public synchronized long requestLease(DatanodeDescriptor dn) {
+  public synchronized long requestLease(DatanodeDescriptor dn) { // 获取lease，DN心跳时，会调用
     NodeData node = nodes.get(dn.getDatanodeUuid());
-    if (node == null) {
+    if (node == null) { // 如果没有注册，则注册
       LOG.warn("DN {} ({}) requested a lease even though it wasn't yet " +
           "registered.  Registering now.", dn.getDatanodeUuid(),
           dn.getXferAddr());
@@ -236,9 +236,9 @@ class BlockReportLeaseManager {
                "issue a new one.", Long.toHexString(node.leaseId),
                dn.getDatanodeUuid());
     }
-    remove(node);
+    remove(node); // 从deferred队列移除
     long monotonicNowMs = Time.monotonicNow();
-    pruneExpiredPending(monotonicNowMs);
+    pruneExpiredPending(monotonicNowMs); // 从pending队列中移除过期的node，并添加到deferred队列
     if (numPending >= maxPending) {
       if (LOG.isDebugEnabled()) {
         StringBuilder allLeases = new StringBuilder();
@@ -257,7 +257,7 @@ class BlockReportLeaseManager {
     numPending++;
     node.leaseId = getNextId();
     node.leaseTimeMs = monotonicNowMs;
-    pendingHead.addToEnd(node);
+    pendingHead.addToEnd(node); // 添加到pending队列head的前面
     if (LOG.isDebugEnabled()) {
       LOG.debug("Created a new BR lease 0x{} for DN {}.  numPending = {}",
           Long.toHexString(node.leaseId), dn.getDatanodeUuid(), numPending);
@@ -266,19 +266,19 @@ class BlockReportLeaseManager {
   }
 
   private synchronized boolean pruneIfExpired(long monotonicNowMs,
-                                              NodeData node) {
-    if (monotonicNowMs < node.leaseTimeMs + leaseExpiryMs) {
+                                              NodeData node) { // 判断是否过期，如果过期，则从pending队列中移除，并添加到deferred队列
+    if (monotonicNowMs < node.leaseTimeMs + leaseExpiryMs) { // 还没过期
       return false;
     }
     LOG.info("Removing expired block report lease 0x{} for DN {}.",
         Long.toHexString(node.leaseId), node.datanodeUuid);
     Preconditions.checkState(node.leaseId != 0);
     remove(node);
-    deferredHead.addToBeginning(node);
+    deferredHead.addToBeginning(node); // 添加到deferred队列head的后面
     return true;
   }
 
-  private synchronized void pruneExpiredPending(long monotonicNowMs) {
+  private synchronized void pruneExpiredPending(long monotonicNowMs) { // 把pending队列中过期的node移除，并添加到deferred队列
     NodeData cur = pendingHead.next;
     while (cur != pendingHead) {
       NodeData next = cur.next;
@@ -291,30 +291,30 @@ class BlockReportLeaseManager {
   }
 
   public synchronized boolean checkLease(DatanodeDescriptor dn,
-                                         long monotonicNowMs, long id) {
-    if (id == 0) {
+                                         long monotonicNowMs, long id) { // 检查lease，FBR时，会调用
+    if (id == 0) { // 老版本DN FBR时，lease id为0，新版本DN lease id为0时，不会FBR
       LOG.debug("Datanode {} is using BR lease id 0x0 to bypass " +
           "rate-limiting.", dn.getDatanodeUuid());
       return true;
     }
     NodeData node = nodes.get(dn.getDatanodeUuid());
-    if (node == null) {
+    if (node == null) { // 并没有申请lease
       LOG.info("BR lease 0x{} is not valid for unknown datanode {}",
           Long.toHexString(id), dn.getDatanodeUuid());
       return false;
     }
-    if (node.leaseId == 0) {
+    if (node.leaseId == 0) { // 还未添加到pending队列
       LOG.warn("BR lease 0x{} is not valid for DN {}, because the DN " +
                "is not in the pending set.",
                Long.toHexString(id), dn.getDatanodeUuid());
       return false;
     }
-    if (pruneIfExpired(monotonicNowMs, node)) {
+    if (pruneIfExpired(monotonicNowMs, node)) { // 判断是否过期
       LOG.warn("BR lease 0x{} is not valid for DN {}, because the lease " +
                "has expired.", Long.toHexString(id), dn.getDatanodeUuid());
       return false;
     }
-    if (id != node.leaseId) {
+    if (id != node.leaseId) { // 和预期的lease id不一致
       LOG.warn("BR lease 0x{} is not valid for DN {}.  Expected BR lease 0x{}.",
           Long.toHexString(id), dn.getDatanodeUuid(),
           Long.toHexString(node.leaseId));
@@ -327,7 +327,7 @@ class BlockReportLeaseManager {
     return true;
   }
 
-  public synchronized long removeLease(DatanodeDescriptor dn) {
+  public synchronized long removeLease(DatanodeDescriptor dn) { // 删除lease，处理完一次FBR，会调用
     NodeData node = nodes.get(dn.getDatanodeUuid());
     if (node == null) {
       LOG.info("Can't remove lease for unknown datanode {}",
@@ -335,12 +335,12 @@ class BlockReportLeaseManager {
       return 0;
     }
     long id = node.leaseId;
-    if (id == 0) {
+    if (id == 0) { // 还未添加到pending队列
       LOG.debug("DN {} has no lease to remove.", dn.getDatanodeUuid());
       return 0;
     }
-    remove(node);
-    deferredHead.addToEnd(node);
+    remove(node); // 从pending队列移除
+    deferredHead.addToEnd(node); // 添加到deferred队列head的前面
     if (LOG.isTraceEnabled()) {
       LOG.trace("Removed BR lease 0x{} for DN {}.  numPending = {}",
                 Long.toHexString(id), dn.getDatanodeUuid(), numPending);
