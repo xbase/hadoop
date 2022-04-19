@@ -905,7 +905,7 @@ public class BlockManager {
       final boolean isComplete;
       if (!inSnapshot) {
         final BlockInfoContiguous last = blocks[blocks.length - 1];
-        final long lastPos = last.isComplete()?
+        final long lastPos = last.isComplete()? // 最后一个block开始的位置
             fileSizeExcludeBlocksUnderConstruction - last.getNumBytes()
             : fileSizeExcludeBlocksUnderConstruction;
         lastlb = createLocatedBlock(last, lastPos, mode);
