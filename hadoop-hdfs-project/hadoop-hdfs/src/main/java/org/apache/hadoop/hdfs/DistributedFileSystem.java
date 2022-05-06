@@ -784,11 +784,12 @@ public class DistributedFileSystem extends FileSystem {
     }.resolve(this, absF);
   }
 
+  // 目录下元素太多了，每次获取一部分（默认一次获取1000个），直到把目录下所有的元素都获取下来，才返回
   private FileStatus[] listStatusInternal(Path p) throws IOException {
     String src = getPathName(p);
 
     // fetch the first batch of entries in the directory
-    DirectoryListing thisListing = dfs.listPaths(
+    DirectoryListing thisListing = dfs.listPaths( // 访问NN
         src, HdfsFileStatus.EMPTY_NAME);
 
     if (thisListing == null) { // the directory does not exist
@@ -869,6 +870,7 @@ public class DistributedFileSystem extends FileSystem {
       @Override
       public RemoteIterator<LocatedFileStatus> doCall(final Path p)
           throws IOException, UnresolvedLinkException {
+        // 获取目录下的文件信息（包含block信息），根据hasNext按需再请求NN
         return new DirListingIterator<LocatedFileStatus>(p, filter, true);
       }
 

@@ -100,7 +100,7 @@ class ChRootedFileSystem extends FilterFileSystem {
    */
   public ChRootedFileSystem(final URI uri, Configuration conf)
       throws IOException {
-    super(FileSystem.get(uri, conf));
+    super(FileSystem.get(uri, conf)); // 获取一个真实FS
     String pathString = uri.getPath();
     if (pathString.isEmpty()) {
       pathString = "/";

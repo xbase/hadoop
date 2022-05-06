@@ -219,7 +219,7 @@ abstract class InodeTree<T> {
       INode<T> nextInode = curInode.resolveInternal(iPath);
       if (nextInode == null) {
         INodeDir<T> newDir = curInode.addDir(iPath, aUgi);
-        newDir.InodeDirFs = getTargetFileSystem(newDir);
+        newDir.InodeDirFs = getTargetFileSystem(newDir); // 只读FS
         nextInode = newDir;
       }
       if (nextInode instanceof INodeLink) {
@@ -259,7 +259,7 @@ abstract class InodeTree<T> {
           getTargetFileSystem(targetsListURI), targetsListURI);
     } else {
       newLink = new INodeLink<T>(fullPath, aUgi,
-          getTargetFileSystem(new URI(target)), new URI(target));
+          getTargetFileSystem(new URI(target)), new URI(target)); // 创建一个真实FS
     }
     curInode.addLink(iPath, newLink);
     mountPoints.add(new MountPoint<T>(src, newLink));
@@ -302,7 +302,7 @@ abstract class InodeTree<T> {
     }
     homedirPrefix = ConfigUtil.getHomeDirValue(config, vName);
     root = new INodeDir<T>("/", UserGroupInformation.getCurrentUser());
-    root.InodeDirFs = getTargetFileSystem(root);
+    root.InodeDirFs = getTargetFileSystem(root); // 跟节点只读FS
     root.isRoot = true;
     
     final String mtPrefix = Constants.CONFIG_VIEWFS_PREFIX + "." + 
@@ -313,7 +313,7 @@ abstract class InodeTree<T> {
     final UserGroupInformation ugi = UserGroupInformation.getCurrentUser();
     for (Entry<String, String> si : config) {
       final String key = si.getKey();
-      if (key.startsWith(mtPrefix)) {
+      if (key.startsWith(mtPrefix)) { // conf中配置的挂载点
         gotMountTableEntry = true;
         boolean isMergeLink = false;
         String src = key.substring(mtPrefix.length());

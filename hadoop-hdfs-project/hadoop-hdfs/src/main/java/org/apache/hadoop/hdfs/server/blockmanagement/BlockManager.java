@@ -1201,7 +1201,7 @@ public class BlockManager {
         (numberOfReplicas.liveReplicas() + numberOfReplicas.corruptReplicas()) >
         bc.getBlockReplication();
     boolean corruptedDuringWrite = minReplicationSatisfied && // 发现 正在写的副本 是损坏的
-        (b.stored.getGenerationStamp() > b.corrupted.getGenerationStamp());
+        (b.stored.getGenerationStamp() > b.corrupted.getGenerationStamp()); // GS不对这种corrupted情况，只需要满足最小副本数，就可以被删除
     // case 1: have enough number of live replicas
     // case 2: corrupted replicas + live replicas > Replication factor
     // case 3: Block is marked corrupt due to failure while writing. In this

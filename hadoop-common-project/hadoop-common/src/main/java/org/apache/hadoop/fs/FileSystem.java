@@ -703,8 +703,8 @@ public abstract class FileSystem extends Configured implements Closeable {
     if (p == null) {
       throw new NullPointerException();
     }
-    FileStatus file = getFileStatus(p);
-    return getFileBlockLocations(file, start, len);
+    FileStatus file = getFileStatus(p); // 获取每个文件的信息
+    return getFileBlockLocations(file, start, len); // 获取文件的block信息
   }
   
   /**
@@ -1726,7 +1726,7 @@ public abstract class FileSystem extends Configured implements Closeable {
         }
         FileStatus result = stats[i++];
         BlockLocation[] locs = result.isFile() ?
-            getFileBlockLocations(result.getPath(), 0, result.getLen()) :
+            getFileBlockLocations(result.getPath(), 0, result.getLen()) : // 获取每个文件的block信息
             null;
         return new LocatedFileStatus(result, locs);
       }
@@ -1816,7 +1816,7 @@ public abstract class FileSystem extends Configured implements Closeable {
           curFile = stat;
         } else if (recursive) { // directory
           itors.push(curItor);
-          curItor = listLocatedStatus(stat.getPath());
+          curItor = listLocatedStatus(stat.getPath()); // 查询子目录
         }
       }
 
