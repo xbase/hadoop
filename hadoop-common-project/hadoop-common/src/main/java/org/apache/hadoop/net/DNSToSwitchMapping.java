@@ -50,7 +50,7 @@ public interface DNSToSwitchMapping {
    * @return list of resolved network paths.
    * If <i>names</i> is empty, the returned list is also empty
    */
-  public List<String> resolve(List<String> names);
+  public List<String> resolve(List<String> names); // 解析 ip -> topology
 
   /**
    * Reload all of the cached mappings.
@@ -58,7 +58,7 @@ public interface DNSToSwitchMapping {
    * If there is a cache, this method will clear it, so that future accesses
    * will get a chance to see the new data.
    */
-  public void reloadCachedMappings();
+  public void reloadCachedMappings(); // 重新加载topo文件
   
   /**
    * Reload cached mappings on specific nodes.
@@ -66,5 +66,5 @@ public interface DNSToSwitchMapping {
    * If there is a cache on these nodes, this method will clear it, so that 
    * future accesses will see updated data.
    */
-  public void reloadCachedMappings(List<String> names);
+  public void reloadCachedMappings(List<String> names); // 重新加载指定的topo
 }

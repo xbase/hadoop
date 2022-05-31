@@ -232,7 +232,7 @@ public class IPCLoggerChannel implements AsyncLogger {
             QJournalProtocolPB pbproxy = RPC.getProxy(
                 QJournalProtocolPB.class,
                 RPC.getProtocolVersion(QJournalProtocolPB.class),
-                addr, confCopy);
+                addr, confCopy); // 没有设置读超时，默认是0
             return new QJournalProtocolTranslatorPB(pbproxy);
           }
         });

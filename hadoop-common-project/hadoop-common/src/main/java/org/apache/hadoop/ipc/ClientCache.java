@@ -52,7 +52,7 @@ public class ClientCache {
     // connection pooling and leak sockets, or (b) use the same timeout for all
     // configurations.  Since the IPC is usually intended globally, not
     // per-job, we choose (a).
-    Client client = clients.get(factory);
+    Client client = clients.get(factory); // factory为key，factory默认为DefaultSocketFactory，整个运行期间应该不会变
     if (client == null) {
       client = new Client(valueClass, conf, factory);
       clients.put(factory, client);

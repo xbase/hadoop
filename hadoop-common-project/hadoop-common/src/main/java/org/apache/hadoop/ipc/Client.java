@@ -125,6 +125,10 @@ public class Client {
   // 连接列表，类似于连接池
   // 每个连接有一个ID，如果ID相同可以复用连接
   // 连接空闲时间如果达到maxIdleTime，会被关闭，并从connections中移除
+
+  // 一个Client对象共享一个连接池(connections)
+  // 对于同一个RpcEngine类型，同一个SocketFactory类型，复用一个client对象，SocketFactory默认为DefaultSocketFactory
+  // 所以整个进程只有一个Client对象，并且共享一个连接池(connections)
   private Hashtable<ConnectionId, Connection> connections =
     new Hashtable<ConnectionId, Connection>();
 
@@ -513,7 +517,7 @@ public class Client {
           try {
             return super.read();
           } catch (SocketTimeoutException e) {
-            handleTimeout(e);
+            handleTimeout(e); // 超时之后，才会走这个逻辑
           }
         } while (true);
       }
@@ -530,7 +534,7 @@ public class Client {
           try {
             return super.read(buf, off, len);
           } catch (SocketTimeoutException e) {
-            handleTimeout(e);
+            handleTimeout(e); // 超时之后，才会走这个逻辑
           }
         } while (true);
       }
@@ -623,7 +627,7 @@ public class Client {
           }
 
           // 建立连接
-          NetUtils.connect(this.socket, server, connectionTimeout);
+          NetUtils.connect(this.socket, server, connectionTimeout); // 连接超时，默认20s
           if (rpcTimeout > 0) {
             pingInterval = rpcTimeout;  // rpcTimeout overwrites pingInterval
           }
