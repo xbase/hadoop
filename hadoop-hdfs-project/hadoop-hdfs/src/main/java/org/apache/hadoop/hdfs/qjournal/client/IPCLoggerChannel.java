@@ -168,7 +168,7 @@ public class IPCLoggerChannel implements AsyncLogger {
     
     this.queueSizeLimitBytes = 1024 * 1024 * conf.getInt(
         DFSConfigKeys.DFS_QJOURNAL_QUEUE_SIZE_LIMIT_KEY,
-        DFSConfigKeys.DFS_QJOURNAL_QUEUE_SIZE_LIMIT_DEFAULT);
+        DFSConfigKeys.DFS_QJOURNAL_QUEUE_SIZE_LIMIT_DEFAULT); // 默认：10M
     
     singleThreadExecutor = MoreExecutors.listeningDecorator(
         createSingleThreadExecutor());
@@ -364,7 +364,7 @@ public class IPCLoggerChannel implements AsyncLogger {
       final long segmentTxId, final long firstTxnId,
       final int numTxns, final byte[] data) {
     try {
-      reserveQueueSpace(data.length);
+      reserveQueueSpace(data.length); // 增加queue size
     } catch (LoggerTooFarBehindException e) {
       return Futures.immediateFailedFuture(e);
     }
@@ -378,7 +378,7 @@ public class IPCLoggerChannel implements AsyncLogger {
       ret = singleThreadExecutor.submit(new Callable<Void>() {
         @Override
         public Void call() throws IOException {
-          throwIfOutOfSync();
+          throwIfOutOfSync(); // 如果已经out of sync，保持和JN heartbeat，并抛异常
 
           long rpcSendTimeNanos = System.nanoTime();
           try {
@@ -390,6 +390,8 @@ public class IPCLoggerChannel implements AsyncLogger {
                 "write txns " + firstTxnId + "-" + (firstTxnId + numTxns - 1) +
                 ". Will try to write to this JN again after the next " +
                 "log roll.", e);
+            // 只有抛IOException时，才会标记outOfSync
+            // 当开启新的segment的时候，又会把设置outOfSync=false
             // 出现异常，设置outOfSync=true，不会再向此JN写editlog，直到开启新的segment
             synchronized (IPCLoggerChannel.this) {
               outOfSync = true;
@@ -421,12 +423,12 @@ public class IPCLoggerChannel implements AsyncLogger {
       if (ret == null) {
         // it didn't successfully get submitted,
         // so adjust the queue size back down.
-        unreserveQueueSpace(data.length);
+        unreserveQueueSpace(data.length); // 减少queue size
       } else {
         // It was submitted to the queue, so adjust the length
         // once the call completes, regardless of whether it
         // succeeds or fails.
-        Futures.addCallback(ret, new FutureCallback<Void>() {
+        Futures.addCallback(ret, new FutureCallback<Void>() { // 减少queue size
           @Override
           public void onFailure(Throwable t) {
             unreserveQueueSpace(data.length);
@@ -442,7 +444,7 @@ public class IPCLoggerChannel implements AsyncLogger {
     return ret;
   }
 
-  private void throwIfOutOfSync()
+  private void throwIfOutOfSync() // 如果out of sync，保持和JN heartbeat，并抛异常
       throws JournalOutOfSyncException, IOException {
     if (isOutOfSync()) {
       // Even if we're out of sync, it's useful to send an RPC
@@ -477,16 +479,16 @@ public class IPCLoggerChannel implements AsyncLogger {
   }
 
   private synchronized void reserveQueueSpace(int size)
-      throws LoggerTooFarBehindException {
+      throws LoggerTooFarBehindException { // 增加queue size
     Preconditions.checkArgument(size >= 0);
-    if (queuedEditsSizeBytes + size > queueSizeLimitBytes &&
+    if (queuedEditsSizeBytes + size > queueSizeLimitBytes && // 默认：10M
         queuedEditsSizeBytes > 0) {
       throw new LoggerTooFarBehindException();
     }
     queuedEditsSizeBytes += size;
   }
   
-  private synchronized void unreserveQueueSpace(int size) {
+  private synchronized void unreserveQueueSpace(int size) { // 减少queue size
     Preconditions.checkArgument(size >= 0);
     queuedEditsSizeBytes -= size;
   }
@@ -689,7 +691,7 @@ public class IPCLoggerChannel implements AsyncLogger {
         sb.append(" (never written");
       }
     }
-    if (outOfSync) {
+    if (outOfSync) { // 说明本segment还没有写完
       sb.append(" (will try to re-sync on next segment)");
     }
   }

@@ -394,6 +394,7 @@ public class JournalSet implements JournalManager {
       JournalClosure closure, String status) throws IOException{
 
     List<JournalAndStream> badJAS = Lists.newLinkedList();
+    // jas代表的是一种edit log实现，比如edit log文件、JN
     for (JournalAndStream jas : journals) {
       try {
         closure.apply(jas);
@@ -419,9 +420,10 @@ public class JournalSet implements JournalManager {
         }
       }
     }
+    // jas报错，摘掉
     disableAndReportErrorOnJournals(badJAS);
     if (!NameNodeResourcePolicy.areResourcesAvailable(journals,
-        minimumRedundantJournals)) {
+        minimumRedundantJournals)) { // 至少得有一种edit log可用
       String message = status + " failed for too many journals";
       LOG.error("Error: " + message);
       throw new IOException(message);
@@ -521,7 +523,7 @@ public class JournalSet implements JournalManager {
 
     @Override
     protected void flushAndSync(final boolean durable) throws IOException {
-      mapJournalsAndReportErrors(new JournalClosure() {
+      mapJournalsAndReportErrors(new JournalClosure() { // 多种类型的journal实现
         @Override
         public void apply(JournalAndStream jas) throws IOException {
           if (jas.isActive()) {

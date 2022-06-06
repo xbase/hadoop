@@ -81,10 +81,10 @@ class QuorumOutputStream extends EditLogOutputStream {
 
   @Override
   protected void flushAndSync(boolean durable) throws IOException {
-    int numReadyBytes = buf.countReadyBytes();
+    int numReadyBytes = buf.countReadyBytes(); // 需要sync的字节数
     if (numReadyBytes > 0) {
-      int numReadyTxns = buf.countReadyTxns();
-      long firstTxToFlush = buf.getFirstReadyTxId();
+      int numReadyTxns = buf.countReadyTxns(); // 需要sync的edit记录数
+      long firstTxToFlush = buf.getFirstReadyTxId(); // 第一个edit tx id
 
       assert numReadyTxns > 0;
 
@@ -98,13 +98,13 @@ class QuorumOutputStream extends EditLogOutputStream {
       DataOutputBuffer bufToSend = new DataOutputBuffer(numReadyBytes);
       buf.flushTo(bufToSend);
       assert bufToSend.getLength() == numReadyBytes;
-      byte[] data = bufToSend.getData();
+      byte[] data = bufToSend.getData(); // 需要sync的数据
       assert data.length == bufToSend.getLength();
 
-      QuorumCall<AsyncLogger, Void> qcall = loggers.sendEdits(
+      QuorumCall<AsyncLogger, Void> qcall = loggers.sendEdits( // 发送数据
           segmentTxId, firstTxToFlush,
           numReadyTxns, data);
-      loggers.waitForWriteQuorum(qcall, writeTimeoutMs, "sendEdits");
+      loggers.waitForWriteQuorum(qcall, writeTimeoutMs, "sendEdits"); // 等待结果
       
       // Since we successfully wrote this batch, let the loggers know. Any future
       // RPCs will thus let the loggers know of the most recent transaction, even
