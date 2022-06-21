@@ -328,6 +328,9 @@ public class EditLogTailer {
           // Prevent reading of name system while being modified. The full
           // name system lock will be acquired to further block even the block
           // state updates.
+          // 由于 主备切换时，会停止standby的ckpt线程和tail edit线程
+          // 所以 ckpt线程和taild edit线程都是可中断(interrupt)的
+          // lockInterruptibly()可接受中断信号，被中断时，抛InterruptedException(类似于Thread.sleep()被中断)
           namesystem.cpLockInterruptibly();
           try {
             doTailEdits(); // 消费edit

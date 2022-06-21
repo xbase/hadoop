@@ -227,6 +227,10 @@ public interface ClientProtocol {
    * RuntimeExceptions:
    * @throws UnsupportedOperationException if append is not supported
    */
+  // client append 流程：
+  // 1、append
+  // 2、updateBlockForPipeline 需要更新最后一个未写满block的GS
+  // 3、updatePipeline pipeline更新成功，通知NN
   @AtMostOnce
   public LastBlockWithStatus append(String src, String clientName,
       EnumSetWritable<CreateFlag> flag) throws AccessControlException,
@@ -824,6 +828,7 @@ public interface ClientProtocol {
    * @throws AccessControlException if the superuser privilege is violated.
    * @throws IOException if image creation failed.
    */
+  // 只有active在safemode时，可以调用
   @AtMostOnce
   public void saveNamespace() throws AccessControlException, IOException;
 
@@ -1101,6 +1106,8 @@ public interface ClientProtocol {
    * @return a located block with a new generation stamp and an access token
    * @throws IOException if any error occurs
    */
+  // 给block申请一个新的GS
+  // 用于pipeline recovery 和 append
   @Idempotent
   public LocatedBlock updateBlockForPipeline(ExtendedBlock block,
       String clientName) throws IOException;
@@ -1114,6 +1121,7 @@ public interface ClientProtocol {
    * @param newNodes datanodes in the pipeline
    * @throws IOException if any error occurs
    */
+  // pipe recovery成功，向NN更新数据块信息
   @AtMostOnce
   public void updatePipeline(String clientName, ExtendedBlock oldBlock, 
       ExtendedBlock newBlock, DatanodeID[] newNodes, String[] newStorageIDs)

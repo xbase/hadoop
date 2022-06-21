@@ -3296,6 +3296,7 @@ public class BlockManager {
         break;
         // addBlock、updatePipeline时，edit log中没有block的location信息
         // 这时standby不知道最后一个uc block的location信息，需要通过receiving消息，告知standby
+        // updatePipeline时，DN没有发送receiving消息
         // 由于上面这个case，updatePipeline时，可能会出现NN期望的location和实际location不一致的问题
       case RECEIVING_BLOCK: // DN正在接收的replica（RBW状态）
         receiving++;

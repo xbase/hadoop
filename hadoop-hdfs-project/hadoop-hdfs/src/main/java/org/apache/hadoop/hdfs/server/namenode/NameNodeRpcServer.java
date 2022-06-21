@@ -643,7 +643,7 @@ class NameNodeRpcServer implements NamenodeProtocols {
     }
     namesystem.checkOperation(OperationCategory.WRITE); // 主备服务的操作检查
     CacheEntryWithPayload cacheEntry = RetryCache.waitForCompletion(retryCache,
-        null); // TODOWXY
+        null); // 有些请求不是幂等的，但是允许retry，所以把上一次执行的结果返回（callId相同的请求，说明是retry请求）
     if (cacheEntry != null && cacheEntry.isSuccess()) {
       return (LastBlockWithStatus) cacheEntry.getPayload();
     }

@@ -350,7 +350,7 @@ public class RetryCache { // 如果发现非幂等RPC的重试请求，将把之
 
   /** Static method that provides null check for retryCache */
   public static CacheEntryWithPayload waitForCompletion(RetryCache cache,
-      Object payload) {
+      Object payload) { // 有些请求不是幂等的，但是允许retry，所以把上一次执行的结果返回（callId相同的请求，说明是retry请求）
     if (skipRetryCache()) {
       return null;
     }

@@ -2695,7 +2695,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       }
       // Opening an existing file for append - may need to recover lease.
       recoverLeaseInternal(RecoverLeaseOp.APPEND_FILE,
-          iip, src, holder, clientMachine, false); // 可能触发recover lease
+          iip, src, holder, clientMachine, false); // 如果lease过期，则recover lease
       
       final BlockInfoContiguous lastBlock = myFile.getLastBlock();
       // Check that the block has at least minimum replication.

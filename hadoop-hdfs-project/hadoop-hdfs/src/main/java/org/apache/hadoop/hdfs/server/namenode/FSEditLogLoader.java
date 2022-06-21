@@ -194,7 +194,7 @@ public class FSEditLogLoader {
             }
           } catch (Throwable e) {
             // Handle a problem with our input
-            check203UpgradeFailure(in.getVersion(true), e);
+            check203UpgradeFailure(in.getVersion(true), e); // 每个edit log文件都有一个version
             String errorMessage =
               formatEditLogReplayError(in, recentOpcodeOffsets, expectedTxId);
             FSImage.LOG.error(errorMessage, e);
