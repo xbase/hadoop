@@ -55,7 +55,7 @@ public class CachedDNSToSwitchMapping extends AbstractDNSToSwitchMapping {
    * @param names a list of hostnames to probe for being cached
    * @return the hosts from 'names' that have not been cached previously
    */
-  private List<String> getUncachedHosts(List<String> names) {
+  private List<String> getUncachedHosts(List<String> names) { // 没有在cache中的hostname
     // find out all names without cached resolved location
     List<String> unCachedHosts = new ArrayList<String>(names.size());
     for (String name : names) {
@@ -75,7 +75,7 @@ public class CachedDNSToSwitchMapping extends AbstractDNSToSwitchMapping {
    * at index(i) is the resolved value for the entry in uncachedHosts[i]
    */
   private void cacheResolvedHosts(List<String> uncachedHosts, 
-      List<String> resolvedHosts) {
+      List<String> resolvedHosts) { // 添加到cache中
     // Cache the result
     if (resolvedHosts != null) {
       for (int i=0; i<uncachedHosts.size(); i++) {
@@ -89,7 +89,7 @@ public class CachedDNSToSwitchMapping extends AbstractDNSToSwitchMapping {
    * @return the cached resolution of the list of hostnames/addresses.
    *  or null if any of the names are not currently in the cache
    */
-  private List<String> getCachedHosts(List<String> names) {
+  private List<String> getCachedHosts(List<String> names) { // 已经在cache中的hostname
     List<String> result = new ArrayList<String>(names.size());
     // Construct the result
     for (String name : names) {
@@ -106,21 +106,21 @@ public class CachedDNSToSwitchMapping extends AbstractDNSToSwitchMapping {
   @Override
   public List<String> resolve(List<String> names) {
     // normalize all input names to be in the form of IP addresses
-    names = NetUtils.normalizeHostNames(names);
+    names = NetUtils.normalizeHostNames(names); // 解析为hostname
 
     List <String> result = new ArrayList<String>(names.size());
     if (names.isEmpty()) {
       return result;
     }
 
-    List<String> uncachedHosts = getUncachedHosts(names);
+    List<String> uncachedHosts = getUncachedHosts(names); // 未缓存的hostname
 
     // Resolve the uncached hosts
     List<String> resolvedHosts = rawMapping.resolve(uncachedHosts);
     //cache them
-    cacheResolvedHosts(uncachedHosts, resolvedHosts);
+    cacheResolvedHosts(uncachedHosts, resolvedHosts); // 添加到缓存中
     //now look up the entire list in the cache
-    return getCachedHosts(names);
+    return getCachedHosts(names); // 再从缓存中获取一次，并返回
 
   }
 
@@ -151,12 +151,12 @@ public class CachedDNSToSwitchMapping extends AbstractDNSToSwitchMapping {
   }
   
   @Override
-  public void reloadCachedMappings() {
+  public void reloadCachedMappings() { // 清空缓存
     cache.clear();
   }
 
   @Override
-  public void reloadCachedMappings(List<String> names) {
+  public void reloadCachedMappings(List<String> names) { // 移除指定hostname的缓存
     for (String name : names) {
       cache.remove(name);
     }

@@ -90,7 +90,7 @@ public abstract class AbstractDNSToSwitchMapping
    *
    * @return true if the mapping thinks that it is on a single switch
    */
-  public boolean isSingleSwitch() {
+  public boolean isSingleSwitch() { // 是否只有一个机架
     return false;
   }
 

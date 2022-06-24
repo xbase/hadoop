@@ -43,10 +43,11 @@ import com.google.common.annotations.VisibleForTesting;
 @InterfaceAudience.Private
 public class EditLogFileOutputStream extends EditLogOutputStream {
   private static final Log LOG = LogFactory.getLog(EditLogFileOutputStream.class);
-  public static final int MIN_PREALLOCATION_LENGTH = 1024 * 1024;
+  public static final int MIN_PREALLOCATION_LENGTH = 1024 * 1024; // 1MB
 
   private File file;
   private FileOutputStream fp; // file stream for storing edit logs
+  // FileChannel详解 https://www.cnblogs.com/lxyit/p/9170741.html
   private FileChannel fc; // channel of the file stream for sync
   private EditsDoubleBuffer doubleBuf;
   static final ByteBuffer fill = ByteBuffer.allocateDirect(MIN_PREALLOCATION_LENGTH);
@@ -81,20 +82,20 @@ public class EditLogFileOutputStream extends EditLogOutputStream {
 
     file = name;
     doubleBuf = new EditsDoubleBuffer(size);
-    RandomAccessFile rp;
+    RandomAccessFile rp; // 创建edit log文件
     if (shouldSyncWritesAndSkipFsync) {
       rp = new RandomAccessFile(name, "rws");
     } else {
       rp = new RandomAccessFile(name, "rw");
     }
     fp = new FileOutputStream(rp.getFD()); // open for append
-    fc = rp.getChannel();
+    fc = rp.getChannel(); // 比FileOutputStream更高级的文件读写实现（NIO）
     fc.position(fc.size());
   }
 
   @Override
   public void write(FSEditLogOp op) throws IOException {
-    doubleBuf.writeOp(op);
+    doubleBuf.writeOp(op); // 保存到buf中
   }
 
   /**
@@ -107,7 +108,7 @@ public class EditLogFileOutputStream extends EditLogOutputStream {
    * */
   @Override
   public void writeRaw(byte[] bytes, int offset, int length) throws IOException {
-    doubleBuf.writeRaw(bytes, offset, length);
+    doubleBuf.writeRaw(bytes, offset, length); // 保存到buf中
   }
 
   /**
@@ -132,7 +133,7 @@ public class EditLogFileOutputStream extends EditLogOutputStream {
    */
   @VisibleForTesting
   public static void writeHeader(int layoutVersion, DataOutputStream out)
-      throws IOException {
+      throws IOException { // 文件头
     out.writeInt(layoutVersion);
     LayoutFlags.write(out);
   }
@@ -184,7 +185,7 @@ public class EditLogFileOutputStream extends EditLogOutputStream {
    */
   @Override
   public void setReadyToFlush() throws IOException {
-    doubleBuf.setReadyToFlush();
+    doubleBuf.setReadyToFlush(); // 交换缓冲区
   }
 
   /**
@@ -196,13 +197,14 @@ public class EditLogFileOutputStream extends EditLogOutputStream {
     if (fp == null) {
       throw new IOException("Trying to use aborted output stream");
     }
-    if (doubleBuf.isFlushed()) {
+    if (doubleBuf.isFlushed()) { // 当前缓存区为空
       LOG.info("Nothing to flush");
       return;
     }
-    preallocate(); // preallocate file if necessary
-    doubleBuf.flushTo(fp);
+    preallocate(); // preallocate file if necessary 先在edit log文件中填充OP_INVALID字符
+    doubleBuf.flushTo(fp); // edit log写到文件中
     if (durable && !shouldSkipFsyncForTests && !shouldSyncWritesAndSkipFsync) {
+      // 强制将FileChannel中的数据刷入文件中，false表示只对文件内容更新写入到文件中，true表示更新的内容和元信息都写入，这个通常至少需要一次甚至更多的I/O。
       fc.force(false); // metadata updates not needed
     }
   }
@@ -212,15 +214,16 @@ public class EditLogFileOutputStream extends EditLogOutputStream {
    */
   @Override
   public boolean shouldForceSync() {
-    return doubleBuf.shouldForceSync();
+    return doubleBuf.shouldForceSync(); // 达到buffer上限
   }
 
-  // 如果editlog文件大小不够，则扩充文件大小
+  // 先在edit log文件中填充OP_INVALID字符
   private void preallocate() throws IOException {
     long position = fc.position();
     long size = fc.size();
     int bufSize = doubleBuf.getReadyBuf().getLength();
-    // 判断需要扩充的大小
+    // size - position 剩余空间
+    // bufSize - (size - position) 还需要多少空间
     long need = bufSize - (size - position);
     if (need <= 0) {
       return;
@@ -230,7 +233,7 @@ public class EditLogFileOutputStream extends EditLogOutputStream {
     long fillCapacity = fill.capacity();
     while (need > 0) {
       fill.position(0);
-      IOUtils.writeFully(fc, fill, size);
+      IOUtils.writeFully(fc, fill, size); // 在文件末尾，填充1MB OP_INVALID 字符
       need -= fillCapacity;
       size += fillCapacity;
       total += fillCapacity;

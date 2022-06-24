@@ -66,5 +66,5 @@ public interface DNSToSwitchMapping {
    * If there is a cache on these nodes, this method will clear it, so that 
    * future accesses will see updated data.
    */
-  public void reloadCachedMappings(List<String> names); // 重新加载指定的topo
+  public void reloadCachedMappings(List<String> names); // 重新加载指定ip的topo
 }

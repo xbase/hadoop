@@ -46,7 +46,7 @@ import org.apache.hadoop.security.KerberosInfo;
     serverPrincipal = DFSConfigKeys.DFS_JOURNALNODE_KERBEROS_PRINCIPAL_KEY,
     clientPrincipal = DFSConfigKeys.DFS_NAMENODE_KERBEROS_PRINCIPAL_KEY)
 @InterfaceAudience.Private
-public interface QJournalProtocol {
+public interface QJournalProtocol { // JN Server接口
   public static final long versionID = 1L;
 
   /**

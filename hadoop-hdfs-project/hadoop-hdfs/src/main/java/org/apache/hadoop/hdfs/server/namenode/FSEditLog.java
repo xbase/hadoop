@@ -608,7 +608,7 @@ public class FSEditLog implements LogsPurgeable {
           //
           // If this transaction was already flushed, then nothing to do
           //
-          if (mytxid <= synctxid) {
+          if (mytxid <= synctxid) { // 说明mytxid已经被写到edit文件中
             numTransactionsBatchedInSync++;
             if (metrics != null) {
               // Metrics is non-null only when used inside name node
@@ -619,7 +619,7 @@ public class FSEditLog implements LogsPurgeable {
      
           // now, this thread will do the sync
           syncStart = txid;
-          isSyncRunning = true;
+          isSyncRunning = true; // 确保只能有一个线程在执行sync
           sync = true;
   
           // swap buffers
@@ -627,7 +627,7 @@ public class FSEditLog implements LogsPurgeable {
             if (journalSet.isEmpty()) {
               throw new IOException("No journals available to flush");
             }
-            editLogStream.setReadyToFlush();
+            editLogStream.setReadyToFlush(); // 交换缓冲区
           } catch (IOException e) {
             final String msg =
                 "Could not sync enough journals to persistent storage " +

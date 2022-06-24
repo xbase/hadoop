@@ -265,7 +265,7 @@ public class ScriptBasedMapping extends CachedDNSToSwitchMapping {
      * @return true iff there is no script
      */
     @Override
-    public boolean isSingleSwitch() {
+    public boolean isSingleSwitch() { // 是否只有一个机架
       return scriptName == null;
     }
 
