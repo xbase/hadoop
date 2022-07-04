@@ -1045,7 +1045,7 @@ public abstract class Server {
       } catch (Throwable e) {
         populateResponseParamsOnError(e, responseParams);
       }
-      if (!isResponseDeferred()) {
+      if (!isResponseDeferred()) { // 不需要 延迟response 的请求
         long deltaNanos = Time.monotonicNowNanos() - startNanos;
         ProcessingDetails details = getProcessingDetails();
 

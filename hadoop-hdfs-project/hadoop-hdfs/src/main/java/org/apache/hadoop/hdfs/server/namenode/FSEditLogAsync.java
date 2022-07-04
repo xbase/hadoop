@@ -121,10 +121,10 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
   void logEdit(final FSEditLogOp op) {
     assert isOpenForWrite();
 
-    Edit edit = getEditInstance(op);
+    Edit edit = getEditInstance(op); // 包装一条edit log op
     THREAD_EDIT.set(edit);
     synchronized(this) {
-      enqueueEdit(edit);
+      enqueueEdit(edit); // 放入BlockingQueue中
       beginTransaction(op);
     }
   }
@@ -186,7 +186,7 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
     }
   };
 
-  private void enqueueEdit(Edit edit) {
+  private void enqueueEdit(Edit edit) { // 放入BlockingQueue中
     if (LOG.isDebugEnabled()) {
       LOG.debug("logEdit " + edit);
     }
@@ -194,7 +194,7 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
       // not checking for overflow yet to avoid penalizing performance of
       // the common case.  if there is persistent overflow, a mutex will be
       // use to throttle contention on the queue.
-      if (!editPendingQ.offer(edit)) {
+      if (!editPendingQ.offer(edit)) { // 插入失败，说明queue满了
         Preconditions.checkState(
             isSyncThreadAlive(), "sync thread is not alive");
         long now = Time.monotonicNow();
@@ -202,7 +202,7 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
           lastFull = now;
           LOG.info("Edit pending queue is full");
         }
-        if (Thread.holdsLock(this)) {
+        if (Thread.holdsLock(this)) { // 持有当前对象的锁
           // if queue is full, synchronized caller must immediately relinquish
           // the monitor before re-offering to avoid deadlock with sync thread
           // which needs the monitor to write transactions.
@@ -214,7 +214,7 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
           } finally {
             overflowMutex.release(permits);
           }
-        } else {
+        } else { // 没有持有当前对象的锁
           // mutex will throttle contention during persistent overflow.
           overflowMutex.acquire();
           try {
@@ -230,8 +230,10 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
     }
   }
 
-  private Edit dequeueEdit() throws InterruptedException {
+  private Edit dequeueEdit() throws InterruptedException { // 获取一天Edit记录
     // only block for next edit if no pending syncs.
+    // take 如果queue为空，则阻塞
+    // poll 如果queue为空，则返回null
     return syncWaitQ.isEmpty() ? editPendingQ.take() : editPendingQ.poll();
   }
 
@@ -241,10 +243,10 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
       while (true) {
         NameNodeMetrics metrics = NameNode.getNameNodeMetrics();
         boolean doSync;
-        Edit edit = dequeueEdit();
+        Edit edit = dequeueEdit(); // 获取一条Edit记录
         if (edit != null) {
           // sync if requested by edit log.
-          doSync = edit.logEdit();
+          doSync = edit.logEdit(); // 写edit log
           syncWaitQ.add(edit);
           metrics.setPendingEditsCount(editPendingQ.size() + 1);
         } else {
@@ -257,7 +259,7 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
           // relying on ExitUtil.terminate need to see the exception.
           RuntimeException syncEx = null;
           try {
-            logSync(getLastWrittenTxId());
+            logSync(getLastWrittenTxId()); // sync edit log
           } catch (RuntimeException ex) {
             syncEx = ex;
           }
@@ -279,11 +281,11 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
     ExitUtil.terminate(1, message);
   }
 
-  private Edit getEditInstance(FSEditLogOp op) {
+  private Edit getEditInstance(FSEditLogOp op) { // 包装一条edit log op
     final Edit edit;
     final Server.Call rpcCall = Server.getCurCall().get();
     // only rpc calls not explicitly sync'ed on the log will be async.
-    if (rpcCall != null && !Thread.holdsLock(this)) {
+    if (rpcCall != null && !Thread.holdsLock(this)) { // 是否持有这个对象的锁，持锁的方法有:startLogSegmentAndWriteHeaderTxn、endCurrentLogSegment等
       edit = new RpcEdit(this, op, rpcCall);
     } else {
       edit = new SyncEdit(this, op);
@@ -379,7 +381,9 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
     public void logSyncNotify(RuntimeException syncEx) {
       try {
         if (syncEx == null) {
-          call.sendResponse();
+          // 什么时候set response
+          // 什么时候设置的 deferredResponse
+          call.sendResponse(); // 发送响应
         } else {
           call.abortResponse(syncEx);
         }

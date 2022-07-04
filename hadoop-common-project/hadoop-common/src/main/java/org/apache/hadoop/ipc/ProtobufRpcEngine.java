@@ -466,7 +466,7 @@ public class ProtobufRpcEngine implements RpcEngine {
         // Check if this needs to be a deferred response,
         // by checking the ThreadLocal callback being set
         if (currentCallback.get() != null) {
-          currentCall.deferResponse();
+          currentCall.deferResponse(); // 延迟发送响应
           currentCallback.set(null);
           return null;
         }
