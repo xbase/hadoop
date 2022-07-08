@@ -828,7 +828,7 @@ public interface ClientProtocol {
    * @throws AccessControlException if the superuser privilege is violated.
    * @throws IOException if image creation failed.
    */
-  // 只有active在safemode时，可以调用
+  // 在safemode时，可以调用，active和standby都能执行
   @AtMostOnce
   public void saveNamespace() throws AccessControlException, IOException;
 

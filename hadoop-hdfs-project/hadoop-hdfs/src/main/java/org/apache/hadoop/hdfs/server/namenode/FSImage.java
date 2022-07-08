@@ -1098,7 +1098,7 @@ public class FSImage implements Closeable {
     LOG.info("Save namespace ...");
     storage.attemptRestoreRemovedStorage();
 
-    boolean editLogWasOpen = editLog.isSegmentOpen();
+    boolean editLogWasOpen = editLog.isSegmentOpen(); // active是true，standby是false
     
     if (editLogWasOpen) {
       // Step 1：先把inprogress状态的segment文件转变为final

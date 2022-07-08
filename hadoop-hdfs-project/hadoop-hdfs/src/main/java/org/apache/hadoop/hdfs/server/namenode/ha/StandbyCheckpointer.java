@@ -305,7 +305,7 @@ public class StandbyCheckpointer {
       // on startup.
       lastCheckpointTime = monotonicNow();
       while (shouldRun) {
-        boolean needRollbackCheckpoint = namesystem.isNeedRollbackFsImage();
+        boolean needRollbackCheckpoint = namesystem.isNeedRollbackFsImage(); // 通过命令指定的ckpt
         if (!needRollbackCheckpoint) {
           try {
             Thread.sleep(checkPeriod);
@@ -322,8 +322,8 @@ public class StandbyCheckpointer {
           }
           
           final long now = monotonicNow();
-          final long uncheckpointed = countUncheckpointedTxns();
-          final long secsSinceLast = (now - lastCheckpointTime) / 1000;
+          final long uncheckpointed = countUncheckpointedTxns(); // 未合并的edit数量
+          final long secsSinceLast = (now - lastCheckpointTime) / 1000; // 上次ckpt到现在过了多长时间
           
           boolean needCheckpoint = needRollbackCheckpoint;
           if (needCheckpoint) {
