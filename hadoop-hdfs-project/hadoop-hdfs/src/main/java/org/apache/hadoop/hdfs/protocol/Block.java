@@ -215,7 +215,7 @@ public class Block implements Writable, Comparable<Block> {
   }
 
   @Override // Object
-  public boolean equals(Object o) {
+  public boolean equals(Object o) { // 只要block id相同就行
     if (this == o) {
       return true;
     }
