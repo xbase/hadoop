@@ -504,7 +504,7 @@ public abstract class Server {
     private final int retryCount;        // the retry count of the call
     private final Writable rpcRequest;    // 请求 Serialized Rpc request from client
     private final Connection connection;  // 连接 connection to client
-    private long timestamp;               // time received when response is null
+    private long timestamp;               // time received when response is null 这个call，Server端收到的时间
                                           // time served when response is not null
     private ByteBuffer rpcResponse;       // 响应 the response for this call
     private final RPC.RpcKind rpcKind;    // 序列化方式
@@ -901,7 +901,7 @@ public abstract class Server {
           }
           
           for(Call call : calls) {
-            doPurge(call, now);
+            doPurge(call, now);// 这个call超过15分钟，没有发送出去，则关闭这个连接
           }
         } catch (OutOfMemoryError e) {
           //
@@ -946,7 +946,7 @@ public abstract class Server {
     // Remove calls that have been pending in the responseQueue 
     // for a long time.
     //
-    private void doPurge(Call call, long now) {
+    private void doPurge(Call call, long now) { // 这个call超过15分钟，没有发送出去，则关闭这个连接
       LinkedList<Call> responseQueue = call.connection.responseQueue;
       synchronized (responseQueue) {
         Iterator<Call> iter = responseQueue.listIterator(0);
@@ -1996,6 +1996,14 @@ public abstract class Server {
       this.serviceClass = serviceClass;
     }
 
+    /**
+     * 服务端主动close连接的情况：
+     * 1、当连接数超过4000，超过10s没和Server交互，连接会被close
+     * 2、一个call超过15分钟，没有把response发送出去，则关闭这个连接
+     * 3、OOM的时候，会关闭所有的idle连接
+     * 4、Reader中出现异常或者读到-1，则关闭连接
+     * 5、发送response时候，如果出现异常，则关闭连接
+     */
     private synchronized void close() {
       disposeSasl();
       data = null;

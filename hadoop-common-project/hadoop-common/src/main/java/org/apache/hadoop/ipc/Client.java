@@ -958,7 +958,7 @@ public class Client {
         return true;
       } else if (shouldCloseConnection.get()) {
         return false;
-      } else if (calls.isEmpty()) { // idle connection closed or stopped
+      } else if (calls.isEmpty()) { // idle connection closed or stopped 这个连接已经没有call需要等待response
         markClosed(null);
         return false;
       } else { // get stopped but there are still pending requests 
@@ -1002,7 +1002,7 @@ public class Client {
         // -- this is only to be really sure that we don't leave a client hanging
         // forever.
         LOG.warn("Unexpected error reading responses on connection " + this, t);
-        markClosed(new IOException("Error reading responses", t));
+        markClosed(new IOException("Error reading responses", t)); // 接受response时，发生异常
       }
       
       close();
@@ -1065,7 +1065,7 @@ public class Client {
               // exception at this point would leave the connection in an
               // unrecoverable state (eg half a call left on the wire).
               // So, close the connection, killing any outstanding calls
-              markClosed(e);
+              markClosed(e); // 发送request时，发生异常
             } finally {
               //the buffer is just an in-memory buffer, but it is still polite to
               // close early
@@ -1156,12 +1156,12 @@ public class Client {
           if (status == RpcStatusProto.ERROR) {
             calls.remove(callId);
             call.setException(re);
-          } else if (status == RpcStatusProto.FATAL) {
+          } else if (status == RpcStatusProto.FATAL) { // 服务端返回一个fatal状态
             // Close the connection
             markClosed(re);
           }
         }
-      } catch (IOException e) {
+      } catch (IOException e) { // 接受response时，发生IOException
         markClosed(e);
       }
     }
@@ -1173,7 +1173,17 @@ public class Client {
       }
     }
     
-    /** Close the connection. */
+    /**
+     * Close the connection.
+     * 1、建立sasl连接失败
+     * 2、建立连接超时
+     * 3、建立连接时，发生异常
+     * 4、Server返回一个fatal状态
+     * 5、接受response时，发生异常
+     * 6、这个连接已经没有call需要等待response
+     * 7、发送request时，发生异常
+     *
+     * */
     private synchronized void close() {
       if (!shouldCloseConnection.get()) {
         LOG.error("The connection is not in the closed state");
