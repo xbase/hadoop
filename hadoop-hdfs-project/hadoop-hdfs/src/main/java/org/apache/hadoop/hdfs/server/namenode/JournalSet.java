@@ -276,6 +276,10 @@ public class JournalSet implements JournalManager {
       }
       try {
         jas.getManager().selectInputStreams(allStreams, fromTxId, inProgressOk);
+        // 如果请求JN，大于一半都失败或超时，也是抛IOException
+        // 只是这次tail edit回放0条edit，standby还能正常运行
+        // 如果遇到HA切换时(catchupDuringFailover)遇到这种情况，standby可能没有回放到最新edit，就能切换为active
+        // 但也不会有一致性问题，当这个新active写edit时，会由于txid不连续导致写JN失败，并挂掉
       } catch (IOException ioe) {
         LOG.warn("Unable to determine input streams from " + jas.getManager() +
             ". Skipping.", ioe);
