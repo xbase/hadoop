@@ -71,7 +71,7 @@ public class RemoteException extends IOException {
         continue;
       try {
         return instantiateException(lookupClass.asSubclass(IOException.class));
-      } catch(Exception e) {
+      } catch(Exception e) { // 如果客户端识别不了这个异常，则把本身继续向上抛
         // cannot instantiate lookupClass, just return this
         return this;
       }
@@ -93,7 +93,7 @@ public class RemoteException extends IOException {
     try {
       Class<?> realClass = Class.forName(getClassName());
       return instantiateException(realClass.asSubclass(IOException.class));
-    } catch(Exception e) {
+    } catch(Exception e) { // 如果客户端识别不了这个异常，则把本身继续向上抛
       // cannot instantiate the original exception, just return this
     }
     return this;

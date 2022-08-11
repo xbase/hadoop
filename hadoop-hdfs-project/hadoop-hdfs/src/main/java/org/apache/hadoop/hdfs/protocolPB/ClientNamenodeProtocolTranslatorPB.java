@@ -771,7 +771,7 @@ public class ClientNamenodeProtocolTranslatorPB implements
       GetFileInfoResponseProto res = rpcProxy.getFileInfo(null, req);
       return res.hasFs() ? PBHelper.convert(res.getFs()) : null;
     } catch (ServiceException e) {
-      throw ProtobufHelper.getRemoteException(e);
+      throw ProtobufHelper.getRemoteException(e); // 转为IOException
     }
   }
 

@@ -240,7 +240,7 @@ public class ProtobufRpcEngine implements RpcEngine {
           traceScope.getSpan().addTimelineAnnotation(
               "Call got exception: " + e.getMessage());
         }
-        throw new ServiceException(e);
+        throw new ServiceException(e); // 转为ServiceException
       } finally {
         if (traceScope != null) traceScope.close();
       }

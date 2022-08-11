@@ -39,7 +39,7 @@ public class ProtobufHelper {
    * @return Exception wrapped in ServiceException or
    *         a new IOException that wraps the unexpected ServiceException.
    */
-  public static IOException getRemoteException(ServiceException se) {
+  public static IOException getRemoteException(ServiceException se) { // 转为IOException
     Throwable e = se.getCause();
     if (e == null) {
       return new IOException(se);

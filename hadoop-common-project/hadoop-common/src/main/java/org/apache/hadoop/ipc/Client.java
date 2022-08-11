@@ -1152,7 +1152,14 @@ public class Client {
           RemoteException re = 
               ( (erCode == null) ? 
                   new RemoteException(exceptionClassName, errorMsg) :
-              new RemoteException(exceptionClassName, errorMsg, erCode));
+              new RemoteException(exceptionClassName, errorMsg, erCode)); // 封装为RemoteException
+          
+          // 服务端抛一个异常，客户端如何处理？
+          // 1、Client.receiveRpcResponse 把服务端的error消息封装为 RemoteException
+          // 2、ProtobufRpcEngine.invoke 把RemoteException包装为 ServiceException
+          // 3、ClientNamenodeProtocolTranslatorPB里的方法，通过ProtobufHelper.getRemoteException从ServiceException获取 RemoteException
+          // 4、DFSClient里的方法，通过re.unwrapRemoteException 获取服务端的真正异常，比如：FileNotFoundException、AccessControlException等，
+          //    如果客户端识别不了这个异常，则返回 RemoteException
           if (status == RpcStatusProto.ERROR) {
             calls.remove(callId);
             call.setException(re);
