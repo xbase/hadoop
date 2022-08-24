@@ -2653,7 +2653,7 @@ public class BlockManager {
           " but corrupt replicas map has " + corruptReplicasCount);
     }
     if ((corruptReplicasCount > 0) && (numLiveReplicas >= fileReplication)) {
-      // 副本数多余期望副本数，把损坏的副本删除
+      // 副本数多于期望副本数，把损坏的副本删除
       invalidateCorruptReplicas(storedBlock);
     }
     return storedBlock;

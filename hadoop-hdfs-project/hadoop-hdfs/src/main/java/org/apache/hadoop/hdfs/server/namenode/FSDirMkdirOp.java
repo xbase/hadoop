@@ -157,6 +157,9 @@ class FSDirMkdirOp {
    * the returned INodesInPath. The function return null if the operation has
    * failed.
    */
+  // 默认情况下：
+  // mkdir 使用当前user、group、755(客户端的默认配置)，创建子目录
+  // create 使用父目录的权限创建子目录
   private static INodesInPath createChildrenDirectories(FSDirectory fsd,
       INodesInPath existing, List<String> children, PermissionStatus perm)
       throws IOException {

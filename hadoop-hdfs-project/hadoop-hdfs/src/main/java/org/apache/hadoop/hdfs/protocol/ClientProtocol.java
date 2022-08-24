@@ -320,6 +320,7 @@ public interface ClientProtocol {
    * @throws IOException If an I/O error occurred
    */
   // 只是修改lastINode的owner
+  // 只有超级用户可以修改
   @Idempotent
   public void setOwner(String src, String username, String groupname)
       throws AccessControlException, FileNotFoundException, SafeModeException,

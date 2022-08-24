@@ -79,7 +79,7 @@ class UnderReplicatedBlocks implements Iterable<Block> {
   /** The queue for blocks that have the right number of replicas,
    * but which the block manager felt were badly distributed: {@value}
    */
-  static final int QUEUE_REPLICAS_BADLY_DISTRIBUTED = 3; // 副本数 = 期望副本数，但不符合机架放置策略
+  static final int QUEUE_REPLICAS_BADLY_DISTRIBUTED = 3; // 副本数 >= 期望副本数，但不符合机架放置策略
   /** The queue for corrupt blocks: {@value} */
   static final int QUEUE_WITH_CORRUPT_BLOCKS = 4; // 副本全部损坏
   /** the queues themselves */
