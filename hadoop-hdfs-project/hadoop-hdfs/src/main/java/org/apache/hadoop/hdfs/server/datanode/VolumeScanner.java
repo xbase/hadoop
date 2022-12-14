@@ -440,7 +440,7 @@ public class VolumeScanner extends Thread {
       resultHandler.handle(block, null);
       return bytesRead;
     } catch (IOException e) {
-      resultHandler.handle(block, e);
+      resultHandler.handle(block, e); // checksum出错，汇报给NN
     } finally {
       IOUtils.cleanup(null, blockSender);
     }

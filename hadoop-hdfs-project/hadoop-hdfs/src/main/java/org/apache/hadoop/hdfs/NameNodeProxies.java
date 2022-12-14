@@ -420,7 +420,7 @@ public class NameNodeProxies {
     ClientNamenodeProtocolPB proxy = RPC.getProtocolProxy(
         ClientNamenodeProtocolPB.class, version, address, ugi, conf,
         NetUtils.getDefaultSocketFactory(conf),
-        org.apache.hadoop.ipc.Client.getTimeout(conf), defaultPolicy,
+        org.apache.hadoop.ipc.Client.getTimeout(conf), defaultPolicy, // 设置socket读超时
         fallbackToSimpleAuth).getProxy();
 
     if (withRetries) { // create the proxy with retries

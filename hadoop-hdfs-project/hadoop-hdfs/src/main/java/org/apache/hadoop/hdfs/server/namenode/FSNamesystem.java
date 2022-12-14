@@ -1419,7 +1419,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * @throws IOException if multiple shared edits directories are configured
    */
   public static List<URI> getNamespaceEditsDirs(Configuration conf)
-      throws IOException {
+      throws IOException { // 获取edit log的保存地址
     return getNamespaceEditsDirs(conf, true);
   }
   

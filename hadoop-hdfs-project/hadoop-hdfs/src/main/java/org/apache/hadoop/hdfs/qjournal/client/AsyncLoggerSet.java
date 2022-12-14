@@ -57,7 +57,7 @@ class AsyncLoggerSet {
     this.loggers = ImmutableList.copyOf(loggers);
   }
   
-  void setEpoch(long e) {
+  void setEpoch(long e) { // 成为active时，会设置新的epoch
     Preconditions.checkState(!isEpochEstablished(),
         "Epoch already established: epoch=%s", myEpoch);
     myEpoch = e;

@@ -1638,7 +1638,7 @@ public class FSEditLog implements LogsPurgeable {
    */
   private JournalManager createJournal(URI uri) {
     Class<? extends JournalManager> clazz
-      = getJournalClass(conf, uri.getScheme());
+      = getJournalClass(conf, uri.getScheme()); // QuorumJournalManager
 
     try {
       Constructor<? extends JournalManager> cons

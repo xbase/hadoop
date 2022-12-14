@@ -190,7 +190,7 @@ public class ProtobufRpcEngine implements RpcEngine {
      */
     @Override
     public Object invoke(Object proxy, Method method, Object[] args)
-        throws ServiceException {
+        throws ServiceException { // protobuf rpc反射调用路径
       long startTime = 0;
       if (LOG.isDebugEnabled()) {
         startTime = Time.now();

@@ -805,8 +805,8 @@ public class NameNode implements NameNodeStatusMXBean {
     this.conf = conf;
     this.role = role;
     setClientNamenodeAddress(conf);
-    String nsId = getNameServiceId(conf);
-    String namenodeId = HAUtil.getNameNodeId(conf, nsId);
+    String nsId = getNameServiceId(conf); // dfs.nameservices，比如: ns21
+    String namenodeId = HAUtil.getNameNodeId(conf, nsId); // nn id，比如: nn1
     this.haEnabled = HAUtil.isHAEnabled(conf, nsId); // 此NN是否配置了HA
     state = createHAState(getStartupOption(conf)); // HA NN都以standby启动
     this.allowStaleStandbyReads = HAUtil.shouldAllowStandbyReads(conf); // 是否允许从standby读
@@ -1525,7 +1525,7 @@ public class NameNode implements NameNodeStatusMXBean {
       }
       
       DFSUtil.setGenericConf(conf, nameserviceId, namenodeId,
-          NAMENODE_SPECIFIC_KEYS);
+          NAMENODE_SPECIFIC_KEYS); // 把有后缀的配置，替换为没有后缀的
       DFSUtil.setGenericConf(conf, nameserviceId, null,
           NAMESERVICE_SPECIFIC_KEYS);
     }

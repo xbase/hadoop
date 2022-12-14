@@ -104,7 +104,7 @@ public class HAUtil {
    * @return namenode Id on success, null on failure.
    * @throws HadoopIllegalArgumentException on error
    */
-  public static String getNameNodeId(Configuration conf, String nsId) {
+  public static String getNameNodeId(Configuration conf, String nsId) { // 通过本地ip匹配到对应的nn id（比如：nn1）
     String namenodeId = conf.getTrimmed(DFS_HA_NAMENODE_ID_KEY);
     if (namenodeId != null) {
       return namenodeId;

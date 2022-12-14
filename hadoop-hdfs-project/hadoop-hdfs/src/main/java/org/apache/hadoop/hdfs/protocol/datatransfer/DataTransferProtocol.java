@@ -179,7 +179,7 @@ public interface DataTransferProtocol {
    * @param delHint the hint for deleting the block in the original datanode.
    * @param source the source datanode for receiving the block.
    */
-  // balance使用
+  // balance使用，接收block端执行
   public void replaceBlock(final ExtendedBlock blk,
       final StorageType storageType, 
       final Token<BlockTokenIdentifier> blockToken,
@@ -193,7 +193,7 @@ public interface DataTransferProtocol {
    * @param blk the block being copied.
    * @param blockToken security token for accessing the block.
    */
-  // balance使用
+  // balance使用，发送block端执行
   public void copyBlock(final ExtendedBlock blk,
       final Token<BlockTokenIdentifier> blockToken) throws IOException;
 

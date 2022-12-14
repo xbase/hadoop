@@ -397,7 +397,7 @@ public class Client {
     private Socket socket = null;                 // connected socket
     private DataInputStream in;
     private DataOutputStream out;
-    private int rpcTimeout;
+    private int rpcTimeout; // rpc 使用的是 PingInputStream，socket超时之后(soTimeout)，client会发送ping，只有rpcTimeout之后才会抛异常
     // 连接最大空闲时间，到达之后连接会被关闭
     private int maxIdleTime; //connections will be culled if it was idle for maxIdleTime msecs
     private final RetryPolicy connectionRetryPolicy;
@@ -1101,7 +1101,7 @@ public class Client {
       touch();
       
       try {
-        int totalLen = in.readInt();
+        int totalLen = in.readInt(); // PingInputStream 有timeout
         RpcResponseHeaderProto header = 
             RpcResponseHeaderProto.parseDelimitedFrom(in);
         checkResponse(header);
