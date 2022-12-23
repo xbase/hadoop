@@ -563,12 +563,12 @@ public class RetryPolicies {
     @Override
     public RetryAction shouldRetry(Exception e, int retries,
         int failovers, boolean isIdempotentOrAtMostOnce) throws Exception {
-      if (failovers >= maxFailovers) {
+      if (failovers >= maxFailovers) { // 最大failover次数，默认：15
         return new RetryAction(RetryAction.RetryDecision.FAIL, 0,
             "failovers (" + failovers + ") exceeded maximum allowed ("
             + maxFailovers + ")");
       }
-      if (retries - failovers > maxRetries) {
+      if (retries - failovers > maxRetries) { // 最大retry次数，默认：10
         return new RetryAction(RetryAction.RetryDecision.FAIL, 0, "retries ("
             + retries + ") exceeded maximum allowed (" + maxRetries + ")");
       }
