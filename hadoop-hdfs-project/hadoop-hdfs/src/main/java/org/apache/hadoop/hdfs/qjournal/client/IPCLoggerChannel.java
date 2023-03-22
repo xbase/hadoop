@@ -390,7 +390,8 @@ public class IPCLoggerChannel implements AsyncLogger {
                 "write txns " + firstTxnId + "-" + (firstTxnId + numTxns - 1) +
                 ". Will try to write to this JN again after the next " +
                 "log roll.", e);
-            // 只有抛IOException时，才会标记outOfSync
+            // active对JN的请求，都会提交到singleThreadExecutor线程池
+            // 只有sendEdits抛IOException时，才会标记outOfSync
             // 当开启新的segment的时候，又会把设置outOfSync=false
             // 出现异常，设置outOfSync=true，不会再向此JN写editlog，直到开启新的segment
             synchronized (IPCLoggerChannel.this) {
