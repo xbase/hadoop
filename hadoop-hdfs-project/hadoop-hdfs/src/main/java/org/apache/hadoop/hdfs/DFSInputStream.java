@@ -1523,6 +1523,10 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
 
   /**
    * Seek to a new arbitrary location
+   *
+   * skip逻辑
+   * 1、小于128K，则读取并丢弃
+   * 2、大于128K，则read的时候重新连接DN，并从新的position开始读取
    */
   @Override
   public synchronized void seek(long targetPos) throws IOException {
