@@ -2934,7 +2934,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
               + clientName);
           if (internalReleaseLease(lease, src, iip, null)) {
             return true;
-          } else {
+          } else { // Append时，如果需要执行recover block，则抛下面的异常
             throw new RecoveryInProgressException(
                 op.getExceptionMessage(src, holder, clientMachine,
                     "lease recovery is in progress. Try again later."));
