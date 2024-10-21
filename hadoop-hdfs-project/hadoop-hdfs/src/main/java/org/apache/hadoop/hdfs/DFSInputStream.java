@@ -1179,8 +1179,7 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
         updateReadStatistics(readStatistics, nread, reader);
 
         if (nread != len) {
-          throw new IOException("truncated return from reader.read(): " +
-                                "excpected " + len + ", got " + nread);
+          throw new IOException("truncated return from reader.read(): " + "excpected " + len + ", got " + nread);
         }
         DFSClientFaultInjector.get().readFromDatanodeDelay();
         return;

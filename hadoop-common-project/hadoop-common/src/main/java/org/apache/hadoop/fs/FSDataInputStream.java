@@ -82,6 +82,19 @@ public class FSDataInputStream extends DataInputStream
    * @return total number of bytes read into the buffer, or <code>-1</code>
    *         if there is no more data because the end of the stream has been
    *         reached
+   *
+   * 流read和pread，实际读数据都使用 RemoteBlockReader2.read(byte[] buf, int off, int len)
+   * 流read和pread，不同的地方：
+   * 1、从哪里开始读（startPostion）和需要读取的长度（Length）获取方式不同
+   * 		流read：默认从文件头开始读，可以通过seek改变postion
+   * 		pread ：startPostion和length，都是调用方指定的
+   * 2、返回值
+   * 		流read：读到指定buffer数据之后（通过byte[]或ByteBuffer指定），和DN的连接并不会断，直到读到block的末尾才会断
+   * 			    如果读不到byte[]指定的长度，不会报错，会返回-1说明读到文件末尾
+   * 		pread ：读到调用方指定的length之后，和DN的连接就会断
+   * 				如果读不到调用方指定的长度，会报错，抛IOException("truncated return from reader.read(): " + "excpected " + len + ", got " + actual)
+   * 3、HedgedRead
+   * 		只有pread支持HedgedRead
    */
   // pread
   @Override

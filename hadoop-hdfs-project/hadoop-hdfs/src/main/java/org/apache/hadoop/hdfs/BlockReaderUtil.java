@@ -21,6 +21,10 @@ import java.io.IOException;
 
 /**
  * For sharing between the local and remote block reader implementations.
+ *
+ * readFully只有读取到指定的长度才会返回，否则等到超时抛IOException("Premature EOF from inputStream")
+ * readAll有可能读不到指定长度 就返回
+ *
  */
 class BlockReaderUtil {
 
